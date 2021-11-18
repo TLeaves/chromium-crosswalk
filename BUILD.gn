@@ -337,6 +337,8 @@ group("gn_all") {
       "//tools/android/errorprone_plugin:errorprone_plugin_java",
       "//tools/android/kerberos/SpnegoAuthenticator:spnego_authenticator_apk",
       "//ui/android:ui_junit_tests",
+
+      "//xwalk:xwalk_builder",
     ]
     deps -= [
       "//net:net_perftests",

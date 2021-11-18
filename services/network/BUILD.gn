@@ -267,7 +267,7 @@ jumbo_component("network_service") {
     deps += [
       "//crypto",
       "//third_party/boringssl",
-      "//xwalk:xwalk_cookies",
+      #"//xwalk:xwalk_cookies",
 #      "//xwalk/third_party/tenta/chromium_cache",
 #      "//xwalk/third_party/tenta/crosswalk_extensions:host_resolver",
     ]
