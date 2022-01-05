@@ -21,13 +21,16 @@ from util import build_utils
 
 _ANDROID_BUILD_DIR = os.path.dirname(os.path.dirname(__file__))
 
-def _RenumberRTxt(lines):
-  """Eliminates duplicates and renumbers R.txt lines"""
+def _EliminatesRTxt(lines):
+  """Eliminates duplicates R.txt lines"""
   all_resources = collections.defaultdict(dict)
-  # Parse lines
   for line in lines:
     jtype, rtype, name, id = line.strip().split(' ', 3)
     all_resources[(jtype, rtype)][name] = id
+  return all_resources
+
+def _RenumberRTxt(all_resources):
+  """renumbers R.txt lines"""
   # Renumber simple int types
   for tid, typ in enumerate(sorted(all_resources.keys()), start=1):
     _, rtype = typ
@@ -35,9 +38,9 @@ def _RenumberRTxt(lines):
       continue
     resources = all_resources[typ]
     for rid, name in enumerate(sorted(resources.keys())):
-      resources[name] = hex((0x7f00 + tid) << 16 | rid)            
+      resources[name] = hex((0x7f00 + tid) << 16 | rid)
   # Renumber int[] styleables
-  #  - lookup their attribute references in 'int styleable' 
+  #  - lookup their attribute references in 'int styleable'
   #    (a trie would help greatly here)
   #  - resolve the attribute references' id from 'int attr'
   styl_resources = all_resources[('int[]', 'styleable')]
@@ -51,12 +54,15 @@ def _RenumberRTxt(lines):
         anr = int(anr)
         anme = anme[len(name_):]
         attrs.append((anr, anme))
-    aids = []                
+    aids = []
     for _, aname in sorted(attrs):
       aid = attr_resources[aname]
       aids.append(aid)
     styl_resources[name] = '{ ' + ', '.join(aids) + ' }'
-  # Generate renumbered lines
+  return all_resources
+
+def _RDictToTxtLines(all_resources):
+  """Generate renumbered lines"""
   relines = []
   for typ in sorted(all_resources.keys()):
     jtype, rtype = typ
@@ -66,7 +72,6 @@ def _RenumberRTxt(lines):
       relines.append(reline)
   return relines
 
-
 def _MergeRTxt(r_paths, include_globs, renumber):
   """Merging the given R.txt files and returns them as a string."""
   all_lines = set()
@@ -75,8 +80,10 @@ def _MergeRTxt(r_paths, include_globs, renumber):
       continue
     with open(r_path) as f:
       all_lines.update(f.readlines())
+  resource = _EliminatesRTxt(all_lines)
   if renumber:
-    all_lines = _RenumberRTxt(all_lines)
+    resource = _RenumberRTxt(resource)
+  all_lines = _RDictToTxtLines(resource)
   return ''.join(sorted(all_lines))
 
 
@@ -222,7 +229,7 @@ def main(args):
 
   if options.depfile:
     all_inputs = (options.jars + options.dependencies_res_zips +
-                  options.r_text_files + options.proguard_configs + 
+                  options.r_text_files + options.proguard_configs +
                   options.native_libraries + assets + uncompressed_assets)
     build_utils.WriteDepfile(options.depfile, options.output, all_inputs,
                              add_pydeps=False)
