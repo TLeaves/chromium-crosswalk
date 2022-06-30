@@ -11,7 +11,7 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chromeos/dbus/shill/shill_manager_client.h"
 
@@ -25,6 +25,10 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
       public ShillManagerClient::TestInterface {
  public:
   FakeShillManagerClient();
+
+  FakeShillManagerClient(const FakeShillManagerClient&) = delete;
+  FakeShillManagerClient& operator=(const FakeShillManagerClient&) = delete;
+
   ~FakeShillManagerClient() override;
 
   // ShillManagerClient overrides
@@ -32,37 +36,45 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
       ShillPropertyChangedObserver* observer) override;
   void RemovePropertyChangedObserver(
       ShillPropertyChangedObserver* observer) override;
-  void GetProperties(const DictionaryValueCallback& callback) override;
+  void GetProperties(DBusMethodCallback<base::Value> callback) override;
   void GetNetworksForGeolocation(
-      const DictionaryValueCallback& callback) override;
+      DBusMethodCallback<base::Value> callback) override;
   void SetProperty(const std::string& name,
                    const base::Value& value,
-                   const base::Closure& callback,
-                   const ErrorCallback& error_callback) override;
+                   base::OnceClosure callback,
+                   ErrorCallback error_callback) override;
   void RequestScan(const std::string& type,
-                   const base::Closure& callback,
-                   const ErrorCallback& error_callback) override;
+                   base::OnceClosure callback,
+                   ErrorCallback error_callback) override;
   void EnableTechnology(const std::string& type,
-                        const base::Closure& callback,
-                        const ErrorCallback& error_callback) override;
+                        base::OnceClosure callback,
+                        ErrorCallback error_callback) override;
   void DisableTechnology(const std::string& type,
-                         const base::Closure& callback,
-                         const ErrorCallback& error_callback) override;
-  void ConfigureService(const base::DictionaryValue& properties,
-                        const ObjectPathCallback& callback,
-                        const ErrorCallback& error_callback) override;
+                         base::OnceClosure callback,
+                         ErrorCallback error_callback) override;
+  void ConfigureService(const base::Value& properties,
+                        ObjectPathCallback callback,
+                        ErrorCallback error_callback) override;
   void ConfigureServiceForProfile(const dbus::ObjectPath& profile_path,
-                                  const base::DictionaryValue& properties,
-                                  const ObjectPathCallback& callback,
-                                  const ErrorCallback& error_callback) override;
-  void GetService(const base::DictionaryValue& properties,
-                  const ObjectPathCallback& callback,
-                  const ErrorCallback& error_callback) override;
-  void ConnectToBestServices(const base::Closure& callback,
-                             const ErrorCallback& error_callback) override;
+                                  const base::Value& properties,
+                                  ObjectPathCallback callback,
+                                  ErrorCallback error_callback) override;
+  void GetService(const base::Value& properties,
+                  ObjectPathCallback callback,
+                  ErrorCallback error_callback) override;
+  void ScanAndConnectToBestServices(base::OnceClosure callback,
+                                    ErrorCallback error_callback) override;
   void SetNetworkThrottlingStatus(const NetworkThrottlingStatus& status,
-                                  const base::Closure& callback,
-                                  const ErrorCallback& error_callback) override;
+                                  base::OnceClosure callback,
+                                  ErrorCallback error_callback) override;
+  void AddPasspointCredentials(const dbus::ObjectPath& profile_path,
+                               const base::Value& properties,
+                               base::OnceClosure callback,
+                               ErrorCallback error_callback) override;
+  void RemovePasspointCredentials(const dbus::ObjectPath& profile_path,
+                                  const base::Value& properties,
+                                  base::OnceClosure callback,
+                                  ErrorCallback error_callback) override;
 
   ShillManagerClient::TestInterface* GetTestInterface() override;
 
@@ -74,8 +86,13 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
   void RemoveTechnology(const std::string& type) override;
   void SetTechnologyInitializing(const std::string& type,
                                  bool initializing) override;
+  void SetTechnologyProhibited(const std::string& type,
+                               bool prohibited) override;
+  void SetTechnologyEnabled(const std::string& type,
+                            base::OnceClosure callback,
+                            bool enabled) override;
   void AddGeoNetwork(const std::string& technology,
-                     const base::DictionaryValue& network) override;
+                     const base::Value& network) override;
   void AddProfile(const std::string& profile_path) override;
   void ClearProperties() override;
   void SetManagerProperty(const std::string& key,
@@ -93,23 +110,24 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
   void SetBestServiceToConnect(const std::string& service_path) override;
   const NetworkThrottlingStatus& GetNetworkThrottlingStatus() override;
   bool GetFastTransitionStatus() override;
+  void SetSimulateConfigurationResult(
+      FakeShillSimulatedResult configuration_result) override;
+  base::Value GetEnabledServiceList() const override;
+  void ClearProfiles() override;
+  void SetShouldReturnNullProperties(bool value) override;
 
   // Constants used for testing.
   static const char kFakeEthernetNetworkGuid[];
 
  private:
   void SetDefaultProperties();
-  void PassStubProperties(const DictionaryValueCallback& callback) const;
-  void PassStubGeoNetworks(const DictionaryValueCallback& callback) const;
+  void PassNullopt(DBusMethodCallback<base::Value> callback) const;
+  void PassStubProperties(DBusMethodCallback<base::Value> callback) const;
+  void PassStubGeoNetworks(DBusMethodCallback<base::Value> callback) const;
   void CallNotifyObserversPropertyChanged(const std::string& property);
   void NotifyObserversPropertyChanged(const std::string& property);
   base::ListValue* GetListProperty(const std::string& property);
   bool TechnologyEnabled(const std::string& type) const;
-  void SetTechnologyEnabled(const std::string& type,
-                            const base::Closure& callback,
-                            bool enabled);
-  std::unique_ptr<base::ListValue> GetEnabledServiceList(
-      const std::string& property) const;
   void ScanCompleted(const std::string& device_path);
 
   // Parses the command line for Shill stub switches and sets initial states.
@@ -123,10 +141,10 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
   std::string GetInitialStateForType(const std::string& type, bool* enabled);
 
   // Dictionary of property name -> property value
-  base::DictionaryValue stub_properties_;
+  base::Value stub_properties_{base::Value::Type::DICTIONARY};
 
   // Dictionary of technology -> list of property dictionaries
-  base::DictionaryValue stub_geo_networks_;
+  base::Value stub_geo_networks_{base::Value::Type::DICTIONARY};
 
   // Delay for interactive actions
   base::TimeDelta interactive_delay_;
@@ -146,7 +164,7 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
   // Current network throttling status.
   NetworkThrottlingStatus network_throttling_status_ = {false, 0, 0};
 
-  typedef std::map<std::string, base::Value*> ShillPropertyMap;
+  typedef std::map<std::string, base::Value> ShillPropertyMap;
   typedef std::map<std::string, ShillPropertyMap> DevicePropertyMap;
   DevicePropertyMap shill_device_property_map_;
 
@@ -158,13 +176,22 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillManagerClient
   // 'Best' service to connect to on ConnectToBestServices() calls.
   std::string best_service_;
 
+  FakeShillSimulatedResult simulate_configuration_result_ =
+      FakeShillSimulatedResult::kSuccess;
+
+  bool return_null_properties_;
+
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<FakeShillManagerClient> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(FakeShillManagerClient);
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::FakeShillManagerClient;
+}
 
 #endif  // CHROMEOS_DBUS_SHILL_FAKE_SHILL_MANAGER_CLIENT_H_

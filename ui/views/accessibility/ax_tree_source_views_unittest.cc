@@ -4,13 +4,17 @@
 
 #include "ui/views/accessibility/ax_tree_source_views.h"
 
+#include <memory>
+#include <utility>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
+#include "ui/aura/client/focus_client.h"
+#include "ui/aura/test/test_window_delegate.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/views/accessibility/ax_aura_obj_cache.h"
 #include "ui/views/accessibility/ax_aura_obj_wrapper.h"
@@ -28,16 +32,16 @@ class TestAXTreeSourceViews : public AXTreeSourceViews {
  public:
   TestAXTreeSourceViews(AXAuraObjWrapper* root, AXAuraObjCache* cache)
       : AXTreeSourceViews(root, ui::AXTreeID::CreateNewAXTreeID(), cache) {}
-
+  TestAXTreeSourceViews(const TestAXTreeSourceViews&) = delete;
+  TestAXTreeSourceViews& operator=(const TestAXTreeSourceViews&) = delete;
   ~TestAXTreeSourceViews() override = default;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestAXTreeSourceViews);
 };
 
 class AXTreeSourceViewsTest : public ViewsTestBase {
  public:
   AXTreeSourceViewsTest() = default;
+  AXTreeSourceViewsTest(const AXTreeSourceViewsTest&) = delete;
+  AXTreeSourceViewsTest& operator=(const AXTreeSourceViewsTest&) = delete;
   ~AXTreeSourceViewsTest() override = default;
 
   // testing::Test:
@@ -48,20 +52,20 @@ class AXTreeSourceViewsTest : public ViewsTestBase {
     params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     params.bounds = gfx::Rect(11, 22, 333, 444);
     params.context = GetContext();
-    widget_->Init(params);
-    widget_->SetContentsView(new View());
+    widget_->Init(std::move(params));
+    widget_->SetContentsView(std::make_unique<View>());
 
-    label1_ = new Label(base::ASCIIToUTF16("Label 1"));
+    label1_ = new Label(u"Label 1");
     label1_->SetBounds(1, 1, 111, 111);
-    widget_->GetContentsView()->AddChildView(label1_);
+    widget_->GetContentsView()->AddChildView(label1_.get());
 
-    label2_ = new Label(base::ASCIIToUTF16("Label 2"));
+    label2_ = new Label(u"Label 2");
     label2_->SetBounds(2, 2, 222, 222);
-    widget_->GetContentsView()->AddChildView(label2_);
+    widget_->GetContentsView()->AddChildView(label2_.get());
 
     textfield_ = new Textfield();
     textfield_->SetBounds(222, 2, 20, 200);
-    widget_->GetContentsView()->AddChildView(textfield_);
+    widget_->GetContentsView()->AddChildView(textfield_.get());
   }
 
   void TearDown() override {
@@ -70,12 +74,9 @@ class AXTreeSourceViewsTest : public ViewsTestBase {
   }
 
   std::unique_ptr<Widget> widget_;
-  Label* label1_ = nullptr;         // Owned by views hierarchy.
-  Label* label2_ = nullptr;         // Owned by views hierarchy.
-  Textfield* textfield_ = nullptr;  // Owned by views hierarchy.
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AXTreeSourceViewsTest);
+  raw_ptr<Label> label1_ = nullptr;         // Owned by views hierarchy.
+  raw_ptr<Label> label2_ = nullptr;         // Owned by views hierarchy.
+  raw_ptr<Textfield> textfield_ = nullptr;  // Owned by views hierarchy.
 };
 
 TEST_F(AXTreeSourceViewsTest, Basics) {
@@ -153,6 +154,57 @@ TEST_F(AXTreeSourceViewsTest, IgnoredView) {
   TestAXTreeSourceViews tree(cache.GetOrCreate(widget_.get()), &cache);
   EXPECT_TRUE(tree.IsValid(cache.GetOrCreate(ignored_view)));
 }
+
+TEST_F(AXTreeSourceViewsTest, ViewWithChildTreeHasNoChildren) {
+  View* contents_view = widget_->GetContentsView();
+  contents_view->GetViewAccessibility().OverrideChildTreeID(
+      ui::AXTreeID::CreateNewAXTreeID());
+
+  AXAuraObjCache cache;
+  TestAXTreeSourceViews tree(cache.GetOrCreate(widget_.get()), &cache);
+  auto* ax_obj = cache.GetOrCreate(contents_view);
+  EXPECT_TRUE(tree.IsValid(ax_obj));
+  std::vector<AXAuraObjWrapper*> children;
+  ax_obj->GetChildren(&children);
+  EXPECT_TRUE(children.empty());
+  EXPECT_EQ(nullptr, cache.GetOrCreate(textfield_)->GetParent());
+}
+
+#if BUILDFLAG(ENABLE_DESKTOP_AURA)
+class AXTreeSourceViewsDesktopWidgetTest : public AXTreeSourceViewsTest {
+ public:
+  AXTreeSourceViewsDesktopWidgetTest() {
+    set_native_widget_type(ViewsTestBase::NativeWidgetType::kDesktop);
+  }
+};
+
+// Tests that no use-after-free when a focused child window is destroyed in
+// desktop aura widget.
+TEST_F(AXTreeSourceViewsDesktopWidgetTest, FocusedChildWindowDestroyed) {
+  AXAuraObjCache cache;
+  AXAuraObjWrapper* root_wrapper =
+      cache.GetOrCreate(widget_->GetNativeWindow()->GetRootWindow());
+  EXPECT_NE(nullptr, root_wrapper);
+
+  aura::test::TestWindowDelegate child_delegate;
+  aura::Window* child = new aura::Window(&child_delegate);
+  child->Init(ui::LAYER_NOT_DRAWN);
+  widget_->GetNativeView()->AddChild(child);
+  aura::client::GetFocusClient(widget_->GetNativeView())->FocusWindow(child);
+
+  AXAuraObjWrapper* child_wrapper = cache.GetOrCreate(child);
+  EXPECT_NE(nullptr, child_wrapper);
+
+  // GetFocus() reflects the focused child window.
+  EXPECT_NE(nullptr, cache.GetFocus());
+
+  // Close the widget to destroy the child.
+  widget_.reset();
+
+  // GetFocus() should return null and no use-after-free to call it.
+  EXPECT_EQ(nullptr, cache.GetFocus());
+}
+#endif  // defined(USE_AURA)
 
 }  // namespace
 }  // namespace views

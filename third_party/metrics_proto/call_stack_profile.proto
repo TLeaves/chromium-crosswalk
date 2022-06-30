@@ -5,9 +5,9 @@
 syntax = "proto2";
 
 option optimize_for = LITE_RUNTIME;
+option java_package = "org.chromium.components.metrics";
 
 option java_outer_classname = "CallStackProfileProtos";
-option java_package = "org.chromium.components.metrics";
 
 package metrics;
 
@@ -52,6 +52,9 @@ message CallStackProfile {
   message MetadataItem {
     // Index of the hash of the metadata name.
     optional int32 name_hash_index = 1;
+
+    // Optional user-specified key value. Absent if unspecified.
+    optional sint64 key = 3;
 
     // Value for the item. An absent value indicates the metadata has become
     // unset since the previous StackSample.

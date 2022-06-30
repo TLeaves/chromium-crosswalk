@@ -4,10 +4,11 @@
 
 #include "chrome/browser/sync_file_system/local/local_file_sync_status.h"
 
-#include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/check_op.h"
+#include "base/containers/contains.h"
+#include "base/observer_list.h"
 #include "content/public/browser/browser_thread.h"
-#include "storage/common/fileapi/file_system_util.h"
+#include "storage/common/file_system/file_system_util.h"
 
 using storage::FileSystemURL;
 using storage::FileSystemURLSet;

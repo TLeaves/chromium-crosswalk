@@ -2,12 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+
 import copy
 import logging
 import os
 import pickle
 import re
 
+import six
 from devil.android import apk_helper
 from pylib import constants
 from pylib.base import base_test_result
@@ -19,6 +21,7 @@ from pylib.instrumentation import instrumentation_parser
 from pylib.symbols import deobfuscator
 from pylib.symbols import stack_symbolizer
 from pylib.utils import dexdump
+from pylib.utils import gold_utils
 from pylib.utils import instrumentation_tracing
 from pylib.utils import proguard
 from pylib.utils import shared_preference_utils
@@ -35,42 +38,50 @@ _ACTIVITY_RESULT_OK = -1
 _COMMAND_LINE_PARAMETER = 'cmdlinearg-parameter'
 _DEFAULT_ANNOTATIONS = [
     'SmallTest', 'MediumTest', 'LargeTest', 'EnormousTest', 'IntegrationTest']
+# This annotation is for disabled tests that should not be run in Test Reviver.
+_DO_NOT_REVIVE_ANNOTATIONS = ['DoNotRevive']
 _EXCLUDE_UNLESS_REQUESTED_ANNOTATIONS = [
     'DisabledTest', 'FlakyTest', 'Manual']
-_VALID_ANNOTATIONS = set(_DEFAULT_ANNOTATIONS +
+_VALID_ANNOTATIONS = set(_DEFAULT_ANNOTATIONS + _DO_NOT_REVIVE_ANNOTATIONS +
                          _EXCLUDE_UNLESS_REQUESTED_ANNOTATIONS)
 
-# These test methods are inherited from android.test base test class and
-# should be permitted for not having size annotation. For more, please check
-# https://developer.android.com/reference/android/test/AndroidTestCase.html
-# https://developer.android.com/reference/android/test/ServiceTestCase.html
-_TEST_WITHOUT_SIZE_ANNOTATIONS = [
-    'testAndroidTestCaseSetupProperly', 'testServiceTestCaseSetUpProperly']
-
-_EXTRA_DRIVER_TEST_LIST = (
-    'org.chromium.test.driver.OnDeviceInstrumentationDriver.TestList')
-_EXTRA_DRIVER_TEST_LIST_FILE = (
-    'org.chromium.test.driver.OnDeviceInstrumentationDriver.TestListFile')
-_EXTRA_DRIVER_TARGET_PACKAGE = (
-    'org.chromium.test.driver.OnDeviceInstrumentationDriver.TargetPackage')
-_EXTRA_DRIVER_TARGET_CLASS = (
-    'org.chromium.test.driver.OnDeviceInstrumentationDriver.TargetClass')
-_EXTRA_TIMEOUT_SCALE = (
-    'org.chromium.test.driver.OnDeviceInstrumentationDriver.TimeoutScale')
 _TEST_LIST_JUNIT4_RUNNERS = [
     'org.chromium.base.test.BaseChromiumAndroidJUnitRunner']
 
 _SKIP_PARAMETERIZATION = 'SkipCommandLineParameterization'
-_COMMANDLINE_PARAMETERIZATION = 'CommandLineParameter'
+_PARAMETERIZED_COMMAND_LINE_FLAGS = 'ParameterizedCommandLineFlags'
+_PARAMETERIZED_COMMAND_LINE_FLAGS_SWITCHES = (
+    'ParameterizedCommandLineFlags$Switches')
 _NATIVE_CRASH_RE = re.compile('(process|native) crash', re.IGNORECASE)
 _PICKLE_FORMAT_VERSION = 12
 
+# The ID of the bundle value Instrumentation uses to report which test index the
+# results are for in a collection of tests. Note that this index is 1-based.
+_BUNDLE_CURRENT_ID = 'current'
+# The ID of the bundle value Instrumentation uses to report the test class.
+_BUNDLE_CLASS_ID = 'class'
+# The ID of the bundle value Instrumentation uses to report the test name.
+_BUNDLE_TEST_ID = 'test'
+# The ID of the bundle value Instrumentation uses to report if a test was
+# skipped.
+_BUNDLE_SKIPPED_ID = 'test_skipped'
+# The ID of the bundle value Instrumentation uses to report the crash stack, if
+# the test crashed.
+_BUNDLE_STACK_ID = 'stack'
+
+# The ID of the bundle value Chrome uses to report the test duration.
+_BUNDLE_DURATION_ID = 'duration_ms'
 
 class MissingSizeAnnotationError(test_exception.TestException):
   def __init__(self, class_name):
-    super(MissingSizeAnnotationError, self).__init__(class_name +
+    super().__init__(
+        class_name +
         ': Test method is missing required size annotation. Add one of: ' +
         ', '.join('@' + a for a in _VALID_ANNOTATIONS))
+
+
+class CommandLineParameterizationException(test_exception.TestException):
+  pass
 
 
 class TestListPickleException(test_exception.TestException):
@@ -101,9 +112,8 @@ def ParseAmInstrumentRawOutput(raw_output):
   return (code, bundle, statuses)
 
 
-def GenerateTestResults(
-    result_code, result_bundle, statuses, start_ms, duration_ms, device_abi,
-    symbolizer):
+def GenerateTestResults(result_code, result_bundle, statuses, duration_ms,
+                        device_abi, symbolizer):
   """Generate test results from |statuses|.
 
   Args:
@@ -114,7 +124,6 @@ def GenerateTestResults(
       - the bundle dump as a dict mapping string keys to string values
       Note that this is the same as the third item in the 3-tuple returned by
       |_ParseAmInstrumentRawOutput|.
-    start_ms: The start time of the test in milliseconds.
     duration_ms: The duration of the test in milliseconds.
     device_abi: The device_abi, which is needed for symbolization.
     symbolizer: The symbolizer used to symbolize stack.
@@ -127,10 +136,29 @@ def GenerateTestResults(
   results = []
 
   current_result = None
+  cumulative_duration = 0
 
   for status_code, bundle in statuses:
-    test_class = bundle.get('class', '')
-    test_method = bundle.get('test', '')
+    # If the last test was a failure already, don't override that failure with
+    # post-test failures that could be caused by the original failure.
+    if (status_code == instrumentation_parser.STATUS_CODE_BATCH_FAILURE
+        and current_result.GetType() != base_test_result.ResultType.FAIL):
+      current_result.SetType(base_test_result.ResultType.FAIL)
+      _MaybeSetLog(bundle, current_result, symbolizer, device_abi)
+      continue
+
+    if status_code == instrumentation_parser.STATUS_CODE_TEST_DURATION:
+      # For the first result, duration will be set below to the difference
+      # between the reported and actual durations to account for overhead like
+      # starting instrumentation.
+      if results:
+        current_duration = int(bundle.get(_BUNDLE_DURATION_ID, duration_ms))
+        current_result.SetDuration(current_duration)
+        cumulative_duration += current_duration
+      continue
+
+    test_class = bundle.get(_BUNDLE_CLASS_ID, '')
+    test_method = bundle.get(_BUNDLE_TEST_ID, '')
     if test_class and test_method:
       test_name = '%s#%s' % (test_class, test_method)
     else:
@@ -140,10 +168,10 @@ def GenerateTestResults(
       if current_result:
         results.append(current_result)
       current_result = test_result.InstrumentationTestResult(
-          test_name, base_test_result.ResultType.UNKNOWN, start_ms, duration_ms)
+          test_name, base_test_result.ResultType.UNKNOWN, duration_ms)
     else:
       if status_code == instrumentation_parser.STATUS_CODE_OK:
-        if bundle.get('test_skipped', '').lower() in ('true', '1', 'yes'):
+        if bundle.get(_BUNDLE_SKIPPED_ID, '').lower() in ('true', '1', 'yes'):
           current_result.SetType(base_test_result.ResultType.SKIP)
         elif current_result.GetType() == base_test_result.ResultType.UNKNOWN:
           current_result.SetType(base_test_result.ResultType.PASS)
@@ -157,27 +185,52 @@ def GenerateTestResults(
           logging.error('Unrecognized status code %d. Handling as an error.',
                         status_code)
         current_result.SetType(base_test_result.ResultType.FAIL)
-    if 'stack' in bundle:
-      if symbolizer and device_abi:
-        current_result.SetLog(
-            '%s\n%s' % (
-              bundle['stack'],
-              '\n'.join(symbolizer.ExtractAndResolveNativeStackTraces(
-                  bundle['stack'], device_abi))))
-      else:
-        current_result.SetLog(bundle['stack'])
+    _MaybeSetLog(bundle, current_result, symbolizer, device_abi)
 
   if current_result:
     if current_result.GetType() == base_test_result.ResultType.UNKNOWN:
-      crashed = (result_code == _ACTIVITY_RESULT_CANCELED
-                 and any(_NATIVE_CRASH_RE.search(l)
-                         for l in result_bundle.itervalues()))
+      crashed = (result_code == _ACTIVITY_RESULT_CANCELED and any(
+          _NATIVE_CRASH_RE.search(l) for l in six.itervalues(result_bundle)))
       if crashed:
         current_result.SetType(base_test_result.ResultType.CRASH)
 
     results.append(current_result)
 
+  if results:
+    logging.info('Adding cumulative overhead to test %s: %dms',
+                 results[0].GetName(), duration_ms - cumulative_duration)
+    results[0].SetDuration(duration_ms - cumulative_duration)
+
   return results
+
+
+def _MaybeSetLog(bundle, current_result, symbolizer, device_abi):
+  if _BUNDLE_STACK_ID in bundle:
+    stack = bundle[_BUNDLE_STACK_ID]
+    if symbolizer and device_abi:
+      current_result.SetLog('%s\n%s' % (stack, '\n'.join(
+          symbolizer.ExtractAndResolveNativeStackTraces(stack, device_abi))))
+    else:
+      current_result.SetLog(stack)
+
+    current_result.SetFailureReason(_ParseExceptionMessage(stack))
+
+
+def _ParseExceptionMessage(stack):
+  """Extracts the exception message from the given stack trace.
+  """
+  # This interprets stack traces reported via InstrumentationResultPrinter:
+  # https://source.chromium.org/chromium/chromium/src/+/main:third_party/android_support_test_runner/runner/src/main/java/android/support/test/internal/runner/listener/InstrumentationResultPrinter.java;l=181?q=InstrumentationResultPrinter&type=cs
+  # This is a standard Java stack trace, of the form:
+  # <Result of Exception.toString()>
+  #     at SomeClass.SomeMethod(...)
+  #     at ...
+  lines = stack.split('\n')
+  for i, line in enumerate(lines):
+    if line.startswith('\tat'):
+      return '\n'.join(lines[0:i])
+  # No call stack found, so assume everything is the exception message.
+  return stack
 
 
 def FilterTests(tests, filter_str=None, annotations=None,
@@ -190,39 +243,147 @@ def FilterTests(tests, filter_str=None, annotations=None,
            {'annotations": {}, 'class': 'com.example.TestB', 'method':'test2'}]
     filter_str: googletest-style filter string.
     annotations: a dict of wanted annotations for test methods.
-    exclude_annotations: a dict of annotations to exclude.
+    excluded_annotations: a dict of annotations to exclude.
 
   Return:
     A list of filtered tests
   """
-  def gtest_filter(t):
-    if not filter_str:
-      return True
+
+  def test_names_from_pattern(combined_pattern, test_names):
+    patterns = combined_pattern.split(':')
+
+    hashable_patterns = set()
+    filename_patterns = []
+    for pattern in patterns:
+      if ('*' in pattern or '?' in pattern or '[' in pattern):
+        filename_patterns.append(pattern)
+      else:
+        hashable_patterns.add(pattern)
+
+    filter_test_names = set(
+        unittest_util.FilterTestNames(test_names, ':'.join(
+            filename_patterns))) if len(filename_patterns) > 0 else set()
+
+    for test_name in test_names:
+      if test_name in hashable_patterns:
+        filter_test_names.add(test_name)
+
+    return filter_test_names
+
+  def get_test_names(test):
+    test_names = set()
     # Allow fully-qualified name as well as an omitted package.
     unqualified_class_test = {
-      'class': t['class'].split('.')[-1],
-      'method': t['method']
+        'class': test['class'].split('.')[-1],
+        'method': test['method']
     }
-    names = [
-      GetTestName(t, sep='.'),
-      GetTestName(unqualified_class_test, sep='.'),
-      GetUniqueTestName(t, sep='.')
-    ]
 
-    if t['is_junit4']:
-      names += [
-          GetTestNameWithoutParameterPostfix(t, sep='.'),
-          GetTestNameWithoutParameterPostfix(unqualified_class_test, sep='.')
-      ]
+    test_name = GetTestName(test, sep='.')
+    test_names.add(test_name)
+
+    unqualified_class_test_name = GetTestName(unqualified_class_test, sep='.')
+    test_names.add(unqualified_class_test_name)
+
+    unique_test_name = GetUniqueTestName(test, sep='.')
+    test_names.add(unique_test_name)
+
+    if test['is_junit4']:
+      junit4_test_name = GetTestNameWithoutParameterPostfix(test, sep='.')
+      test_names.add(junit4_test_name)
+
+      unqualified_junit4_test_name = \
+        GetTestNameWithoutParameterPostfix(unqualified_class_test, sep='.')
+      test_names.add(unqualified_junit4_test_name)
+    return test_names
+
+  def get_tests_from_names(tests, test_names, tests_to_names):
+    ''' Returns the tests for which the given names apply
+
+    Args:
+      tests: a list of tests. e.g. [
+            {'annotations": {}, 'class': 'com.example.TestA', 'method':'test1'},
+            {'annotations": {}, 'class': 'com.example.TestB', 'method':'test2'}]
+      test_names: a collection of names determining tests to return.
+
+    Return:
+      A list of tests that match the given test names
+    '''
+    filtered_tests = []
+    for t in tests:
+      current_test_names = tests_to_names[id(t)]
+
+      for current_test_name in current_test_names:
+        if current_test_name in test_names:
+          filtered_tests.append(t)
+          break
+
+    return filtered_tests
+
+  def remove_tests_from_names(tests, remove_test_names, tests_to_names):
+    ''' Returns the tests from the given list with given names removed
+
+    Args:
+      tests: a list of tests. e.g. [
+            {'annotations": {}, 'class': 'com.example.TestA', 'method':'test1'},
+            {'annotations": {}, 'class': 'com.example.TestB', 'method':'test2'}]
+      remove_test_names: a collection of names determining tests to remove.
+      tests_to_names: a dcitionary of test ids to a collection of applicable
+            names for that test
+
+    Return:
+      A list of tests that don't match the given test names
+    '''
+    filtered_tests = []
+
+    for t in tests:
+      for name in tests_to_names[id(t)]:
+        if name in remove_test_names:
+          break
+      else:
+        filtered_tests.append(t)
+    return filtered_tests
+
+  def gtests_filter(tests, combined_filter):
+    ''' Returns the tests after the filter_str has been applied
+
+    Args:
+      tests: a list of tests. e.g. [
+            {'annotations": {}, 'class': 'com.example.TestA', 'method':'test1'},
+            {'annotations": {}, 'class': 'com.example.TestB', 'method':'test2'}]
+      combined_filter: the filter string representing tests to exclude
+
+    Return:
+      A list of tests that should still be included after the filter_str is
+      applied to their names
+    '''
+
+    if not combined_filter:
+      return tests
+
+    # Collect all test names
+    all_test_names = set()
+    tests_to_names = {}
+    for t in tests:
+      tests_to_names[id(t)] = get_test_names(t)
+      for name in tests_to_names[id(t)]:
+        all_test_names.add(name)
 
     pattern_groups = filter_str.split('-')
-    if len(pattern_groups) > 1:
-      negative_filter = pattern_groups[1]
-      if unittest_util.FilterTestNames(names, negative_filter):
-        return []
+    negative_pattern = pattern_groups[1] if len(pattern_groups) > 1 else None
+    positive_pattern = pattern_groups[0]
 
-    positive_filter = pattern_groups[0]
-    return unittest_util.FilterTestNames(names, positive_filter)
+    if positive_pattern:
+      # Only use the test names that match the positive pattern
+      positive_test_names = test_names_from_pattern(positive_pattern,
+                                                    all_test_names)
+      tests = get_tests_from_names(tests, positive_test_names, tests_to_names)
+
+    if negative_pattern:
+      # Remove any test the negative filter matches
+      remove_names = test_names_from_pattern(negative_pattern, all_test_names)
+      tests = remove_tests_from_names(tests, remove_names, tests_to_names)
+
+    return tests
 
   def annotation_filter(all_annotations):
     if not annotations:
@@ -244,31 +405,29 @@ def FilterTests(tests, filter_str=None, annotations=None,
   def annotation_value_matches(filter_av, av):
     if filter_av is None:
       return True
-    elif isinstance(av, dict):
-      return filter_av in av['value']
-    elif isinstance(av, list):
+    if isinstance(av, dict):
+      tav_from_dict = av['value']
+      # If tav_from_dict is an int, the 'in' operator breaks, so convert
+      # filter_av and manually compare. See https://crbug.com/1019707
+      if isinstance(tav_from_dict, int):
+        return int(filter_av) == tav_from_dict
+      return filter_av in tav_from_dict
+    if isinstance(av, list):
       return filter_av in av
     return filter_av == av
 
-  filtered_tests = []
-  for t in tests:
-    # Gtest filtering
-    if not gtest_filter(t):
-      continue
-
+  return_tests = []
+  for t in gtests_filter(tests, filter_str):
     # Enforce that all tests declare their size.
-    if (not any(a in _VALID_ANNOTATIONS for a in t['annotations'])
-        and t['method'] not in _TEST_WITHOUT_SIZE_ANNOTATIONS):
+    if not any(a in _VALID_ANNOTATIONS for a in t['annotations']):
       raise MissingSizeAnnotationError(GetTestName(t))
 
     if (not annotation_filter(t['annotations'])
         or not excluded_annotation_filter(t['annotations'])):
       continue
+    return_tests.append(t)
 
-    filtered_tests.append(t)
-
-  return filtered_tests
-
+  return return_tests
 
 # TODO(yolandyan): remove this once the tests are converted to junit4
 def GetAllTestsFromJar(test_jar):
@@ -300,7 +459,7 @@ def GetTestsFromPickle(pickle_path, test_mtime):
   if os.path.getmtime(pickle_path) <= test_mtime:
     raise TestListPickleException('File is stale: %s' % pickle_path)
 
-  with open(pickle_path, 'r') as f:
+  with open(pickle_path, 'rb') as f:
     pickle_data = pickle.load(f)
   if pickle_data['VERSION'] != _PICKLE_FORMAT_VERSION:
     raise TestListPickleException('PICKLE_FORMAT_VERSION has changed.')
@@ -341,27 +500,45 @@ def _GetTestsFromProguard(jar_path):
 
 
 def _GetTestsFromDexdump(test_apk):
-  dump = dexdump.Dump(test_apk)
+  dex_dumps = dexdump.Dump(test_apk)
   tests = []
 
-  def get_test_methods(methods):
-    return [
-        {
-          'method': m,
-          # No annotation info is available from dexdump.
-          # Set MediumTest annotation for default.
-          'annotations': {'MediumTest': None},
-        } for m in methods if m.startswith('test')]
+  def get_test_methods(methods, annotations):
+    test_methods = []
 
-  for package_name, package_info in dump.iteritems():
-    for class_name, class_info in package_info['classes'].iteritems():
-      if class_name.endswith('Test'):
-        tests.append({
-            'class': '%s.%s' % (package_name, class_name),
-            'annotations': {},
-            'methods': get_test_methods(class_info['methods']),
-            'superclass': class_info['superclass'],
+    for method in methods:
+      if method.startswith('test'):
+        method_annotations = annotations.get(method, {})
+
+        # Dexdump used to not return any annotation info
+        # So MediumTest annotation was added to all methods
+        # Preserving this behaviour by adding MediumTest if none of the
+        # size annotations are included in these annotations
+        if not any(valid in method_annotations for valid in _VALID_ANNOTATIONS):
+          method_annotations.update({'MediumTest': None})
+
+        test_methods.append({
+            'method': method,
+            'annotations': method_annotations
         })
+
+    return test_methods
+
+  for dump in dex_dumps:
+    for package_name, package_info in six.iteritems(dump):
+      for class_name, class_info in six.iteritems(package_info['classes']):
+        if class_name.endswith('Test') and not class_info['is_abstract']:
+          classAnnotations, methodsAnnotations = class_info['annotations']
+          tests.append({
+              'class':
+              '%s.%s' % (package_name, class_name),
+              'annotations':
+              classAnnotations,
+              'methods':
+              get_test_methods(class_info['methods'], methodsAnnotations),
+              'superclass':
+              class_info['superclass'],
+          })
   return tests
 
 def SaveTestsToPickle(pickle_path, tests):
@@ -369,7 +546,7 @@ def SaveTestsToPickle(pickle_path, tests):
     'VERSION': _PICKLE_FORMAT_VERSION,
     'TEST_METHODS': tests,
   }
-  with open(pickle_path, 'w') as pickle_file:
+  with open(pickle_path, 'wb') as pickle_file:
     pickle.dump(pickle_data, pickle_file)
 
 
@@ -377,7 +554,7 @@ class MissingJUnit4RunnerException(test_exception.TestException):
   """Raised when JUnit4 runner is not provided or specified in apk manifest"""
 
   def __init__(self):
-    super(MissingJUnit4RunnerException, self).__init__(
+    super().__init__(
         'JUnit4 runner is not provided or specified in test apk manifest.')
 
 
@@ -449,14 +626,20 @@ def GetUniqueTestName(test, sep='#'):
 class InstrumentationTestInstance(test_instance.TestInstance):
 
   def __init__(self, args, data_deps_delegate, error_func):
-    super(InstrumentationTestInstance, self).__init__()
+    super().__init__()
 
     self._additional_apks = []
+    self._forced_queryable_additional_apks = []
+    self._instant_additional_apks = []
     self._apk_under_test = None
     self._apk_under_test_incremental_install_json = None
+    self._modules = None
+    self._fake_modules = None
+    self._additional_locales = None
     self._package_info = None
     self._suite = None
     self._test_apk = None
+    self._test_apk_as_instant = False
     self._test_apk_incremental_install_json = None
     self._test_jar = None
     self._test_package = None
@@ -480,11 +663,6 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._use_apk_under_test_flags_file = False
     self._initializeFlagAttributes(args)
 
-    self._driver_apk = None
-    self._driver_package = None
-    self._driver_name = None
-    self._initializeDriverAttributes()
-
     self._screenshot_dir = None
     self._timeout_scale = None
     self._wait_for_java_debugger = None
@@ -495,7 +673,8 @@ class InstrumentationTestInstance(test_instance.TestInstance):
 
     self._store_tombstones = False
     self._symbolizer = None
-    self._enable_java_deobfuscation = False
+    self._enable_breakpad_dump = False
+    self._proguard_mapping_path = None
     self._deobfuscator = None
     self._initializeLogAttributes(args)
 
@@ -505,8 +684,22 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._replace_system_package = None
     self._initializeReplaceSystemPackageAttributes(args)
 
+    self._system_packages_to_remove = None
+    self._initializeSystemPackagesToRemoveAttributes(args)
+
+    self._use_voice_interaction_service = None
+    self._initializeUseVoiceInteractionService(args)
+
     self._use_webview_provider = None
     self._initializeUseWebviewProviderAttributes(args)
+
+    self._skia_gold_properties = None
+    self._initializeSkiaGoldAttributes(args)
+
+    self._test_launcher_batch_limit = None
+    self._initializeTestLauncherAttributes(args)
+
+    self._wpr_enable_record = args.wpr_enable_record
 
     self._external_shard_index = args.test_launcher_shard_index
     self._total_external_shards = args.test_launcher_total_shards
@@ -514,7 +707,8 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   def _initializeApkAttributes(self, args, error_func):
     if args.apk_under_test:
       apk_under_test_path = args.apk_under_test
-      if not args.apk_under_test.endswith('.apk'):
+      if (not args.apk_under_test.endswith('.apk')
+          and not args.apk_under_test.endswith('.apks')):
         apk_under_test_path = os.path.join(
             constants.GetOutDirectory(), constants.SDK_BUILD_APKS_DIR,
             '%s.apk' % args.apk_under_test)
@@ -528,24 +722,22 @@ class InstrumentationTestInstance(test_instance.TestInstance):
 
       self._apk_under_test = apk_helper.ToHelper(apk_under_test_path)
 
-    if args.test_apk.endswith('.apk'):
-      self._suite = os.path.splitext(os.path.basename(args.test_apk))[0]
-      test_apk_path = args.test_apk
-      self._test_apk = apk_helper.ToHelper(args.test_apk)
-    else:
-      self._suite = args.test_apk
+    test_apk_path = args.test_apk
+    if not os.path.exists(test_apk_path):
       test_apk_path = os.path.join(
           constants.GetOutDirectory(), constants.SDK_BUILD_APKS_DIR,
           '%s.apk' % args.test_apk)
-
-    # TODO(jbudorick): Move the realpath up to the argument parser once
-    # APK-by-name is no longer supported.
-    test_apk_path = os.path.realpath(test_apk_path)
+      # TODO(jbudorick): Move the realpath up to the argument parser once
+      # APK-by-name is no longer supported.
+      test_apk_path = os.path.realpath(test_apk_path)
 
     if not os.path.exists(test_apk_path):
       error_func('Unable to find test APK: %s' % test_apk_path)
 
     self._test_apk = apk_helper.ToHelper(test_apk_path)
+    self._suite = os.path.splitext(os.path.basename(args.test_apk))[0]
+
+    self._test_apk_as_instant = args.test_apk_as_instant
 
     self._apk_under_test_incremental_install_json = (
         args.apk_under_test_incremental_install_json)
@@ -556,13 +748,15 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       assert self._suite.endswith('_incremental')
       self._suite = self._suite[:-len('_incremental')]
 
+    self._modules = args.modules
+    self._fake_modules = args.fake_modules
+    self._additional_locales = args.additional_locales
+
     self._test_jar = args.test_jar
     self._test_support_apk = apk_helper.ToHelper(os.path.join(
         constants.GetOutDirectory(), constants.SDK_BUILD_TEST_JAVALIB_DIR,
         '%sSupport.apk' % self._suite))
 
-    if not os.path.exists(self._test_apk.path):
-      error_func('Unable to find test APK: %s' % self._test_apk.path)
     if not self._test_jar:
       logging.warning('Test jar not specified. Test runner will not have '
                       'Java annotation info available. May not handle test '
@@ -605,18 +799,29 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._package_info = None
     if self._apk_under_test:
       package_under_test = self._apk_under_test.GetPackageName()
-      for package_info in constants.PACKAGE_INFO.itervalues():
+      for package_info in six.itervalues(constants.PACKAGE_INFO):
         if package_under_test == package_info.package:
           self._package_info = package_info
           break
     if not self._package_info:
-      logging.warning('Unable to find package info for %s', self._test_package)
+      logging.warning(
+          'Unable to find package info for %s. '
+          '(This may just mean that the test package is '
+          'currently being installed.)', self._test_package)
 
-    for apk in args.additional_apks:
-      if not os.path.exists(apk):
-        error_func('Unable to find additional APK: %s' % apk)
-    self._additional_apks = (
-        [apk_helper.ToHelper(x) for x in args.additional_apks])
+    for x in set(args.additional_apks + args.forced_queryable_additional_apks +
+                 args.instant_additional_apks):
+      if not os.path.exists(x):
+        error_func('Unable to find additional APK: %s' % x)
+
+      apk = apk_helper.ToHelper(x)
+      self._additional_apks.append(apk)
+
+      if x in args.forced_queryable_additional_apks:
+        self._forced_queryable_additional_apks.append(apk)
+
+      if x in args.instant_additional_apks:
+        self._instant_additional_apks.append(apk)
 
   def _initializeDataDependencyAttributes(self, args, data_deps_delegate):
     self._data_deps = []
@@ -649,7 +854,11 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       self._excluded_annotations = []
 
     requested_annotations = set(a[0] for a in self._annotations)
-    if not args.run_disabled:
+    if args.run_disabled:
+      self._excluded_annotations.extend(
+          annotation_element(a) for a in _DO_NOT_REVIVE_ANNOTATIONS
+          if a not in requested_annotations)
+    else:
       self._excluded_annotations.extend(
           annotation_element(a) for a in _EXCLUDE_UNLESS_REQUESTED_ANNOTATIONS
           if a not in requested_annotations)
@@ -663,19 +872,11 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       with open(args.device_flags_file) as device_flags_file:
         stripped_lines = (l.strip() for l in device_flags_file)
         self._flags.extend(flag for flag in stripped_lines if flag)
-    if args.strict_mode and args.strict_mode != 'off':
+    if args.strict_mode and args.strict_mode != 'off' and (
+        # TODO(yliuyliu): Turn on strict mode for coverage once
+        # crbug/1006397 is fixed.
+        not args.coverage_dir):
       self._flags.append('--strict-mode=' + args.strict_mode)
-
-  def _initializeDriverAttributes(self):
-    self._driver_apk = os.path.join(
-        constants.GetOutDirectory(), constants.SDK_BUILD_APKS_DIR,
-        'OnDeviceInstrumentationDriver.apk')
-    if os.path.exists(self._driver_apk):
-      driver_apk = apk_helper.ApkHelper(self._driver_apk)
-      self._driver_package = driver_apk.GetPackageName()
-      self._driver_name = driver_apk.GetInstrumentationName()
-    else:
-      self._driver_apk = None
 
   def _initializeTestControlAttributes(self, args):
     self._screenshot_dir = args.screenshot_dir
@@ -686,7 +887,8 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._coverage_directory = args.coverage_dir
 
   def _initializeLogAttributes(self, args):
-    self._enable_java_deobfuscation = args.enable_java_deobfuscation
+    self._enable_breakpad_dump = args.enable_breakpad_dump
+    self._proguard_mapping_path = args.proguard_mapping_path
     self._store_tombstones = args.store_tombstones
     self._symbolizer = stack_symbolizer.Symbolizer(
         self.apk_under_test.path if self.apk_under_test else None)
@@ -706,11 +908,30 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       return
     self._replace_system_package = args.replace_system_package
 
+  def _initializeSystemPackagesToRemoveAttributes(self, args):
+    if (not hasattr(args, 'system_packages_to_remove')
+        or not args.system_packages_to_remove):
+      return
+    self._system_packages_to_remove = args.system_packages_to_remove
+
+  def _initializeUseVoiceInteractionService(self, args):
+    if (not hasattr(args, 'use_voice_interaction_service')
+        or not args.use_voice_interaction_service):
+      return
+    self._use_voice_interaction_service = args.use_voice_interaction_service
+
   def _initializeUseWebviewProviderAttributes(self, args):
     if (not hasattr(args, 'use_webview_provider')
         or not args.use_webview_provider):
       return
     self._use_webview_provider = args.use_webview_provider
+
+  def _initializeSkiaGoldAttributes(self, args):
+    self._skia_gold_properties = gold_utils.AndroidSkiaGoldProperties(args)
+
+  def _initializeTestLauncherAttributes(self, args):
+    if hasattr(args, 'test_launcher_batch_limit'):
+      self._test_launcher_batch_limit = args.test_launcher_batch_limit
 
   @property
   def additional_apks(self):
@@ -725,24 +946,28 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     return self._apk_under_test_incremental_install_json
 
   @property
+  def modules(self):
+    return self._modules
+
+  @property
+  def fake_modules(self):
+    return self._fake_modules
+
+  @property
+  def additional_locales(self):
+    return self._additional_locales
+
+  @property
   def coverage_directory(self):
     return self._coverage_directory
 
   @property
-  def driver_apk(self):
-    return self._driver_apk
-
-  @property
-  def driver_package(self):
-    return self._driver_package
-
-  @property
-  def driver_name(self):
-    return self._driver_name
-
-  @property
   def edit_shared_prefs(self):
     return self._edit_shared_prefs
+
+  @property
+  def enable_breakpad_dump(self):
+    return self._enable_breakpad_dump
 
   @property
   def external_shard_index(self):
@@ -773,12 +998,20 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     return self._replace_system_package
 
   @property
+  def use_voice_interaction_service(self):
+    return self._use_voice_interaction_service
+
+  @property
   def use_webview_provider(self):
     return self._use_webview_provider
 
   @property
   def screenshot_dir(self):
     return self._screenshot_dir
+
+  @property
+  def skia_gold_properties(self):
+    return self._skia_gold_properties
 
   @property
   def store_tombstones(self):
@@ -793,16 +1026,32 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     return self._symbolizer
 
   @property
+  def system_packages_to_remove(self):
+    return self._system_packages_to_remove
+
+  @property
   def test_apk(self):
     return self._test_apk
+
+  @property
+  def test_apk_as_instant(self):
+    return self._test_apk_as_instant
 
   @property
   def test_apk_incremental_install_json(self):
     return self._test_apk_incremental_install_json
 
   @property
+  def test_filter(self):
+    return self._test_filter
+
+  @property
   def test_jar(self):
     return self._test_jar
+
+  @property
+  def test_launcher_batch_limit(self):
+    return self._test_launcher_batch_limit
 
   @property
   def test_support_apk(self):
@@ -828,6 +1077,14 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   def wait_for_java_debugger(self):
     return self._wait_for_java_debugger
 
+  @property
+  def wpr_record_mode(self):
+    return self._wpr_enable_record
+
+  @property
+  def wpr_replay_mode(self):
+    return not self._wpr_enable_record
+
   #override
   def TestType(self):
     return 'instrumentation'
@@ -848,9 +1105,9 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   def SetUp(self):
     self._data_deps.extend(
         self._data_deps_delegate(self._runtime_deps_path))
-    if self._enable_java_deobfuscation:
+    if self._proguard_mapping_path:
       self._deobfuscator = deobfuscator.DeobfuscatorPool(
-          self.test_apk.path + '.mapping')
+          self._proguard_mapping_path)
 
   def GetDataDependencies(self):
     return self._data_deps
@@ -882,6 +1139,12 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       logging.warning('Unmatched Filter: %s', self._test_filter)
     return filtered_tests
 
+  def IsApkForceQueryable(self, apk):
+    return apk in self._forced_queryable_additional_apks
+
+  def IsApkInstant(self, apk):
+    return apk in self._instant_additional_apks
+
   # pylint: disable=no-self-use
   def _InflateTests(self, tests):
     inflated_tests = []
@@ -893,53 +1156,68 @@ class InstrumentationTestInstance(test_instance.TestInstance):
             'class': c['class'],
             'method': m['method'],
             'annotations': a,
-            'is_junit4': c['superclass'] == 'java.lang.Object'
+            # TODO(https://crbug.com/1084729): Remove is_junit4.
+            'is_junit4': True
         })
     return inflated_tests
 
   def _ParameterizeTestsWithFlags(self, tests):
+
+    def _checkParameterization(annotations):
+      types = [
+          _PARAMETERIZED_COMMAND_LINE_FLAGS_SWITCHES,
+          _PARAMETERIZED_COMMAND_LINE_FLAGS,
+      ]
+      if types[0] in annotations and types[1] in annotations:
+        raise CommandLineParameterizationException(
+            'Multiple command-line parameterization types: {}.'.format(
+                ', '.join(types)))
+
+    def _switchesToFlags(switches):
+      return ['--{}'.format(s) for s in switches if s]
+
+    def _annotationToSwitches(clazz, methods):
+      if clazz == _PARAMETERIZED_COMMAND_LINE_FLAGS_SWITCHES:
+        return [methods['value']]
+      if clazz == _PARAMETERIZED_COMMAND_LINE_FLAGS:
+        list_of_switches = []
+        for annotation in methods['value']:
+          for c, m in six.iteritems(annotation):
+            list_of_switches += _annotationToSwitches(c, m)
+        return list_of_switches
+      return []
+
+    def _setTestFlags(test, flags):
+      if flags:
+        test['flags'] = flags
+      elif 'flags' in test:
+        del test['flags']
+
     new_tests = []
     for t in tests:
       annotations = t['annotations']
-      parameters = None
-      if (annotations.get(_COMMANDLINE_PARAMETERIZATION)
-          and _SKIP_PARAMETERIZATION not in annotations):
-        parameters = annotations[_COMMANDLINE_PARAMETERIZATION]['value']
-      if parameters:
-        t['flags'] = [parameters[0]]
-        for p in parameters[1:]:
+      list_of_switches = []
+      _checkParameterization(annotations)
+      if _SKIP_PARAMETERIZATION not in annotations:
+        for clazz, methods in six.iteritems(annotations):
+          list_of_switches += _annotationToSwitches(clazz, methods)
+      if list_of_switches:
+        _setTestFlags(t, _switchesToFlags(list_of_switches[0]))
+        for p in list_of_switches[1:]:
           parameterized_t = copy.copy(t)
-          parameterized_t['flags'] = ['--%s' % p]
+          _setTestFlags(parameterized_t, _switchesToFlags(p))
           new_tests.append(parameterized_t)
     return tests + new_tests
-
-  def GetDriverEnvironmentVars(
-      self, test_list=None, test_list_file_path=None):
-    env = {
-      _EXTRA_DRIVER_TARGET_PACKAGE: self.test_package,
-      _EXTRA_DRIVER_TARGET_CLASS: self.junit3_runner_class,
-      _EXTRA_TIMEOUT_SCALE: self._timeout_scale,
-    }
-
-    if test_list:
-      env[_EXTRA_DRIVER_TEST_LIST] = ','.join(test_list)
-
-    if test_list_file_path:
-      env[_EXTRA_DRIVER_TEST_LIST_FILE] = (
-          os.path.basename(test_list_file_path))
-
-    return env
 
   @staticmethod
   def ParseAmInstrumentRawOutput(raw_output):
     return ParseAmInstrumentRawOutput(raw_output)
 
   @staticmethod
-  def GenerateTestResults(
-      result_code, result_bundle, statuses, start_ms, duration_ms,
-      device_abi, symbolizer):
+  def GenerateTestResults(result_code, result_bundle, statuses, duration_ms,
+                          device_abi, symbolizer):
     return GenerateTestResults(result_code, result_bundle, statuses,
-                               start_ms, duration_ms, device_abi, symbolizer)
+                               duration_ms, device_abi, symbolizer)
 
   #override
   def TearDown(self):

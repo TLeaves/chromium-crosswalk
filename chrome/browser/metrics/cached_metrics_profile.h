@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_METRICS_CACHED_METRICS_PROFILE_H_
 #define CHROME_BROWSER_METRICS_CACHED_METRICS_PROFILE_H_
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 
 class Profile;
 
@@ -16,6 +16,8 @@ namespace metrics {
 class CachedMetricsProfile {
  public:
   CachedMetricsProfile();
+  CachedMetricsProfile(const CachedMetricsProfile&) = delete;
+  CachedMetricsProfile& operator=(const CachedMetricsProfile&) = delete;
   ~CachedMetricsProfile();
 
   // Returns the profile for which metrics will be gathered. Once a suitable
@@ -27,9 +29,7 @@ class CachedMetricsProfile {
   // The profile for which metrics can be gathered. Once a profile is found,
   // its value is cached here so that GetMetricsProfile() can return a
   // consistent value.
-  Profile* cached_profile_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(CachedMetricsProfile);
+  raw_ptr<Profile> cached_profile_ = nullptr;
 };
 
 }  // namespace metrics

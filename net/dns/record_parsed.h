@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "base/check.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
 
@@ -39,8 +40,15 @@ class NET_EXPORT_PRIVATE RecordParsed {
   template <class T> const T* rdata() const {
     if (T::kType != type_)
       return nullptr;
+
+    // Expect RData should always be parsed for recognized types.
+    DCHECK(rdata_);
+
     return static_cast<const T*>(rdata_.get());
   }
+
+  // Gets the rdata without casting to a known RData type.
+  const RecordRdata* rdata_for_testing() const { return rdata_.get(); }
 
   // Check if two records have the same data. Ignores time_created and ttl.
   // If |is_mdns| is true, ignore the top bit of the class

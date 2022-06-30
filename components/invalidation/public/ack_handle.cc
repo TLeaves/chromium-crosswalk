@@ -11,7 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 
-namespace syncer {
+namespace invalidation {
 
 namespace {
 // Hopefully enough bytes for uniqueness.
@@ -36,9 +36,9 @@ bool AckHandle::Equals(const AckHandle& other) const {
 
 std::unique_ptr<base::DictionaryValue> AckHandle::ToValue() const {
   std::unique_ptr<base::DictionaryValue> value(new base::DictionaryValue());
-  value->SetString("state", state_);
-  value->SetString("timestamp",
-                   base::NumberToString(timestamp_.ToInternalValue()));
+  value->SetStringKey("state", state_);
+  value->SetStringKey("timestamp",
+                      base::NumberToString(timestamp_.ToInternalValue()));
   return value;
 }
 
@@ -63,7 +63,10 @@ AckHandle::AckHandle(const std::string& state, base::Time timestamp)
     : state_(state), timestamp_(timestamp) {
 }
 
-AckHandle::~AckHandle() {
-}
+AckHandle::AckHandle(const AckHandle& other) = default;
 
-}  // namespace syncer
+AckHandle& AckHandle::operator=(const AckHandle& other) = default;
+
+AckHandle::~AckHandle() = default;
+
+}  // namespace invalidation

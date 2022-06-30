@@ -5,12 +5,15 @@
 #ifndef IOS_CHROME_BROWSER_UI_AUTOFILL_MANUAL_FILL_CARD_LIST_DELEGATE_H_
 #define IOS_CHROME_BROWSER_UI_AUTOFILL_MANUAL_FILL_CARD_LIST_DELEGATE_H_
 
-#import "ios/chrome/browser/ui/autofill/manual_fill/credit_card.h"
+#import "ios/chrome/browser/ui/autofill/manual_fill/manual_fill_credit_card.h"
 
 // Delegate for actions in manual fallback's cards list.
 @protocol CardListDelegate
 
-// Opens cards settings.
+// Open feature to add a credit card.
+- (void)openAddCreditCard;
+
+// Open cards settings.
 - (void)openCardSettings;
 
 // Open credit card unlock, through CVC, prompt.

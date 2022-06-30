@@ -5,7 +5,7 @@
 #import "ios/chrome/browser/ui/elements/activity_overlay_coordinator.h"
 
 #import "ios/chrome/browser/ui/elements/activity_overlay_view_controller.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -31,6 +31,8 @@
       addSubview:self.activityOverlayViewController.view];
   [self.activityOverlayViewController
       didMoveToParentViewController:self.baseViewController];
+  self.activityOverlayViewController.view
+      .translatesAutoresizingMaskIntoConstraints = NO;
   AddSameConstraints(self.baseViewController.view,
                      self.activityOverlayViewController.view);
 }

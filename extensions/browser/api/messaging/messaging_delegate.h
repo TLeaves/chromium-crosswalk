@@ -63,7 +63,8 @@ class MessagingDelegate {
       const std::string& extension_id,
       const PortId& receiver_port_id,
       content::WebContents* receiver_contents,
-      int receiver_frame_id);
+      int receiver_frame_id,
+      const std::string& receiver_document_id);
 
   // Creates a MessagePort for a native app. If the port cannot be created,
   // returns nullptr and may populate |error_out|.
@@ -86,7 +87,7 @@ class MessagingDelegate {
       const Extension* extension,
       content::WebContents* web_contents,
       const GURL& url,
-      const base::Callback<void(bool)>& callback);
+      base::OnceCallback<void(bool)> callback);
 };
 
 }  // namespace extensions

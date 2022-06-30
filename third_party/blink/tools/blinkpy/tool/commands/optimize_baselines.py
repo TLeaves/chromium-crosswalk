@@ -7,13 +7,13 @@ import logging
 from blinkpy.common.checkout.baseline_optimizer import BaselineOptimizer
 from blinkpy.tool.commands.rebaseline import AbstractRebaseliningCommand
 
-
 _log = logging.getLogger(__name__)
 
 
 class OptimizeBaselines(AbstractRebaseliningCommand):
     name = 'optimize-baselines'
-    help_text = 'Reshuffles the baselines for the given tests to use as little space on disk as possible.'
+    help_text = ('Reshuffles the baselines for the given tests to use '
+                 'as little space on disk as possible.')
     show_in_main_help = True
     argument_names = 'TEST_NAMES'
 
@@ -21,7 +21,8 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
         super(OptimizeBaselines, self).__init__(options=[
             self.suffixes_option,
             self.port_name_option,
-        ] + self.platform_options)
+            self.flag_specific_option,
+        ] + self.platform_options + self.wpt_options)
 
     def _optimize_baseline(self, optimizer, test_name):
         for suffix in self._baseline_suffix_list:
@@ -34,7 +35,7 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
         if not port_names:
             _log.error("No port names match '%s'", options.platform)
             return
-        port = tool.port_factory.get(port_names[0])
+        port = tool.port_factory.get(port_names[0], options)
         optimizer = BaselineOptimizer(tool, port, port_names)
         tests = port.tests(args)
         for test_name in tests:

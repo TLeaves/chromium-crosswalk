@@ -6,33 +6,30 @@
 #define COMPONENTS_SERVICES_FONT_FONT_SERVICE_APP_H_
 
 #include <stdint.h>
+#include <tuple>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/containers/lru_cache.h"
+#include "base/files/file_path.h"
 #include "components/services/font/public/mojom/font_service.mojom.h"
-#include "mojo/public/cpp/bindings/binding_set.h"
-#include "services/service_manager/public/cpp/binder_registry.h"
-#include "services/service_manager/public/cpp/service.h"
-#include "services/service_manager/public/cpp/service_binding.h"
-#include "skia/ext/skia_utils_base.h"
+#include "mojo/public/cpp/bindings/receiver_set.h"
+#include "third_party/skia/include/core/SkFontStyle.h"
 
 namespace font_service {
 
-class FontServiceApp : public service_manager::Service,
-                       public mojom::FontService {
+// This class is instantiated in the browser process.
+class FontServiceApp : public mojom::FontService {
  public:
-  explicit FontServiceApp(service_manager::mojom::ServiceRequest request);
+  FontServiceApp();
+
+  FontServiceApp(const FontServiceApp&) = delete;
+  FontServiceApp& operator=(const FontServiceApp&) = delete;
+
   ~FontServiceApp() override;
 
-  void CreateSelf(mojom::FontServiceRequest request);
+  void BindReceiver(mojo::PendingReceiver<mojom::FontService> receiver);
 
  private:
-  // service_manager::Service:
-  void OnStart() override;
-  void OnBindInterface(const service_manager::BindSourceInfo& source_info,
-                       const std::string& interface_name,
-                       mojo::ScopedMessagePipeHandle interface_pipe) override;
-
   // FontService:
   void MatchFamilyName(const std::string& family_name,
                        mojom::TypefaceStylePtr requested_style,
@@ -58,17 +55,42 @@ class FontServiceApp : public service_manager::Service,
                              uint32_t charset,
                              uint32_t fallbackFamilyType,
                              MatchFontWithFallbackCallback callback) override;
-  int FindOrAddPath(const SkString& path);
+  size_t FindOrAddPath(const base::FilePath& path);
 
-  service_manager::ServiceBinding service_binding_;
-  service_manager::BinderRegistry registry_;
-  mojo::BindingSet<mojom::FontService> bindings_;
+  mojo::ReceiverSet<mojom::FontService> receivers_;
 
   // We don't want to leak paths to our callers; we thus enumerate the paths of
   // fonts.
-  std::vector<SkString> paths_;
+  std::vector<base::FilePath> paths_;
 
-  DISALLOW_COPY_AND_ASSIGN(FontServiceApp);
+  // On some platforms, font matching is very expensive, ranging from 2-30+ms.
+  // We keep a cache of results to speed this up.
+  struct MatchCacheKey {
+    std::string family_name;
+    SkFontStyle font_style;
+    bool operator==(const MatchCacheKey& other) const {
+      return family_name == other.family_name && font_style == other.font_style;
+    }
+  };
+  struct MatchCacheKeyCompare {
+    bool operator()(const MatchCacheKey& lhs, const MatchCacheKey& rhs) const {
+      return std::make_tuple(lhs.family_name, lhs.font_style.weight(),
+                             lhs.font_style.width(), lhs.font_style.slant()) <
+             std::make_tuple(rhs.family_name, rhs.font_style.weight(),
+                             rhs.font_style.width(), rhs.font_style.slant());
+    }
+  };
+  struct MatchCacheValue {
+    MatchCacheValue();
+    ~MatchCacheValue();
+    MatchCacheValue(MatchCacheValue&&);
+    std::string family_name;
+    mojom::FontIdentityPtr identity;
+    mojom::TypefaceStylePtr style;
+  };
+
+  base::LRUCache<MatchCacheKey, MatchCacheValue, MatchCacheKeyCompare>
+      match_cache_;
 };
 
 }  // namespace font_service

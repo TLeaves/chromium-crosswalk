@@ -8,7 +8,6 @@
 #include <limits>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_piece.h"
 #include "mojo/public/c/system/message_pipe.h"
@@ -40,8 +39,7 @@ class MessageHandle {
 
   void Close() {
     DCHECK(is_valid());
-    MojoResult result = MojoDestroyMessage(value_);
-    ALLOW_UNUSED_LOCAL(result);
+    [[maybe_unused]] MojoResult result = MojoDestroyMessage(value_);
     DCHECK_EQ(MOJO_RESULT_OK, result);
   }
 
@@ -51,9 +49,13 @@ class MessageHandle {
 
 using ScopedMessageHandle = ScopedHandleBase<MessageHandle>;
 
-inline MojoResult CreateMessage(ScopedMessageHandle* handle) {
+inline MojoResult CreateMessage(ScopedMessageHandle* handle,
+                                MojoCreateMessageFlags flags) {
+  MojoCreateMessageOptions options = {};
+  options.struct_size = sizeof(options);
+  options.flags = flags;
   MojoMessageHandle raw_handle;
-  MojoResult rv = MojoCreateMessage(nullptr, &raw_handle);
+  MojoResult rv = MojoCreateMessage(&options, &raw_handle);
   if (rv != MOJO_RESULT_OK)
     return rv;
 

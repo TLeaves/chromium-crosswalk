@@ -8,12 +8,12 @@ import android.app.SearchManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.text.TextUtils;
 import android.view.ActionMode;
 import android.view.Menu;
 import android.view.MenuItem;
 
+import org.chromium.base.PackageManagerUtils;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.content.R;
 import org.chromium.content_public.browser.ActionModeCallbackHelper;
@@ -61,8 +61,8 @@ public class AwActionModeCallback implements ActionMode.Callback {
     private boolean isWebSearchAvailable() {
         Intent intent = new Intent(Intent.ACTION_WEB_SEARCH);
         intent.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
-        return mContext.getPackageManager().queryIntentActivities(intent,
-                PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
+        return !PackageManagerUtils.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                        .isEmpty();
     }
 
     @Override
@@ -93,8 +93,6 @@ public class AwActionModeCallback implements ActionMode.Callback {
 
     private void processText(Intent intent) {
         RecordUserAction.record("MobileActionMode.ProcessTextIntent");
-        assert Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
-
         String query = ActionModeCallbackHelper.sanitizeQuery(mHelper.getSelectedText(),
                 ActionModeCallbackHelper.MAX_SEARCH_QUERY_LENGTH);
         if (TextUtils.isEmpty(query)) return;

@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.customtabs.content;
 
-import android.support.annotation.IntDef;
+import androidx.annotation.IntDef;
 
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 
@@ -14,12 +14,10 @@ import java.lang.annotation.RetentionPolicy;
 /**
  * Specifies the way the initial Tab in a Custom Tab activity was created.
  */
-@IntDef({TabCreationMode.NONE,
-        TabCreationMode.DEFAULT, TabCreationMode.EARLY,
+@IntDef({TabCreationMode.NONE, TabCreationMode.DEFAULT, TabCreationMode.EARLY,
         TabCreationMode.RESTORED, TabCreationMode.HIDDEN})
 @Retention(RetentionPolicy.SOURCE)
 public @interface TabCreationMode {
-
     /** The tab has not been created yet */
     int NONE = 0;
 

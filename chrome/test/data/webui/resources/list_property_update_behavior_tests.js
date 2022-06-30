@@ -4,6 +4,9 @@
 
 /** @fileoverview Suite of tests for the ListPropertyUpdateBehavior.  */
 
+import {ListPropertyUpdateBehavior} from 'chrome://resources/js/list_property_update_behavior.m.js';
+import {Polymer} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
 suite('ListPropertyUpdateBehavior', function() {
   /**
    * A list property update behavior test element created before each test.
@@ -73,7 +76,7 @@ suite('ListPropertyUpdateBehavior', function() {
       updateComplexArray(newArray) {
         if (this.updateList(
                 'complexArray', x => x.letter, newArray,
-                true /* uidBasedUpdate */)) {
+                true /* identityBasedUpdate */)) {
           return {topArrayChanged: true, wordsArrayChanged: false};
         }
 
@@ -141,15 +144,15 @@ suite('ListPropertyUpdateBehavior', function() {
   test(
       'notifySplices() is not called when a simple array has not been changed',
       function() {
-        let unchangedSimpleArray = testElement.simpleArray.slice();
+        const unchangedSimpleArray = testElement.simpleArray.slice();
         assertFalse(testElement.updateSimpleArray(unchangedSimpleArray));
       });
 
   test(
       'notifySplices() is not called when a complex array has not been changed',
       function() {
-        let unchangedComplexArray = testElement.complexArray.slice();
-        let result = testElement.updateComplexArray(unchangedComplexArray);
+        const unchangedComplexArray = testElement.complexArray.slice();
+        const result = testElement.updateComplexArray(unchangedComplexArray);
         assertFalse(result.topArrayChanged);
         assertFalse(result.wordsArrayChanged);
       });
@@ -191,7 +194,7 @@ suite('ListPropertyUpdateBehavior', function() {
 
         // Ensure that the array is updated when the entire array is different.
         testElement.resetSimpleArray();
-        let newArray = [{id: 10}, {id: 11}, {id: 12}, {id: 13}];
+        const newArray = [{id: 10}, {id: 11}, {id: 12}, {id: 13}];
 
         assertTrue(testElement.updateSimpleArray(newArray));
         assertSimpleArrayEquals(testElement.simpleArray, newArray);
@@ -243,12 +246,12 @@ suite('ListPropertyUpdateBehavior', function() {
 
         // Ensure that the array is updated when the entire array is different.
         testElement.resetComplexArray();
-        let newArray = [
+        const newArray = [
           {letter: 'w', words: ['water', 'woods']},
           {letter: 'x', words: ['xylophone']}, {letter: 'y', words: ['yo-yo']},
           {letter: 'z', words: ['zebra', 'zephyr']}
         ];
-        esult = testElement.updateComplexArray(newArray);
+        result = testElement.updateComplexArray(newArray);
 
         assertTrue(result.topArrayChanged);
         assertFalse(result.wordsArrayChanged);
@@ -301,5 +304,45 @@ suite('ListPropertyUpdateBehavior', function() {
     newArray.pop();
     assertTrue(testElement.updateList('complexArray', x => x.letter, newArray));
     assertDeepEquals(['apricot'], testElement.complexArray[0].words);
+  });
+
+  test('updateList() function triggers notifySplices()', () => {
+    // Ensure that the array is updated when an element is removed from the
+    // end.
+    let elementRemoved = testElement.complexArray.slice(0, 2);
+    testElement.updateList('complexArray', obj => obj, elementRemoved, true);
+    assertComplexArrayEquals(testElement.complexArray, elementRemoved);
+
+    // Ensure that the array is updated when an element is removed from the
+    // beginning.
+    testElement.resetComplexArray();
+    elementRemoved = testElement.complexArray.slice(1);
+    testElement.updateList('complexArray', obj => obj, elementRemoved, true);
+    assertComplexArrayEquals(testElement.complexArray, elementRemoved);
+
+    // Ensure that the array is updated when an element is added to the end.
+    testElement.resetComplexArray();
+    let elementAdded = testElement.complexArray.slice();
+    elementAdded.push({letter: 'd', words: ['door', 'dice']});
+    testElement.updateList('complexArray', obj => obj, elementAdded, true);
+    assertComplexArrayEquals(testElement.complexArray, elementAdded);
+
+    // Ensure that the array is updated when an element is added to the
+    // beginning.
+    testElement.resetComplexArray();
+    elementAdded = [{letter: 'A', words: ['Alphabet']}];
+    elementAdded.push(...testElement.complexArray);
+    testElement.updateList('complexArray', obj => obj, elementAdded, true);
+    assertComplexArrayEquals(testElement.complexArray, elementAdded);
+
+    // Ensure that the array is updated when the entire array is different.
+    testElement.resetComplexArray();
+    const newArray = [
+      {letter: 'w', words: ['water', 'woods']},
+      {letter: 'x', words: ['xylophone']}, {letter: 'y', words: ['yo-yo']},
+      {letter: 'z', words: ['zebra', 'zephyr']}
+    ];
+    testElement.updateList('complexArray', obj => obj, newArray, true);
+    assertComplexArrayEquals(testElement.complexArray, newArray);
   });
 });

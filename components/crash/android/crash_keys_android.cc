@@ -22,9 +22,10 @@ JavaCrashKey& GetCrashKey(int index) {
       {"installed_modules", JavaCrashKey::Tag::kArray},
       {"emulated_modules", JavaCrashKey::Tag::kArray},
       {"dynamic_module_dex_name", JavaCrashKey::Tag::kArray},
+      {"partner_customization_config", JavaCrashKey::Tag::kArray},
   };
   static_assert(
-      base::size(crash_keys) == static_cast<size_t>(CrashKeyIndex::NUM_ENTRIES),
+      std::size(crash_keys) == static_cast<size_t>(CrashKeyIndex::NUM_ENTRIES),
       "crash_keys out of sync with index enum");
 
   return crash_keys[index];

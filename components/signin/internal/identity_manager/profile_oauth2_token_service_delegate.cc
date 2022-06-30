@@ -4,8 +4,9 @@
 
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_delegate.h"
 
+#include "base/observer_list.h"
+#include "components/signin/internal/identity_manager/profile_oauth2_token_service_observer.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
-#include "google_apis/gaia/oauth2_token_service_observer.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 ProfileOAuth2TokenServiceDelegate::ScopedBatchChange::ScopedBatchChange(
@@ -33,8 +34,8 @@ bool ProfileOAuth2TokenServiceDelegate::ValidateAccountId(
   // Note that some tests don't use email strings as account id, and after
   // the gaia id migration it won't be an email.  So only check for
   // canonicalization if the account_id is suspected to be an email.
-  if (account_id.id.find('@') != std::string::npos &&
-      gaia::CanonicalizeEmail(account_id.id) != account_id.id) {
+  if (account_id.ToString().find('@') != std::string::npos &&
+      gaia::CanonicalizeEmail(account_id.ToString()) != account_id.ToString()) {
     valid = false;
   }
 
@@ -43,12 +44,12 @@ bool ProfileOAuth2TokenServiceDelegate::ValidateAccountId(
 }
 
 void ProfileOAuth2TokenServiceDelegate::AddObserver(
-    OAuth2TokenServiceObserver* observer) {
+    ProfileOAuth2TokenServiceObserver* observer) {
   observer_list_.AddObserver(observer);
 }
 
 void ProfileOAuth2TokenServiceDelegate::RemoveObserver(
-    OAuth2TokenServiceObserver* observer) {
+    ProfileOAuth2TokenServiceObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -60,9 +61,13 @@ void ProfileOAuth2TokenServiceDelegate::EndBatchChanges() {
   --batch_change_depth_;
   DCHECK_LE(0, batch_change_depth_);
   if (batch_change_depth_ == 0) {
-    for (auto& observer : observer_list_)
-      observer.OnEndBatchChanges();
+    FireEndBatchChanges();
   }
+}
+
+void ProfileOAuth2TokenServiceDelegate::FireEndBatchChanges() {
+  for (auto& observer : observer_list_)
+    observer.OnEndBatchChanges();
 }
 
 void ProfileOAuth2TokenServiceDelegate::FireRefreshTokenAvailable(
@@ -118,7 +123,8 @@ const net::BackoffEntry* ProfileOAuth2TokenServiceDelegate::BackoffEntry()
 }
 
 void ProfileOAuth2TokenServiceDelegate::LoadCredentials(
-    const CoreAccountId& primary_account_id) {
+    const CoreAccountId& primary_account_id,
+    bool is_syncing) {
   NOTREACHED()
       << "ProfileOAuth2TokenServiceDelegate does not load credentials. "
          "Subclasses that need to load credentials must provide "

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "components/ntp_snippets/callbacks.h"
 #include "components/ntp_snippets/category.h"
 #include "components/ntp_snippets/category_info.h"
@@ -130,7 +131,7 @@ class ContentSuggestionsProvider {
   virtual void ClearHistory(
       base::Time begin,
       base::Time end,
-      const base::Callback<bool(const GURL& url)>& filter) = 0;
+      const base::RepeatingCallback<bool(const GURL& url)>& filter) = 0;
 
   // Clears suggestions for any non-history related reason (e.g., sign-in status
   // change, etc.) so that the next fetch starts from scratch.
@@ -166,7 +167,7 @@ class ContentSuggestionsProvider {
   Observer* observer() const { return observer_; }
 
  private:
-  Observer* observer_;
+  raw_ptr<Observer> observer_;
 };
 
 }  // namespace ntp_snippets

@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_SYNC_SESSIONS_SYNC_SESSIONS_WEB_CONTENTS_ROUTER_FACTORY_H_
 #define CHROME_BROWSER_SYNC_SESSIONS_SYNC_SESSIONS_WEB_CONTENTS_ROUTER_FACTORY_H_
 
-#include "base/macros.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
@@ -29,9 +28,10 @@ class SyncSessionsWebContentsRouterFactory
   // Get the singleton instance of the factory.
   static SyncSessionsWebContentsRouterFactory* GetInstance();
 
-  // Creates a SyncSessionsWebContentsRouter service for |context|.
-  static SyncSessionsWebContentsRouter* BuildSyncSessionsWebContentsRouter(
-      content::BrowserContext* context);
+  SyncSessionsWebContentsRouterFactory(
+      const SyncSessionsWebContentsRouterFactory&) = delete;
+  SyncSessionsWebContentsRouterFactory& operator=(
+      const SyncSessionsWebContentsRouterFactory&) = delete;
 
  private:
   friend struct base::DefaultSingletonTraits<
@@ -43,8 +43,6 @@ class SyncSessionsWebContentsRouterFactory
   // Overridden from BrowserContextKeyedServiceFactory.
   KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const override;
-
-  DISALLOW_COPY_AND_ASSIGN(SyncSessionsWebContentsRouterFactory);
 };
 
 }  // namespace sync_sessions

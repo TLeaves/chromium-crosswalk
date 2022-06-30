@@ -5,18 +5,27 @@
 #ifndef HEADLESS_LIB_BROWSER_PROTOCOL_TARGET_HANDLER_H_
 #define HEADLESS_LIB_BROWSER_PROTOCOL_TARGET_HANDLER_H_
 
+#include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "headless/lib/browser/protocol/domain_handler.h"
-#include "headless/lib/browser/protocol/dp_target.h"
+#include "headless/lib/browser/protocol/target.h"
 
 namespace headless {
+class HeadlessBrowserImpl;
 namespace protocol {
 
 class TargetHandler : public DomainHandler, public Target::Backend {
  public:
-  explicit TargetHandler(base::WeakPtr<HeadlessBrowserImpl> browser);
+  explicit TargetHandler(HeadlessBrowserImpl* browser);
+
+  TargetHandler(const TargetHandler&) = delete;
+  TargetHandler& operator=(const TargetHandler&) = delete;
+
   ~TargetHandler() override;
 
+  // DomainHandler implementation
   void Wire(UberDispatcher* dispatcher) override;
+  Response Disable() override;
 
   // Target::Backend implementation
   Response CreateTarget(const std::string& url,
@@ -31,7 +40,7 @@ class TargetHandler : public DomainHandler, public Target::Backend {
                        bool* out_success) override;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(TargetHandler);
+  raw_ptr<HeadlessBrowserImpl> browser_;
 };
 
 }  // namespace protocol

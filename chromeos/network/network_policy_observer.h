@@ -12,6 +12,8 @@ namespace chromeos {
 
 class NetworkPolicyObserver {
  public:
+  NetworkPolicyObserver& operator=(const NetworkPolicyObserver&) = delete;
+
   // Called when the policies for |userhash| were set (also when they were
   // updated). An empty |userhash| designates the device policy.
   // Note that the policies might be empty and might not have been applied yet
@@ -20,18 +22,29 @@ class NetworkPolicyObserver {
 
   // Called every time a policy application for |userhash| finished. This is
   // only called once no more policies are pending for |userhash|.
+  // Because cellular policy application can be slow, the notification can be
+  // dispatched even if cellular policy application is still in progress. In
+  // this case, another |PoliciesApplied| notification will be invoked when
+  // cellular policy application is done.
   virtual void PoliciesApplied(const std::string& userhash) {}
 
   // Called every time a network is created or updated because of a policy.
   virtual void PolicyAppliedToNetwork(const std::string& service_path) {}
 
+  // Called just before ManagedNetworkConfigurationHandler is destroyed so that
+  // observers can safely stop observing.
+  virtual void OnManagedNetworkConfigurationHandlerShuttingDown() {}
+
  protected:
   virtual ~NetworkPolicyObserver() {}
-
- private:
-  DISALLOW_ASSIGN(NetworkPolicyObserver);
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::NetworkPolicyObserver;
+}
 
 #endif  // CHROMEOS_NETWORK_NETWORK_POLICY_OBSERVER_H_

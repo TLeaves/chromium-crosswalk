@@ -4,13 +4,11 @@
 
 #include "net/http/http_request_info.h"
 
+#include "net/dns/public/secure_dns_policy.h"
+
 namespace net {
 
-HttpRequestInfo::HttpRequestInfo()
-    : upload_data_stream(nullptr),
-      load_flags(0),
-      privacy_mode(PRIVACY_MODE_DISABLED),
-      reporting_upload_depth(0) {}
+HttpRequestInfo::HttpRequestInfo() = default;
 
 HttpRequestInfo::HttpRequestInfo(const HttpRequestInfo& other) = default;
 

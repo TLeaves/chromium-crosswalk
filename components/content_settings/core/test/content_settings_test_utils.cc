@@ -12,17 +12,14 @@
 namespace content_settings {
 
 // static
-base::Value* TestUtils::GetContentSettingValue(
-    const ProviderInterface* provider,
-    const GURL& primary_url,
-    const GURL& secondary_url,
-    ContentSettingsType content_type,
-    const std::string& resource_identifier,
-    bool include_incognito) {
+base::Value TestUtils::GetContentSettingValue(const ProviderInterface* provider,
+                                              const GURL& primary_url,
+                                              const GURL& secondary_url,
+                                              ContentSettingsType content_type,
+                                              bool include_incognito) {
   return HostContentSettingsMap::GetContentSettingValueAndPatterns(
-             provider, primary_url, secondary_url, content_type,
-             resource_identifier, include_incognito, nullptr, nullptr)
-      .release();
+      provider, primary_url, secondary_url, content_type, include_incognito,
+      nullptr, nullptr, nullptr);
 }
 
 // static
@@ -31,16 +28,13 @@ ContentSetting TestUtils::GetContentSetting(
     const GURL& primary_url,
     const GURL& secondary_url,
     ContentSettingsType content_type,
-    const std::string& resource_identifier,
     bool include_incognito) {
-  std::unique_ptr<base::Value> value(
-      GetContentSettingValue(provider, primary_url, secondary_url, content_type,
-                             resource_identifier, include_incognito));
-  return ValueToContentSetting(value.get());
+  return ValueToContentSetting(GetContentSettingValue(
+      provider, primary_url, secondary_url, content_type, include_incognito));
 }
 
 // static
-std::unique_ptr<base::Value> TestUtils::GetContentSettingValueAndPatterns(
+base::Value TestUtils::GetContentSettingValueAndPatterns(
     content_settings::RuleIterator* rule_iterator,
     const GURL& primary_url,
     const GURL& secondary_url,
@@ -48,7 +42,7 @@ std::unique_ptr<base::Value> TestUtils::GetContentSettingValueAndPatterns(
     ContentSettingsPattern* secondary_pattern) {
   return HostContentSettingsMap::GetContentSettingValueAndPatterns(
       rule_iterator, primary_url, secondary_url, primary_pattern,
-      secondary_pattern);
+      secondary_pattern, nullptr);
 }
 
 // static

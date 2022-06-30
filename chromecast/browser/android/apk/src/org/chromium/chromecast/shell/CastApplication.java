@@ -8,8 +8,11 @@ import android.app.Application;
 import android.content.Context;
 
 import org.chromium.base.ApplicationStatus;
+import org.chromium.base.BundleUtils;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.PathUtils;
+import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.ui.base.ResourceBundle;
 
 /**
@@ -27,8 +30,13 @@ public class CastApplication extends Application {
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
         ContextUtils.initApplicationContext(this);
-        ResourceBundle.setAvailablePakLocales(
-                LocaleConfig.COMPRESSED_LOCALES, LocaleConfig.UNCOMPRESSED_LOCALES);
+        BundleUtils.setIsBundle(false);
+        ResourceBundle.setAvailablePakLocales(ProductConfig.LOCALES);
+        LibraryLoader.getInstance().setLinkerImplementation(
+                ProductConfig.USE_CHROMIUM_LINKER, ProductConfig.USE_MODERN_LINKER);
+        LibraryLoader.getInstance().setLibraryProcessType(isBrowserProcess()
+                        ? LibraryProcessType.PROCESS_BROWSER
+                        : LibraryProcessType.PROCESS_CHILD);
     }
 
     @Override
@@ -36,5 +44,9 @@ public class CastApplication extends Application {
         super.onCreate();
         PathUtils.setPrivateDataDirectorySuffix(PRIVATE_DATA_DIRECTORY_SUFFIX);
         ApplicationStatus.initialize(this);
+    }
+
+    private static boolean isBrowserProcess() {
+        return !ContextUtils.getProcessName().contains(":");
     }
 }

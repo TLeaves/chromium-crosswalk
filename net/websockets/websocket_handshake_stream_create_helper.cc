@@ -4,9 +4,10 @@
 
 #include "net/websockets/websocket_handshake_stream_create_helper.h"
 
+#include <set>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/memory/weak_ptr.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/websockets/websocket_basic_handshake_stream.h"
@@ -48,12 +49,13 @@ WebSocketHandshakeStreamCreateHelper::CreateBasicStream(
 
 std::unique_ptr<WebSocketHandshakeStreamBase>
 WebSocketHandshakeStreamCreateHelper::CreateHttp2Stream(
-    base::WeakPtr<SpdySession> session) {
+    base::WeakPtr<SpdySession> session,
+    std::set<std::string> dns_aliases) {
   std::vector<std::string> extensions(
       1, "permessage-deflate; client_max_window_bits");
   auto stream = std::make_unique<WebSocketHttp2HandshakeStream>(
-      session, connect_delegate_, requested_subprotocols_, extensions,
-      request_);
+      session, connect_delegate_, requested_subprotocols_, extensions, request_,
+      std::move(dns_aliases));
   request_->OnHttp2HandshakeStreamCreated(stream.get());
   return stream;
 }

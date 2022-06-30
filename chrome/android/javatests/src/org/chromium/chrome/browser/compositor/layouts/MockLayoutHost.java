@@ -8,9 +8,8 @@ import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.RectF;
 
-import org.chromium.chrome.browser.compositor.TitleCache;
-import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager;
-import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.fullscreen.BrowserControlsManager;
+import org.chromium.chrome.browser.fullscreen.FullscreenManager;
 import org.chromium.ui.resources.ResourceManager;
 
 /**
@@ -24,24 +23,12 @@ class MockLayoutHost implements LayoutManagerHost, LayoutRenderHost {
 
     private final Context mContext;
     private boolean mPortrait = true;
-
-    static class MockTitleCache implements TitleCache {
-        @Override
-        public String getUpdatedTitle(Tab tab, String defaultTitle) {
-            return null;
-        }
-
-        @Override
-        public void remove(int tabId) {}
-
-        @Override
-        public void clearExcept(int tabId) {}
-    }
-
-    private final MockTitleCache mMockTitleCache = new MockTitleCache();
+    private final BrowserControlsManager mBrowserControlsManager;
 
     MockLayoutHost(Context context) {
         mContext = context;
+        mBrowserControlsManager =
+                new BrowserControlsManager(null, BrowserControlsManager.ControlsPosition.TOP);
     }
 
     public void setOrientation(boolean portrait) {
@@ -127,12 +114,12 @@ class MockLayoutHost implements LayoutManagerHost, LayoutRenderHost {
     public void setContentOverlayVisibility(boolean visible, boolean canBeFocusable) {}
 
     @Override
-    public TitleCache getTitleCache() {
-        return mMockTitleCache;
+    public BrowserControlsManager getBrowserControlsManager() {
+        return mBrowserControlsManager;
     }
 
     @Override
-    public ChromeFullscreenManager getFullscreenManager() {
+    public FullscreenManager getFullscreenManager() {
         return null;
     }
 
@@ -146,11 +133,6 @@ class MockLayoutHost implements LayoutManagerHost, LayoutRenderHost {
 
     @Override
     public void onContentChanged() {}
-
-    @Override
-    public int getBrowserControlsBackgroundColor() {
-        return 0;
-    }
 
     @Override
     public void hideKeyboard(Runnable postHideTask) {

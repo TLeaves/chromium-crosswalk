@@ -16,6 +16,9 @@
 
 #include <windows.h>
 
+// Must be after windows.h.
+#include <versionhelpers.h>
+
 #include <signal.h>
 #include <stdint.h>
 #include <string.h>
@@ -24,12 +27,11 @@
 
 #include "base/atomicops.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/scoped_generic.h"
-#include "base/strings/string16.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "build/build_config.h"
 #include "util/file/file_io.h"
 #include "util/misc/capture_context.h"
 #include "util/misc/from_pointer_cast.h"
@@ -38,9 +40,11 @@
 #include "util/win/command_line.h"
 #include "util/win/context_wrappers.h"
 #include "util/win/critical_section_with_debug_info.h"
+#include "util/win/exception_codes.h"
 #include "util/win/get_function.h"
 #include "util/win/handle.h"
 #include "util/win/initial_client_data.h"
+#include "util/win/loader_lock.h"
 #include "util/win/nt_internals.h"
 #include "util/win/ntstatus_logging.h"
 #include "util/win/process_info.h"
@@ -96,7 +100,7 @@ CRITICAL_SECTION g_critical_section_with_debug_info;
 
 void SetHandlerStartupState(StartupState state) {
   DCHECK(state == StartupState::kSucceeded || state == StartupState::kFailed);
-  base::subtle::Acquire_Store(&g_handler_startup_state,
+  base::subtle::Release_Store(&g_handler_startup_state,
                               static_cast<base::subtle::AtomicWord>(state));
 }
 
@@ -104,7 +108,7 @@ StartupState BlockUntilHandlerStartedOrFailed() {
   // Wait until we know the handler has either succeeded or failed to start.
   base::subtle::AtomicWord startup_state;
   while (
-      (startup_state = base::subtle::Release_Load(&g_handler_startup_state)) ==
+      (startup_state = base::subtle::Acquire_Load(&g_handler_startup_state)) ==
       static_cast<int>(StartupState::kNotReady)) {
     Sleep(1);
   }
@@ -199,7 +203,7 @@ void HandleAbortSignal(int signum) {
 
 std::wstring FormatArgumentString(const std::string& name,
                                   const std::wstring& value) {
-  return std::wstring(L"--") + base::UTF8ToUTF16(name) + L"=" + value;
+  return std::wstring(L"--") + base::UTF8ToWide(name) + L"=" + value;
 }
 
 struct ScopedProcThreadAttributeListTraits {
@@ -273,10 +277,15 @@ void AddUint64(std::vector<unsigned char>* data_vector, uint64_t data) {
 //! \param[out] pipe_handle The first pipe instance corresponding for the pipe.
 void CreatePipe(std::wstring* pipe_name, ScopedFileHANDLE* pipe_instance) {
   int tries = 5;
-  std::string pipe_name_base =
-      base::StringPrintf("\\\\.\\pipe\\crashpad_%lu_", GetCurrentProcessId());
+  std::string pipe_name_base = base::StringPrintf(
+#if defined(WINDOWS_UWP)
+      "\\\\.\\pipe\\LOCAL\\crashpad_%lu_",
+#else
+      "\\\\.\\pipe\\crashpad_%lu_",
+#endif
+      GetCurrentProcessId());
   do {
-    *pipe_name = base::UTF8ToUTF16(pipe_name_base + RandomString());
+    *pipe_name = base::UTF8ToWide(pipe_name_base + RandomString());
 
     pipe_instance->reset(CreateNamedPipeInstance(*pipe_name, true));
 
@@ -304,6 +313,7 @@ struct BackgroundHandlerStartThreadData {
       const std::string& url,
       const std::map<std::string, std::string>& annotations,
       const std::vector<std::string>& arguments,
+      const std::vector<base::FilePath>& attachments,
       const std::wstring& ipc_pipe,
       ScopedFileHANDLE ipc_pipe_handle)
       : handler(handler),
@@ -312,6 +322,7 @@ struct BackgroundHandlerStartThreadData {
         url(url),
         annotations(annotations),
         arguments(arguments),
+        attachments(attachments),
         ipc_pipe(ipc_pipe),
         ipc_pipe_handle(std::move(ipc_pipe_handle)) {}
 
@@ -321,6 +332,7 @@ struct BackgroundHandlerStartThreadData {
   std::string url;
   std::map<std::string, std::string> annotations;
   std::vector<std::string> arguments;
+  std::vector<base::FilePath> attachments;
   std::wstring ipc_pipe;
   ScopedFileHANDLE ipc_pipe_handle;
 };
@@ -331,6 +343,11 @@ class ScopedCallSetHandlerStartupState {
  public:
   ScopedCallSetHandlerStartupState() : successful_(false) {}
 
+  ScopedCallSetHandlerStartupState(const ScopedCallSetHandlerStartupState&) =
+      delete;
+  ScopedCallSetHandlerStartupState& operator=(
+      const ScopedCallSetHandlerStartupState&) = delete;
+
   ~ScopedCallSetHandlerStartupState() {
     SetHandlerStartupState(successful_ ? StartupState::kSucceeded
                                        : StartupState::kFailed);
@@ -340,18 +357,18 @@ class ScopedCallSetHandlerStartupState {
 
  private:
   bool successful_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedCallSetHandlerStartupState);
 };
 
 bool StartHandlerProcess(
     std::unique_ptr<BackgroundHandlerStartThreadData> data) {
+  CHECK(!IsThreadInLoaderLock());
+
   ScopedCallSetHandlerStartupState scoped_startup_state_caller;
 
   std::wstring command_line;
   AppendCommandLineArgument(data->handler.value(), &command_line);
   for (const std::string& argument : data->arguments) {
-    AppendCommandLineArgument(base::UTF8ToUTF16(argument), &command_line);
+    AppendCommandLineArgument(base::UTF8ToWide(argument), &command_line);
   }
   if (!data->database.value().empty()) {
     AppendCommandLineArgument(
@@ -365,13 +382,18 @@ bool StartHandlerProcess(
   }
   if (!data->url.empty()) {
     AppendCommandLineArgument(
-        FormatArgumentString("url", base::UTF8ToUTF16(data->url)),
+        FormatArgumentString("url", base::UTF8ToWide(data->url)),
         &command_line);
   }
   for (const auto& kv : data->annotations) {
     AppendCommandLineArgument(
         FormatArgumentString("annotation",
-                             base::UTF8ToUTF16(kv.first + '=' + kv.second)),
+                             base::UTF8ToWide(kv.first + '=' + kv.second)),
+        &command_line);
+  }
+  for (const base::FilePath& attachment : data->attachments) {
+    AppendCommandLineArgument(
+        FormatArgumentString("attachment", attachment.value()),
         &command_line);
   }
 
@@ -392,8 +414,8 @@ bool StartHandlerProcess(
       FromPointerCast<WinVMAddress>(&g_non_crash_exception_information),
       FromPointerCast<WinVMAddress>(&g_critical_section_with_debug_info));
   AppendCommandLineArgument(
-      base::UTF8ToUTF16(std::string("--initial-client-data=") +
-                        initial_client_data.StringRepresentation()),
+      base::UTF8ToWide(std::string("--initial-client-data=") +
+                       initial_client_data.StringRepresentation()),
       &command_line);
 
   BOOL rv;
@@ -479,7 +501,7 @@ bool StartHandlerProcess(
   // invalid command line where the first argument needed by rundll32 is not in
   // the correct format as required in:
   // https://support.microsoft.com/en-ca/help/164787/info-windows-rundll-and-rundll32-interface
-  const base::StringPiece16 kRunDll32Exe(L"rundll32.exe");
+  const base::WStringPiece kRunDll32Exe(L"rundll32.exe");
   bool is_embedded_in_dll = false;
   if (data->handler.value().size() >= kRunDll32Exe.size() &&
       _wcsicmp(data->handler.value()
@@ -591,7 +613,8 @@ bool CrashpadClient::StartHandler(
     const std::map<std::string, std::string>& annotations,
     const std::vector<std::string>& arguments,
     bool restartable,
-    bool asynchronous_start) {
+    bool asynchronous_start,
+    const std::vector<base::FilePath>& attachments) {
   DCHECK(ipc_pipe_.empty());
 
   // Both the pipe and the signalling events have to be created on the main
@@ -621,6 +644,7 @@ bool CrashpadClient::StartHandler(
                                                    url,
                                                    annotations,
                                                    arguments,
+                                                   attachments,
                                                    ipc_pipe_,
                                                    std::move(ipc_pipe_handle));
 
@@ -804,10 +828,7 @@ void CrashpadClient::DumpAndCrash(EXCEPTION_POINTERS* exception_pointers) {
 bool CrashpadClient::DumpAndCrashTargetProcess(HANDLE process,
                                                HANDLE blame_thread,
                                                DWORD exception_code) {
-  // Confirm we're on Vista or later.
-  const DWORD version = GetVersion();
-  const DWORD major_version = LOBYTE(LOWORD(version));
-  if (major_version < 6) {
+  if (!IsWindowsVistaOrGreater()) {
     LOG(ERROR) << "unavailable before Vista";
     return false;
   }
@@ -907,7 +928,7 @@ bool CrashpadClient::DumpAndCrashTargetProcess(HANDLE process,
 
     // ecx = kTriggeredExceptionCode for dwExceptionCode.
     data_to_write.push_back(0xb9);
-    AddUint32(&data_to_write, kTriggeredExceptionCode);
+    AddUint32(&data_to_write, ExceptionCodes::kTriggeredExceptionCode);
 
     // jmp to RaiseException() via rax.
     data_to_write.push_back(0x48);  // mov rax, imm.

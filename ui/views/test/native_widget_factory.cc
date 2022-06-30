@@ -10,7 +10,7 @@
 #if defined(USE_AURA)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura.h"
-#elif defined(OS_MACOSX)
+#elif BUILDFLAG(IS_MAC)
 #include "ui/views/widget/native_widget_mac.h"
 #endif
 
@@ -18,11 +18,10 @@ namespace views {
 namespace test {
 
 NativeWidget* CreatePlatformNativeWidgetImpl(
-    const Widget::InitParams& init_params,
     Widget* widget,
     uint32_t type,
     bool* destroyed) {
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
   return new TestPlatformNativeWidget<NativeWidgetMac>(
       widget, type == kStubCapture, destroyed);
 #else

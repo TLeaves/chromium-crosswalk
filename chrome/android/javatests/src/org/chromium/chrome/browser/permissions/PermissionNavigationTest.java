@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.permissions;
 
-import android.support.test.filters.MediumTest;
+import androidx.test.filters.MediumTest;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -14,22 +14,19 @@ import org.junit.runner.RunWith;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.RetryOnFailure;
-import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.permissions.PermissionTestRule.DialogShownCriteria;
+import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.browser.LocationSettingsTestUtil;
 import org.chromium.content_public.browser.NavigationHandle;
-import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 /**
  * Test suite for interaction between permissions requests and navigation.
  */
 @RunWith(ChromeJUnit4ClassRunner.class)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
-@RetryOnFailure
 public class PermissionNavigationTest {
     @Rule
     public PermissionTestRule mPermissionRule = new PermissionTestRule();
@@ -57,15 +54,10 @@ public class PermissionNavigationTest {
     @Test
     @MediumTest
     @Feature({"Permissions"})
-    @CommandLineFlags.Add("enable-features=" + PermissionTestRule.MODAL_FLAG)
     public void testNavigationDismissesModalPermissionPrompt() throws Exception {
         mPermissionRule.setUpUrl(TEST_FILE);
         mPermissionRule.runJavaScriptCodeInCurrentTab("requestGeolocationPermission()");
-        DialogShownCriteria criteriaShown = new DialogShownCriteria(
-                mPermissionRule.getActivity().getModalDialogManager(), "Dialog not shown", true);
-        CriteriaHelper.pollUiThread(criteriaShown);
-
-        mPermissionRule.runJavaScriptCodeInCurrentTab("navigate()");
+        mPermissionRule.waitForDialogShownState(true);
 
         Tab tab = mPermissionRule.getActivity().getActivityTab();
         final CallbackHelper callbackHelper = new CallbackHelper();
@@ -75,12 +67,13 @@ public class PermissionNavigationTest {
                 callbackHelper.notifyCalled();
             }
         };
-        tab.addObserver(navigationWaiter);
-        callbackHelper.waitForCallback(0);
-        tab.removeObserver(navigationWaiter);
+        TestThreadUtils.runOnUiThreadBlocking(() -> tab.addObserver(navigationWaiter));
 
-        DialogShownCriteria criteriaNotShown = new DialogShownCriteria(
-                mPermissionRule.getActivity().getModalDialogManager(), "Dialog shown", false);
-        CriteriaHelper.pollUiThread(criteriaNotShown);
+        mPermissionRule.runJavaScriptCodeInCurrentTab("navigate()");
+
+        callbackHelper.waitForCallback(0);
+        TestThreadUtils.runOnUiThreadBlocking(() -> tab.removeObserver(navigationWaiter));
+
+        mPermissionRule.waitForDialogShownState(false);
     }
 }

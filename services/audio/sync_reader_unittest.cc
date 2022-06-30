@@ -13,7 +13,7 @@
 #include "base/bind.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/sync_socket.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_parameters.h"
@@ -54,7 +54,7 @@ class SyncReaderBitstreamTest : public TestWithParam<OverflowTestCase> {
   ~SyncReaderBitstreamTest() override {}
 
  private:
-  base::test::ScopedTaskEnvironment env_;
+  base::test::TaskEnvironment env_;
 };
 
 TEST_P(SyncReaderBitstreamTest, BitstreamBufferOverflow_DoesNotWriteOOB) {
@@ -109,10 +109,10 @@ TEST_P(SyncReaderBitstreamTest, BitstreamBufferOverflow_DoesNotWriteOOB) {
   // The purpose of the test is to ensure this call doesn't result in undefined
   // behavior, which should be verified by sanitizers.
   std::unique_ptr<AudioBus> output_bus = AudioBus::Create(params);
-  reader.Read(output_bus.get());
+  reader.Read(output_bus.get(), false);
 }
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          SyncReaderBitstreamTest,
                          ::testing::ValuesIn(overflow_test_case_values));
 

@@ -8,18 +8,13 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/string16.h"
 #include "components/ntp_tiles/popular_sites.h"
+#include "services/data_decoder/public/cpp/data_decoder.h"
 #include "url/gurl.h"
-
-namespace base {
-class Value;
-}
 
 namespace network {
 class SimpleURLLoader;
@@ -39,11 +34,6 @@ class TemplateURLService;
 
 namespace ntp_tiles {
 
-using ParseJSONCallback = base::RepeatingCallback<void(
-    const std::string& unsafe_json,
-    base::OnceCallback<void(base::Value)> success_callback,
-    base::OnceCallback<void(const std::string&)> error_callback)>;
-
 // Actual (non-test) implementation of the PopularSites interface. Caches the
 // downloaded file on disk to avoid re-downloading on every startup.
 class PopularSitesImpl : public PopularSites {
@@ -52,14 +42,15 @@ class PopularSitesImpl : public PopularSites {
       PrefService* prefs,
       const TemplateURLService* template_url_service,
       variations::VariationsService* variations_service,
-      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      const ParseJSONCallback& parse_json);
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
+  PopularSitesImpl(const PopularSitesImpl&) = delete;
+  PopularSitesImpl& operator=(const PopularSitesImpl&) = delete;
 
   ~PopularSitesImpl() override;
 
   // PopularSites implementation.
-  bool MaybeStartFetch(bool force_download,
-                       const FinishedCallback& callback) override;
+  bool MaybeStartFetch(bool force_download, FinishedCallback callback) override;
   const std::map<SectionType, SitesVector>& sections() const override;
   GURL GetLastURLFetched() const override;
   GURL GetURLToFetch() override;
@@ -80,16 +71,14 @@ class PopularSitesImpl : public PopularSites {
   // Called once SimpleURLLoader completes the network request.
   void OnSimpleLoaderComplete(std::unique_ptr<std::string> response_body);
 
-  void OnJsonParsed(base::Value json);
-  void OnJsonParseFailed(const std::string& error_message);
+  void OnJsonParsed(data_decoder::DataDecoder::ValueOrError result);
   void OnDownloadFailed();
 
   // Parameters set from constructor.
-  PrefService* const prefs_;
-  const TemplateURLService* const template_url_service_;
-  variations::VariationsService* const variations_;
+  const raw_ptr<PrefService> prefs_;
+  const raw_ptr<const TemplateURLService> template_url_service_;
+  const raw_ptr<variations::VariationsService> variations_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-  ParseJSONCallback parse_json_;
 
   // Set by MaybeStartFetch() and called after fetch completes.
   FinishedCallback callback_;
@@ -101,8 +90,6 @@ class PopularSitesImpl : public PopularSites {
   int version_in_pending_url_;
 
   base::WeakPtrFactory<PopularSitesImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(PopularSitesImpl);
 };
 
 }  // namespace ntp_tiles

@@ -7,26 +7,28 @@
 #include <memory>
 #include <vector>
 
+#include "ash/components/arc/mojom/net.mojom.h"
+#include "ash/components/arc/session/arc_bridge_service.h"
+#include "ash/components/arc/session/arc_service_manager.h"
+#include "ash/constants/ash_pref_names.h"
 #include "base/bind.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/chromeos/tether/tether_service.h"
+#include "chrome/browser/apps/app_service/app_service_proxy.h"
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/ash/tether/tether_service.h"
+#include "chrome/browser/chromeos/extensions/vpn_provider/vpn_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
+#include "chromeos/network/network_connect.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "components/arc/arc_service_manager.h"
-#include "components/arc/common/net.mojom.h"
-#include "components/arc/metrics/arc_metrics_constants.h"
-#include "components/arc/session/arc_bridge_service.h"
-#include "components/arc/session/connection_holder.h"
 #include "components/onc/onc_constants.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "extensions/browser/api/vpn_provider/vpn_service.h"
-#include "extensions/browser/api/vpn_provider/vpn_service_factory.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/events/event_constants.h"
 
@@ -36,8 +38,8 @@ namespace {
 
 const char kAddThirdPartyVpnMessage[] = "addThirdPartyVpn";
 const char kConfigureThirdPartyVpnMessage[] = "configureThirdPartyVpn";
-const char kRequestArcVpnProviders[] = "requestArcVpnProviders";
-const char kSendArcVpnProviders[] = "sendArcVpnProviders";
+const char kShowCarrierAccountDetail[] = "showCarrierAccountDetail";
+const char kShowCellularSetupUI[] = "showCellularSetupUI";
 const char kRequestGmsCoreNotificationsDisabledDeviceNames[] =
     "requestGmsCoreNotificationsDisabledDeviceNames";
 const char kSendGmsCoreNotificationsDisabledDeviceNames[] =
@@ -48,16 +50,10 @@ Profile* GetProfileForPrimaryUser() {
       user_manager::UserManager::Get()->GetPrimaryUser());
 }
 
-std::unique_ptr<base::DictionaryValue> ArcVpnProviderToValue(
-    const app_list::ArcVpnProviderManager::ArcVpnProvider* arc_vpn_provider) {
-  std::unique_ptr<base::DictionaryValue> serialized_entry =
-      std::make_unique<base::DictionaryValue>();
-  serialized_entry->SetString("PackageName", arc_vpn_provider->package_name);
-  serialized_entry->SetString("ProviderName", arc_vpn_provider->app_name);
-  serialized_entry->SetString("AppID", arc_vpn_provider->app_id);
-  serialized_entry->SetDouble("LastLaunchTime",
-                              arc_vpn_provider->last_launch_time.ToDoubleT());
-  return serialized_entry;
+bool IsVpnConfigAllowed() {
+  PrefService* prefs = GetProfileForPrimaryUser()->GetPrefs();
+  DCHECK(prefs);
+  return prefs->GetBoolean(prefs::kVpnConfigAllowed);
 }
 
 }  // namespace
@@ -67,11 +63,7 @@ namespace settings {
 InternetHandler::InternetHandler(Profile* profile) : profile_(profile) {
   DCHECK(profile_);
 
-  arc_vpn_provider_manager_ = app_list::ArcVpnProviderManager::Get(profile_);
-  if (arc_vpn_provider_manager_)
-    arc_vpn_provider_manager_->AddObserver(this);
-
-  TetherService* tether_service = TetherService::Get(profile);
+  auto* tether_service = tether::TetherService::Get(profile);
   gms_core_notifications_state_tracker_ =
       tether_service ? tether_service->GetGmsCoreNotificationsStateTracker()
                      : nullptr;
@@ -80,8 +72,6 @@ InternetHandler::InternetHandler(Profile* profile) : profile_(profile) {
 }
 
 InternetHandler::~InternetHandler() {
-  if (arc_vpn_provider_manager_)
-    arc_vpn_provider_manager_->RemoveObserver(this);
   if (gms_core_notifications_state_tracker_)
     gms_core_notifications_state_tracker_->RemoveObserver(this);
 }
@@ -96,51 +86,34 @@ void InternetHandler::RegisterMessages() {
       base::BindRepeating(&InternetHandler::ConfigureThirdPartyVpn,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      kRequestArcVpnProviders,
-      base::BindRepeating(&InternetHandler::RequestArcVpnProviders,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       kRequestGmsCoreNotificationsDisabledDeviceNames,
       base::BindRepeating(
           &InternetHandler::RequestGmsCoreNotificationsDisabledDeviceNames,
           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      kShowCarrierAccountDetail,
+      base::BindRepeating(&InternetHandler::ShowCarrierAccountDetail,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      kShowCellularSetupUI,
+      base::BindRepeating(&InternetHandler::ShowCellularSetupUI,
+                          base::Unretained(this)));
 }
 
 void InternetHandler::OnJavascriptAllowed() {}
 
 void InternetHandler::OnJavascriptDisallowed() {}
 
-void InternetHandler::OnArcVpnProviderRemoved(const std::string& package_name) {
-  if (arc_vpn_providers_.find(package_name) == arc_vpn_providers_.end())
-    return;
-  arc_vpn_providers_.erase(package_name);
-  SendArcVpnProviders();
-}
-
-void InternetHandler::OnArcVpnProvidersRefreshed(
-    const std::vector<
-        std::unique_ptr<app_list::ArcVpnProviderManager::ArcVpnProvider>>&
-        arc_vpn_providers) {
-  SetArcVpnProviders(arc_vpn_providers);
-}
-
-void InternetHandler::OnArcVpnProviderUpdated(
-    app_list::ArcVpnProviderManager::ArcVpnProvider* arc_vpn_provider) {
-  arc_vpn_providers_[arc_vpn_provider->package_name] =
-      ArcVpnProviderToValue(arc_vpn_provider);
-  SendArcVpnProviders();
-}
-
 void InternetHandler::OnGmsCoreNotificationStateChanged() {
   SetGmsCoreNotificationsDisabledDeviceNames();
 }
 
-void InternetHandler::AddThirdPartyVpn(const base::ListValue* args) {
-  std::string app_id;
-  if (args->GetSize() < 1 || !args->GetString(0, &app_id)) {
+void InternetHandler::AddThirdPartyVpn(const base::Value::List& args) {
+  if (args.size() < 1 || !args[0].is_string()) {
     NOTREACHED() << "Invalid args for: " << kAddThirdPartyVpnMessage;
     return;
   }
+  const std::string& app_id = args[0].GetString();
   if (app_id.empty()) {
     NET_LOG(ERROR) << "Empty app id for " << kAddThirdPartyVpnMessage;
     return;
@@ -150,12 +123,18 @@ void InternetHandler::AddThirdPartyVpn(const base::ListValue* args) {
         << "Only the primary user and non-child accounts can add VPNs";
     return;
   }
+  if (!IsVpnConfigAllowed()) {
+    NET_LOG(ERROR) << "Cannot add VPN; prohibited by policy";
+    return;
+  }
 
   // Request to launch Arc VPN provider.
   const auto* arc_app_list_prefs = ArcAppListPrefs::Get(profile_);
   if (arc_app_list_prefs && arc_app_list_prefs->GetApp(app_id)) {
-    arc::LaunchApp(profile_, app_id, ui::EF_NONE,
-                   arc::UserInteractionType::APP_STARTED_FROM_SETTINGS);
+    DCHECK(apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
+        profile_));
+    apps::AppServiceProxyFactory::GetForProfile(profile_)->Launch(
+        app_id, ui::EF_NONE, apps::mojom::LaunchSource::kFromParentalControls);
     return;
   }
 
@@ -165,14 +144,18 @@ void InternetHandler::AddThirdPartyVpn(const base::ListValue* args) {
       ->SendShowAddDialogToExtension(app_id);
 }
 
-void InternetHandler::ConfigureThirdPartyVpn(const base::ListValue* args) {
-  std::string guid;
-  if (args->GetSize() < 1 || !args->GetString(0, &guid)) {
+void InternetHandler::ConfigureThirdPartyVpn(const base::Value::List& args) {
+  if (args.size() < 1 || !args[0].is_string()) {
     NOTREACHED() << "Invalid args for: " << kConfigureThirdPartyVpnMessage;
     return;
   }
+  const std::string& guid = args[0].GetString();
   if (profile_ != GetProfileForPrimaryUser()) {
     NET_LOG(ERROR) << "Only the primary user can configure VPNs";
+    return;
+  }
+  if (!IsVpnConfigAllowed()) {
+    NET_LOG(ERROR) << "Cannot configure VPN; prohibited by policy";
     return;
   }
 
@@ -184,7 +167,8 @@ void InternetHandler::ConfigureThirdPartyVpn(const base::ListValue* args) {
     return;
   }
   if (network->type() != shill::kTypeVPN) {
-    NET_LOG(ERROR) << "ConfigureThirdPartyVpn: Network is not a VPN: " << guid;
+    NET_LOG(ERROR) << "ConfigureThirdPartyVpn: Network is not a VPN: "
+                   << NetworkId(network);
     return;
   }
 
@@ -210,44 +194,32 @@ void InternetHandler::ConfigureThirdPartyVpn(const base::ListValue* args) {
   }
 
   NET_LOG(ERROR) << "ConfigureThirdPartyVpn: Unsupported VPN type: "
-                 << network->GetVpnProviderType() << " For: " << guid;
-}
-
-void InternetHandler::RequestArcVpnProviders(const base::ListValue* args) {
-  if (!arc_vpn_provider_manager_)
-    return;
-
-  AllowJavascript();
-  SetArcVpnProviders(arc_vpn_provider_manager_->GetArcVpnProviders());
+                 << network->GetVpnProviderType()
+                 << " For: " << NetworkId(network);
 }
 
 void InternetHandler::RequestGmsCoreNotificationsDisabledDeviceNames(
-    const base::ListValue* args) {
+    const base::Value::List& args) {
   AllowJavascript();
   SetGmsCoreNotificationsDisabledDeviceNames();
 }
 
-void InternetHandler::SetArcVpnProviders(
-    const std::vector<
-        std::unique_ptr<app_list::ArcVpnProviderManager::ArcVpnProvider>>&
-        arc_vpn_providers) {
-  arc_vpn_providers_.clear();
-  for (const auto& arc_vpn_provider : arc_vpn_providers) {
-    arc_vpn_providers_[arc_vpn_provider->package_name] =
-        ArcVpnProviderToValue(arc_vpn_provider.get());
+void InternetHandler::ShowCarrierAccountDetail(const base::Value::List& args) {
+  if (args.size() < 1 || !args[0].is_string()) {
+    NOTREACHED() << "Invalid args for: " << kShowCarrierAccountDetail;
+    return;
   }
-  SendArcVpnProviders();
+  const std::string& guid = args[0].GetString();
+  chromeos::NetworkConnect::Get()->ShowCarrierAccountDetail(guid);
 }
 
-void InternetHandler::SendArcVpnProviders() {
-  if (!IsJavascriptAllowed())
+void InternetHandler::ShowCellularSetupUI(const base::Value::List& args) {
+  if (args.size() < 1 || !args[0].is_string()) {
+    NOTREACHED() << "Invalid args for: " << kConfigureThirdPartyVpnMessage;
     return;
-
-  base::ListValue arc_vpn_providers_value;
-  for (const auto& iter : arc_vpn_providers_) {
-    arc_vpn_providers_value.GetList().push_back(iter.second->Clone());
   }
-  FireWebUIListener(kSendArcVpnProviders, arc_vpn_providers_value);
+  const std::string& guid = args[0].GetString();
+  chromeos::NetworkConnect::Get()->ShowMobileSetup(guid);
 }
 
 void InternetHandler::SetGmsCoreNotificationsDisabledDeviceNames() {
@@ -264,8 +236,7 @@ void InternetHandler::SetGmsCoreNotificationsDisabledDeviceNames() {
       gms_core_notifications_state_tracker_
           ->GetGmsCoreNotificationsDisabledDeviceNames();
   for (const auto& device_name : device_names) {
-    device_names_without_notifications_.emplace_back(
-        std::make_unique<base::Value>(device_name));
+    device_names_without_notifications_.emplace_back(base::Value(device_name));
   }
   SendGmsCoreNotificationsDisabledDeviceNames();
 }
@@ -276,13 +247,13 @@ void InternetHandler::SendGmsCoreNotificationsDisabledDeviceNames() {
 
   base::ListValue device_names_value;
   for (const auto& device_name : device_names_without_notifications_)
-    device_names_value.GetList().push_back(device_name->Clone());
+    device_names_value.Append(device_name.Clone());
 
   FireWebUIListener(kSendGmsCoreNotificationsDisabledDeviceNames,
                     device_names_value);
 }
 
-gfx::NativeWindow InternetHandler::GetNativeWindow() const {
+gfx::NativeWindow InternetHandler::GetNativeWindow() {
   return web_ui()->GetWebContents()->GetTopLevelNativeWindow();
 }
 

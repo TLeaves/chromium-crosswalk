@@ -4,12 +4,16 @@
 
 #include "components/payments/core/payment_request_data_util.h"
 
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 
 #include "base/json/json_writer.h"
-#include "base/macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
@@ -36,12 +40,11 @@ static const char* kBasicCardNetworks[] = {"amex",     "diners",     "discover",
 // PaymentAddress spec.
 TEST(PaymentRequestDataUtilTest, GetPaymentAddressFromAutofillProfile) {
   autofill::AutofillProfile address = autofill::test::GetFullProfile();
-  std::unique_ptr<base::DictionaryValue> address_value =
-      payments::PaymentAddressToDictionaryValue(
-          *payments::data_util::GetPaymentAddressFromAutofillProfile(address,
-                                                                     "en-US"));
+  base::Value address_value = payments::PaymentAddressToValue(
+      *payments::data_util::GetPaymentAddressFromAutofillProfile(address,
+                                                                 "en-US"));
   std::string json_address;
-  base::JSONWriter::Write(*address_value, &json_address);
+  base::JSONWriter::Write(address_value, &json_address);
   EXPECT_EQ(
       "{\"addressLine\":[\"666 Erebus St.\",\"Apt 8\"],"
       "\"city\":\"Elysium\","
@@ -62,30 +65,32 @@ TEST(PaymentRequestDataUtilTest, GetBasicCardResponseFromAutofillCreditCard) {
   autofill::AutofillProfile address = autofill::test::GetFullProfile();
   autofill::CreditCard card = autofill::test::GetCreditCard();
   card.set_billing_address_id(address.guid());
-  std::unique_ptr<base::DictionaryValue> response_value =
+  base::Value response_value =
       payments::data_util::GetBasicCardResponseFromAutofillCreditCard(
-          card, base::ASCIIToUTF16("123"), address, "en-US")
-          ->ToDictionaryValue();
+          card, u"123", address, "en-US")
+          ->ToValue();
   std::string json_response;
-  base::JSONWriter::Write(*response_value, &json_response);
-  EXPECT_EQ(
-      "{\"billingAddress\":"
-      "{\"addressLine\":[\"666 Erebus St.\",\"Apt 8\"],"
-      "\"city\":\"Elysium\","
-      "\"country\":\"US\","
-      "\"dependentLocality\":\"\","
-      "\"organization\":\"Underworld\","
-      "\"phone\":\"16502111111\","
-      "\"postalCode\":\"91111\","
-      "\"recipient\":\"John H. Doe\","
-      "\"region\":\"CA\","
-      "\"sortingCode\":\"\"},"
-      "\"cardNumber\":\"4111111111111111\","
-      "\"cardSecurityCode\":\"123\","
-      "\"cardholderName\":\"Test User\","
-      "\"expiryMonth\":\"11\","
-      "\"expiryYear\":\"2022\"}",
-      json_response);
+  base::JSONWriter::Write(response_value, &json_response);
+  EXPECT_EQ(base::StringPrintf(
+                "{\"billingAddress\":"
+                "{\"addressLine\":[\"666 Erebus St.\",\"Apt 8\"],"
+                "\"city\":\"Elysium\","
+                "\"country\":\"US\","
+                "\"dependentLocality\":\"\","
+                "\"organization\":\"Underworld\","
+                "\"phone\":\"16502111111\","
+                "\"postalCode\":\"91111\","
+                "\"recipient\":\"John H. Doe\","
+                "\"region\":\"CA\","
+                "\"sortingCode\":\"\"},"
+                "\"cardNumber\":\"4111111111111111\","
+                "\"cardSecurityCode\":\"123\","
+                "\"cardholderName\":\"Test User\","
+                "\"expiryMonth\":\"%s\","
+                "\"expiryYear\":\"%s\"}",
+                base::UTF16ToUTF8(card.Expiration2DigitMonthAsString()).c_str(),
+                base::UTF16ToUTF8(card.Expiration4DigitYearAsString()).c_str()),
+            json_response);
 }
 
 // A test fixture to check ParseSupportedMethods() returns empty supported
@@ -128,7 +133,13 @@ INSTANTIATE_TEST_SUITE_P(
 // A test fixture to check ParseSupportedMethods() correctly returns the card
 // networks for the "basic-card" payment method.
 typedef ::testing::TestWithParam<const char*> SupportedNetworksTest;
-TEST_P(SupportedNetworksTest, Test) {
+#if BUILDFLAG(IS_IOS) && !TARGET_OS_SIMULATOR
+// TODO(crbug.com/1008023): Enable this test on iOS devices.
+#define MAYBE_SupportedNetworks DISABLED_SupportedNetworks
+#else
+#define MAYBE_SupportedNetworks SupportedNetworks
+#endif  // BUILDFLAG(IS_IOS) && !TARGET_OS_SIMULATOR
+TEST_P(SupportedNetworksTest, MAYBE_SupportedNetworks) {
   PaymentMethodData method_data;
   method_data.supported_method = kBasicCardMethodName;
   // GetParam() is expected to be a basic-card network.
@@ -262,6 +273,26 @@ TEST(PaymentRequestDataUtil, ParseSupportedMethods_MultipleEntries) {
   EXPECT_THAT(url_payment_method_identifiers, ElementsAre(kBobPayMethod));
   EXPECT_THAT(payment_method_identifiers,
               UnorderedElementsAre(kBasicCardMethodName, kBobPayMethod));
+}
+
+TEST(PaymentRequestDataUtil, FilterStringifiedMethodData) {
+  std::map<std::string, std::set<std::string>> requested;
+  std::set<std::string> supported;
+  EXPECT_TRUE(FilterStringifiedMethodData(requested, supported)->empty());
+
+  requested["a"].insert("{\"b\": \"c\"}");
+  EXPECT_TRUE(FilterStringifiedMethodData(requested, supported)->empty());
+
+  requested["x"].insert("{\"y\": \"z\"}");
+  EXPECT_TRUE(FilterStringifiedMethodData(requested, supported)->empty());
+
+  supported.insert("x");
+  std::map<std::string, std::set<std::string>> expected;
+  expected["x"].insert("{\"y\": \"z\"}");
+  EXPECT_EQ(expected, *FilterStringifiedMethodData(requested, supported));
+
+  supported.insert("g");
+  EXPECT_EQ(expected, *FilterStringifiedMethodData(requested, supported));
 }
 
 }  // namespace data_util

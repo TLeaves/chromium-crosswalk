@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_switcher/browser_switcher_prefs.h"
@@ -29,10 +30,10 @@ class TestBrowserSwitcherPrefs : public BrowserSwitcherPrefs {
 };
 
 StringType UTF8ToNative(base::StringPiece src) {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   return base::UTF8ToWide(src);
-#elif defined(OS_POSIX)
-  return src.as_string();
+#elif BUILDFLAG(IS_POSIX)
+  return std::string(src);
 #else
 #error "Invalid platform for browser_switcher"
 #endif
@@ -41,9 +42,8 @@ StringType UTF8ToNative(base::StringPiece src) {
 base::ListValue UTF8VectorToListValue(
     const std::vector<base::StringPiece>& src) {
   base::ListValue out;
-  out.GetList().reserve(src.size());
   for (base::StringPiece str : src)
-    out.GetList().push_back(base::Value(str));
+    out.Append(str);
   return out;
 }
 
@@ -102,12 +102,12 @@ TEST_F(AlternativeBrowserDriverTest, CreateCommandLineExpandsUrl) {
 }
 
 TEST_F(AlternativeBrowserDriverTest, GetBrowserName) {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   std::string expected = "Internet Explorer";
-#elif defined(OS_MACOSX)
+#elif BUILDFLAG(IS_MAC)
   std::string expected = "Safari";
 #else
-  std::string expected = "";
+  std::string expected;
 #endif
   std::string actual = driver()->GetBrowserName();
   EXPECT_EQ(expected, actual);
@@ -116,16 +116,21 @@ TEST_F(AlternativeBrowserDriverTest, GetBrowserName) {
   actual = driver()->GetBrowserName();
   EXPECT_EQ("", actual);
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   SetBrowserPath("${ie}");
   actual = driver()->GetBrowserName();
   EXPECT_EQ("Internet Explorer", actual);
+
 #endif
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
   SetBrowserPath("${safari}");
   actual = driver()->GetBrowserName();
   EXPECT_EQ("Safari", actual);
+
+  SetBrowserPath("${edge}");
+  actual = driver()->GetBrowserName();
+  EXPECT_EQ("Microsoft Edge", actual);
 #endif
 
   SetBrowserPath("${firefox}");
@@ -137,7 +142,65 @@ TEST_F(AlternativeBrowserDriverTest, GetBrowserName) {
   EXPECT_EQ("Opera", actual);
 }
 
-#if defined(OS_WIN)
+TEST_F(AlternativeBrowserDriverTest, GetBrowserType) {
+#if BUILDFLAG(IS_WIN)
+  BrowserType expected = BrowserType::kIE;
+#elif BUILDFLAG(IS_MAC)
+  BrowserType expected = BrowserType::kSafari;
+#else
+  BrowserType expected = BrowserType::kUnknown;
+#endif
+  auto actual = driver()->GetBrowserType();
+  EXPECT_EQ(expected, actual);
+
+  SetBrowserPath("bogus.exe");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kUnknown, actual);
+
+#if BUILDFLAG(IS_WIN)
+  SetBrowserPath("${ie}");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kIE, actual);
+
+  SetBrowserPath("C:\\Program Files (x86)\\Internet Explorer\\IExplore.exe");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kIE, actual);
+
+  SetBrowserPath("C:\\Program Files\\Mozilla Firefox\\firefox.exe");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kFirefox, actual);
+
+  SetBrowserPath(
+      "C:\\users\\HongGilDong\\AppData\\Local\\Programs\\Opera\\launcher.exe");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kOpera, actual);
+
+  SetBrowserPath(
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kChrome, actual);
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+  SetBrowserPath("${safari}");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kSafari, actual);
+
+  SetBrowserPath("${edge}");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kEdge, actual);
+#endif
+
+  SetBrowserPath("${firefox}");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kFirefox, actual);
+
+  SetBrowserPath("${opera}");
+  actual = driver()->GetBrowserType();
+  EXPECT_EQ(BrowserType::kOpera, actual);
+}
+
+#if BUILDFLAG(IS_WIN)
 TEST_F(AlternativeBrowserDriverTest, CreateCommandLineExpandsEnvVars) {
   _putenv("A=AAA");
   _putenv("B=BBB");
@@ -174,9 +237,9 @@ TEST_F(AlternativeBrowserDriverTest,
   EXPECT_EQ(L"something.exe", cmd_line.argv()[0]);
   EXPECT_EQ(L"http://evil.com/%A%", cmd_line.argv()[1]);
 }
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 TEST_F(AlternativeBrowserDriverTest, CreateCommandLineUsesOpen) {
   // Use `open(1)' to launch browser paths that aren't absolute.
 
@@ -241,9 +304,9 @@ TEST_F(AlternativeBrowserDriverTest, CreateCommandLineContainsUrl) {
   EXPECT_EQ("http://example.com/", cmd_line.argv()[5]);
   EXPECT_EQ("def", cmd_line.argv()[6]);
 }
-#endif  // defined(OS_MACOSX)
+#endif  // BUILDFLAG(IS_MAC)
 
-#if defined(OS_POSIX)
+#if BUILDFLAG(IS_POSIX)
 TEST_F(AlternativeBrowserDriverTest, CreateCommandLineExpandsTilde) {
   setenv("HOME", "/home/foobar", true);
 
@@ -297,6 +360,6 @@ TEST_F(AlternativeBrowserDriverTest, CreateCommandLineDoesntExpandUrlContent) {
   EXPECT_EQ(UTF8ToNative("/usr/bin/true"), cmd_line.argv()[0]);
   EXPECT_EQ("http://evil.com/$A$%7BB%7D", cmd_line.argv()[1]);
 }
-#endif  // defined(OS_POSIX)
+#endif  // BUILDFLAG(IS_POSIX)
 
 }  // namespace browser_switcher

@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/metrics/histogram_macros.h"
-#include "chrome/browser/page_load_metrics/page_load_metrics_util.h"
+#include "components/page_load_metrics/browser/page_load_metrics_util.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -39,6 +39,17 @@ TabRestorePageLoadMetricsObserver::OnStart(
   return IsTabRestore(navigation_handle) ? CONTINUE_OBSERVING : STOP_OBSERVING;
 }
 
+page_load_metrics::PageLoadMetricsObserver::ObservePolicy
+TabRestorePageLoadMetricsObserver::OnFencedFramesStart(
+    content::NavigationHandle* navigation_handle,
+    const GURL& currently_committed_url) {
+  // This class is interested only in the primary page's performance to
+  // report at OnComplete or FlushMetricsOnAppEnterBackground. Events for
+  // OnResourceDataUseObserved are forwarded at PageLoadTracker and observer
+  // doesn't need to forward it.
+  return STOP_OBSERVING;
+}
+
 void TabRestorePageLoadMetricsObserver::OnResourceDataUseObserved(
     content::RenderFrameHost* rfh,
     const std::vector<page_load_metrics::mojom::ResourceDataUpdatePtr>&
@@ -56,21 +67,19 @@ void TabRestorePageLoadMetricsObserver::OnResourceDataUseObserved(
 
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 TabRestorePageLoadMetricsObserver::FlushMetricsOnAppEnterBackground(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   // FlushMetricsOnAppEnterBackground is invoked on Android in cases where the
   // app is about to be backgrounded, as part of the Activity.onPause()
   // flow. After this method is invoked, Chrome may be killed without further
   // notification, so we record final metrics collected up to this point.
-  if (info.did_commit) {
+  if (GetDelegate().DidCommit()) {
     RecordByteHistograms();
   }
   return STOP_OBSERVING;
 }
 
 void TabRestorePageLoadMetricsObserver::OnComplete(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   RecordByteHistograms();
 }
 
@@ -86,7 +95,8 @@ bool TabRestorePageLoadMetricsObserver::IsTabRestore(
   // Only count restored tabs, and eliminate forward-back navigations, as
   // restored tab history is considered a restored navigation until they are
   // loaded the first time.
-  return navigation_handle->GetRestoreType() != content::RestoreType::NONE &&
+  return navigation_handle->GetRestoreType() ==
+             content::RestoreType::kRestored &&
          !(navigation_handle->GetPageTransition() &
            ui::PAGE_TRANSITION_FORWARD_BACK);
 }

@@ -19,23 +19,23 @@ base::Value NetLogUDPDataTransferParams(int byte_count,
                                         const char* bytes,
                                         const IPEndPoint* address,
                                         NetLogCaptureMode capture_mode) {
-  base::DictionaryValue dict;
-  dict.SetInteger("byte_count", byte_count);
+  base::Value::Dict dict;
+  dict.Set("byte_count", byte_count);
   if (NetLogCaptureIncludesSocketBytes(capture_mode))
-    dict.SetKey("bytes", NetLogBinaryValue(bytes, byte_count));
+    dict.Set("bytes", NetLogBinaryValue(bytes, byte_count));
   if (address)
-    dict.SetString("address", address->ToString());
-  return std::move(dict);
+    dict.Set("address", address->ToString());
+  return base::Value(std::move(dict));
 }
 
 base::Value NetLogUDPConnectParams(
     const IPEndPoint& address,
     NetworkChangeNotifier::NetworkHandle network) {
-  base::DictionaryValue dict;
-  dict.SetString("address", address.ToString());
+  base::Value::Dict dict;
+  dict.Set("address", address.ToString());
   if (network != NetworkChangeNotifier::kInvalidNetworkHandle)
-    dict.SetInteger("bound_to_network", network);
-  return std::move(dict);
+    dict.Set("bound_to_network", static_cast<int>(network));
+  return base::Value(std::move(dict));
 }
 
 }  // namespace

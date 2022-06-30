@@ -5,13 +5,11 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SETTINGS_APPEARANCE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SETTINGS_APPEARANCE_HANDLER_H_
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
-
-namespace base {
-class ListValue;
-}
 
 namespace content {
 class WebUI;
@@ -25,6 +23,10 @@ namespace settings {
 class AppearanceHandler : public SettingsPageUIHandler {
  public:
   explicit AppearanceHandler(content::WebUI* webui);
+
+  AppearanceHandler(const AppearanceHandler&) = delete;
+  AppearanceHandler& operator=(const AppearanceHandler&) = delete;
+
   ~AppearanceHandler() override;
 
   // SettingsPageUIHandler implementation.
@@ -34,32 +36,18 @@ class AppearanceHandler : public SettingsPageUIHandler {
 
  private:
   // Changes the UI theme of the browser to the default theme.
-  void HandleUseDefaultTheme(const base::ListValue* args);
+  void HandleUseDefaultTheme(const base::Value::List& args);
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+// of lacros-chrome is complete.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
   // Changes the UI theme of the browser to the system (GTK+) theme.
-  void HandleUseSystemTheme(const base::ListValue* args);
+  void HandleUseSystemTheme(const base::Value::List& args);
 #endif
 
-#if defined(OS_CHROMEOS)
-  // Whether the wallpaper setting should be shown.
-  void IsWallpaperSettingVisible(const base::ListValue* args);
-
-  // Whether the wallpaper is policy controlled.
-  void IsWallpaperPolicyControlled(const base::ListValue* args);
-
-  // Open the wallpaper manager app.
-  void HandleOpenWallpaperManager(const base::ListValue* args);
-
-  // Helper function to resolve the Javascript callback.
-  void ResolveCallback(const base::Value& callback_id, bool result);
-#endif
-
-  Profile* profile_;  // Weak pointer.
+  raw_ptr<Profile> profile_;  // Weak pointer.
 
   base::WeakPtrFactory<AppearanceHandler> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(AppearanceHandler);
 };
 
 }  // namespace settings

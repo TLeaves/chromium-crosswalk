@@ -5,28 +5,26 @@
 #ifndef ANDROID_WEBVIEW_BROWSER_GFX_DEFERRED_GPU_COMMAND_SERVICE_H_
 #define ANDROID_WEBVIEW_BROWSER_GFX_DEFERRED_GPU_COMMAND_SERVICE_H_
 
-#include <stddef.h>
-
-#include <memory>
-#include <utility>
-
-#include "android_webview/browser/gfx/gpu_service_web_view.h"
-#include "base/lazy_instance.h"
-#include "base/macros.h"
-#include "base/threading/thread_checker.h"
-#include "base/threading/thread_local.h"
-#include "base/time/time.h"
-#include "gpu/config/gpu_info.h"
+#include "base/memory/raw_ptr.h"
 #include "gpu/ipc/command_buffer_task_executor.h"
 
+namespace gl {
+class GLShareGroup;
+}
+
 namespace android_webview {
+
+class GpuServiceWebView;
 class TaskQueueWebView;
-class ScopedAllowGL;
 
 // Implementation for gpu service objects accessor for command buffer WebView.
 class DeferredGpuCommandService : public gpu::CommandBufferTaskExecutor {
  public:
   static DeferredGpuCommandService* GetInstance();
+
+  DeferredGpuCommandService(const DeferredGpuCommandService&) = delete;
+  DeferredGpuCommandService& operator=(const DeferredGpuCommandService&) =
+      delete;
 
   // gpu::CommandBufferTaskExecutor implementation.
   bool ForceVirtualizedGLContexts() const override;
@@ -35,16 +33,13 @@ class DeferredGpuCommandService : public gpu::CommandBufferTaskExecutor {
   void ScheduleOutOfOrderTask(base::OnceClosure task) override;
   void ScheduleDelayedWork(base::OnceClosure task) override;
   void PostNonNestableToClient(base::OnceClosure callback) override;
-
-  const gpu::GPUInfo& gpu_info() const { return gpu_service_->gpu_info(); }
-
-  bool CanSupportThreadedTextureMailbox() const;
+  scoped_refptr<gpu::SharedContextState> GetSharedContextState() override;
+  scoped_refptr<gl::GLShareGroup> GetShareGroup() override;
 
  protected:
   ~DeferredGpuCommandService() override;
 
  private:
-  friend class ScopedAllowGL;
   friend class TaskForwardingSequence;
 
   DeferredGpuCommandService(TaskQueueWebView* task_queue,
@@ -52,10 +47,9 @@ class DeferredGpuCommandService : public gpu::CommandBufferTaskExecutor {
 
   static DeferredGpuCommandService* CreateDeferredGpuCommandService();
 
-  TaskQueueWebView* task_queue_;
-  GpuServiceWebView* gpu_service_;
-
-  DISALLOW_COPY_AND_ASSIGN(DeferredGpuCommandService);
+  raw_ptr<TaskQueueWebView> task_queue_;
+  raw_ptr<GpuServiceWebView> gpu_service_;
+  scoped_refptr<gl::GLShareGroup> share_group_;
 };
 
 }  // namespace android_webview

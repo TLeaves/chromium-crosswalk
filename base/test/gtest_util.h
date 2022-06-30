@@ -9,8 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/compiler_specific.h"
-#include "base/logging.h"
+#include "base/check.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,39 +20,43 @@
 // happen and as such executing the statement results in undefined behavior
 // (|statement| is compiled in unsupported configurations nonetheless).
 // Death tests misbehave on Android.
-#if DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+#if DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
 // EXPECT/ASSERT_DCHECK_DEATH tests verify that a DCHECK is hit ("Check failed"
-// is part of the error message), but intentionally do not expose the gtest
-// death test's full |regex| parameter to avoid users having to verify the exact
-// syntax of the error message produced by the DCHECK.
+// is part of the error message). Optionally you may specify part of the message
+// to verify which DCHECK (or LOG(DFATAL)) is being hit.
 #define EXPECT_DCHECK_DEATH(statement) EXPECT_DEATH(statement, "Check failed")
+#define EXPECT_DCHECK_DEATH_WITH(statement, msg) EXPECT_DEATH(statement, msg)
 #define ASSERT_DCHECK_DEATH(statement) ASSERT_DEATH(statement, "Check failed")
+#define ASSERT_DCHECK_DEATH_WITH(statement, msg) ASSERT_DEATH(statement, msg)
 
 #else
-// DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+// DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
 #define EXPECT_DCHECK_DEATH(statement) \
-    GTEST_UNSUPPORTED_DEATH_TEST(statement, "Check failed", )
+  GTEST_UNSUPPORTED_DEATH_TEST(statement, "Check failed", )
+#define EXPECT_DCHECK_DEATH_WITH(statement, msg) \
+  GTEST_UNSUPPORTED_DEATH_TEST(statement, msg, )
 #define ASSERT_DCHECK_DEATH(statement) \
-    GTEST_UNSUPPORTED_DEATH_TEST(statement, "Check failed", return)
+  GTEST_UNSUPPORTED_DEATH_TEST(statement, "Check failed", return )
+#define ASSERT_DCHECK_DEATH_WITH(statement, msg) \
+  GTEST_UNSUPPORTED_DEATH_TEST(statement, msg, return )
 
 #endif
-// DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+// DCHECK_IS_ON() && defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
 // As above, but for CHECK().
-#if defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+#if defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
-// Official builds will CHECK, but also eat stream parameters. So match "".
-#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
-#define EXPECT_CHECK_DEATH(statement) EXPECT_DEATH(statement, "")
-#define ASSERT_CHECK_DEATH(statement) ASSERT_DEATH(statement, "")
-#else
+#if CHECK_WILL_STREAM()
 #define EXPECT_CHECK_DEATH(statement) EXPECT_DEATH(statement, "Check failed")
 #define ASSERT_CHECK_DEATH(statement) ASSERT_DEATH(statement, "Check failed")
-#endif  // defined(OFFICIAL_BUILD) && defined(NDEBUG)
+#else
+#define EXPECT_CHECK_DEATH(statement) EXPECT_DEATH(statement, "")
+#define ASSERT_CHECK_DEATH(statement) ASSERT_DEATH(statement, "")
+#endif  // CHECK_WILL_STREAM()
 
-#else  // defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+#else  // defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
 // Note GTEST_UNSUPPORTED_DEATH_TEST takes a |regex| only to see whether it is a
 // valid regex. It is never evaluated.
@@ -62,7 +65,7 @@
 #define ASSERT_CHECK_DEATH(statement) \
   GTEST_UNSUPPORTED_DEATH_TEST(statement, "", return )
 
-#endif  // defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+#endif  // defined(GTEST_HAS_DEATH_TEST) && !BUILDFLAG(IS_ANDROID)
 
 namespace base {
 
@@ -71,6 +74,7 @@ class FilePath;
 struct TestIdentifier {
   TestIdentifier();
   TestIdentifier(const TestIdentifier& other);
+  TestIdentifier& operator=(const TestIdentifier& other);
 
   std::string test_case_name;
   std::string test_name;
@@ -94,13 +98,12 @@ std::vector<TestIdentifier> GetCompiledInTests();
 
 // Writes the list of gtest-based tests compiled into
 // current executable as a JSON file. Returns true on success.
-bool WriteCompiledInTestsToFile(const FilePath& path) WARN_UNUSED_RESULT;
+[[nodiscard]] bool WriteCompiledInTestsToFile(const FilePath& path);
 
 // Reads the list of gtest-based tests from |path| into |output|.
 // Returns true on success.
-bool ReadTestNamesFromFile(
-    const FilePath& path,
-    std::vector<TestIdentifier>* output) WARN_UNUSED_RESULT;
+[[nodiscard]] bool ReadTestNamesFromFile(const FilePath& path,
+                                         std::vector<TestIdentifier>* output);
 
 }  // namespace base
 

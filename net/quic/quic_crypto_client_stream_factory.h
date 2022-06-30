@@ -6,10 +6,9 @@
 #define NET_QUIC_QUIC_CRYPTO_CLIENT_STREAM_FACTORY_H_
 
 #include <memory>
-#include <string>
 
 #include "net/base/net_export.h"
-#include "net/third_party/quiche/src/quic/core/quic_server_id.h"
+#include "net/third_party/quiche/src/quiche/quic/core/quic_server_id.h"
 
 namespace quic {
 class ProofVerifyContext;
@@ -28,7 +27,7 @@ namespace net {
 // to facilitate testing code with mock implementations.
 class NET_EXPORT QuicCryptoClientStreamFactory {
  public:
-  virtual ~QuicCryptoClientStreamFactory() {}
+  virtual ~QuicCryptoClientStreamFactory() = default;
 
   virtual quic::QuicCryptoClientStream* CreateQuicCryptoClientStream(
       const quic::QuicServerId& server_id,

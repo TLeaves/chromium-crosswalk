@@ -8,18 +8,22 @@
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/strings/sys_string_conversions.h"
-#import "components/image_fetcher/ios/ios_image_data_fetcher_wrapper.h"
+#include "components/image_fetcher/core/image_data_fetcher.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
 #include "components/omnibox/browser/autocomplete_result.h"
 #include "components/omnibox/common/omnibox_features.h"
 #import "ios/chrome/browser/favicon/favicon_loader.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
+#import "ios/chrome/browser/ui/default_promo/default_browser_promo_non_modal_scheduler.h"
 #import "ios/chrome/browser/ui/ntp/ntp_util.h"
 #import "ios/chrome/browser/ui/omnibox/popup/autocomplete_match_formatter.h"
+#import "ios/chrome/browser/ui/omnibox/popup/autocomplete_suggestion_group_impl.h"
+#import "ios/chrome/browser/ui/omnibox/popup/omnibox_pedal_annotator.h"
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_presenter.h"
+#import "ios/chrome/browser/ui/omnibox/popup/popup_swift.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
-#import "ios/chrome/common/favicon/favicon_attributes.h"
+#import "ios/chrome/common/ui/favicon/favicon_attributes.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -31,7 +35,7 @@ const CGFloat kOmniboxIconSize = 16;
 
 @implementation OmniboxPopupMediator {
   // Fetcher for Answers in Suggest images.
-  std::unique_ptr<image_fetcher::IOSImageDataFetcherWrapper> _imageFetcher;
+  std::unique_ptr<image_fetcher::ImageDataFetcher> _imageFetcher;
 
   OmniboxPopupMediatorDelegate* _delegate;  // weak
 
@@ -44,7 +48,7 @@ const CGFloat kOmniboxIconSize = 16;
 @synthesize presenter = _presenter;
 
 - (instancetype)initWithFetcher:
-                    (std::unique_ptr<image_fetcher::IOSImageDataFetcherWrapper>)
+                    (std::unique_ptr<image_fetcher::ImageDataFetcher>)
                         imageFetcher
                   faviconLoader:(FaviconLoader*)faviconLoader
                        delegate:(OmniboxPopupMediatorDelegate*)delegate {
@@ -59,14 +63,61 @@ const CGFloat kOmniboxIconSize = 16;
   return self;
 }
 
-- (void)updateMatches:(const AutocompleteResult&)result
-        withAnimation:(BOOL)animation {
+- (void)updateMatches:(const AutocompleteResult&)result {
   _currentResult.Reset();
   _currentResult.CopyFrom(result);
 
   self.hasResults = !_currentResult.empty();
+  if (base::FeatureList::IsEnabled(omnibox::kAdaptiveSuggestionsCount)) {
+    [self.consumer computeSizeAndRequestUpdate];
+  } else {
+    // Avoid calling consumer visible size and set all suggestions as visible to
+    // get only one grouping.
+    [self requestResultsWithVisibleSuggestionCount:_currentResult.size()];
+  }
+}
 
-  [self.consumer updateMatches:[self wrappedMatches] withAnimation:animation];
+- (void)updateWithResults:(const AutocompleteResult&)result {
+  [self updateMatches:result];
+  self.open = !result.empty();
+  [self.presenter updatePopup];
+}
+
+- (void)setTextAlignment:(NSTextAlignment)alignment {
+  [self.consumer setTextAlignment:alignment];
+}
+
+- (void)setSemanticContentAttribute:
+    (UISemanticContentAttribute)semanticContentAttribute {
+  [self.consumer setSemanticContentAttribute:semanticContentAttribute];
+}
+
+#pragma mark - AutocompleteResultDataSource
+
+- (void)requestResultsWithVisibleSuggestionCount:
+    (NSInteger)visibleSuggestionCount {
+  size_t visibleSuggestions =
+      MIN(visibleSuggestionCount, (NSInteger)_currentResult.size());
+  if (visibleSuggestions > 0) {
+    // Groups visible suggestions by search vs url. Skip the first suggestion
+    // because it's the omnibox content.
+    AutocompleteResult::GroupSuggestionsBySearchVsURL(
+        std::next(_currentResult.begin()),
+        std::next(_currentResult.begin(), visibleSuggestions));
+  }
+  // Groups hidden suggestions by search vs url.
+  AutocompleteResult::GroupSuggestionsBySearchVsURL(
+      std::next(_currentResult.begin(), visibleSuggestions),
+      _currentResult.end());
+
+  NSArray<id<AutocompleteSuggestion>>* matches = [self wrappedMatches];
+
+  [self.consumer updateMatches:@[ [AutocompleteSuggestionGroupImpl
+                                   groupWithTitle:nil
+                                      suggestions:matches] ]
+      preselectedMatchGroupIndex:0];
+
+  [self loadModelImages];
 }
 
 - (NSArray<id<AutocompleteSuggestion>>*)wrappedMatches {
@@ -82,60 +133,51 @@ const CGFloat kOmniboxIconSize = 16;
     formatter.starred = _delegate->IsStarredMatch(match);
     formatter.incognito = _incognito;
     formatter.defaultSearchEngineIsGoogle = self.defaultSearchEngineIsGoogle;
+    formatter.pedalData = [self.pedalAnnotator pedalForMatch:match
+                                                   incognito:_incognito];
     [wrappedMatches addObject:formatter];
   }
 
   return wrappedMatches;
 }
 
-- (void)updateWithResults:(const AutocompleteResult&)result {
-  if (!self.open && !result.empty()) {
-    // The popup is not currently open and there are results to display. Update
-    // and animate the cells
-    [self updateMatches:result withAnimation:YES];
-  } else {
-    // The popup is already displayed or there are no results to display. Update
-    // the cells without animating.
-    [self updateMatches:result withAnimation:NO];
-  }
-  self.open = !result.empty();
-
-  [self.presenter updatePopup];
-}
-
-- (void)setTextAlignment:(NSTextAlignment)alignment {
-  [self.consumer setTextAlignment:alignment];
-}
-
-- (void)setSemanticContentAttribute:
-    (UISemanticContentAttribute)semanticContentAttribute {
-  [self.consumer setSemanticContentAttribute:semanticContentAttribute];
-}
-
 #pragma mark - AutocompleteResultConsumerDelegate
 
+- (void)autocompleteResultConsumerCancelledHighlighting:
+    (id<AutocompleteResultConsumer>)sender {
+  _delegate->OnHighlightCanceled();
+}
+
 - (void)autocompleteResultConsumer:(id<AutocompleteResultConsumer>)sender
-                   didHighlightRow:(NSUInteger)row {
+                   didHighlightRow:(NSUInteger)row
+                         inSection:(NSUInteger)section {
   _delegate->OnMatchHighlighted(row);
 }
 
 - (void)autocompleteResultConsumer:(id<AutocompleteResultConsumer>)sender
-                      didSelectRow:(NSUInteger)row {
+                      didSelectRow:(NSUInteger)row
+                         inSection:(NSUInteger)section {
   // OpenMatch() may close the popup, which will clear the result set and, by
   // extension, |match| and its contents.  So copy the relevant match out to
   // make sure it stays alive until the call completes.
   const AutocompleteMatch& match =
       ((const AutocompleteResult&)_currentResult).match_at(row);
 
+  // Don't log pastes in incognito.
+  if (!self.incognito && match.type == AutocompleteMatchType::CLIPBOARD_URL) {
+    [self.promoScheduler logUserPastedInOmnibox];
+  }
+
   _delegate->OnMatchSelected(match, row, WindowOpenDisposition::CURRENT_TAB);
 }
 
 - (void)autocompleteResultConsumer:(id<AutocompleteResultConsumer>)sender
-        didTapTrailingButtonForRow:(NSUInteger)row {
+        didTapTrailingButtonForRow:(NSUInteger)row
+                         inSection:(NSUInteger)section {
   const AutocompleteMatch& match =
       ((const AutocompleteResult&)_currentResult).match_at(row);
 
-  if (match.has_tab_match) {
+  if (match.has_tab_match.value_or(false)) {
     _delegate->OnMatchSelected(match, row,
                                WindowOpenDisposition::SWITCH_TO_TAB);
   } else {
@@ -151,7 +193,8 @@ const CGFloat kOmniboxIconSize = 16;
 }
 
 - (void)autocompleteResultConsumer:(id<AutocompleteResultConsumer>)sender
-           didSelectRowForDeletion:(NSUInteger)row {
+           didSelectRowForDeletion:(NSUInteger)row
+                         inSection:(NSUInteger)section {
   const AutocompleteMatch& match =
       ((const AutocompleteResult&)_currentResult).match_at(row);
   _delegate->OnMatchSelectedForDeletion(match);
@@ -162,20 +205,51 @@ const CGFloat kOmniboxIconSize = 16;
   _delegate->OnScroll();
 }
 
+- (void)loadModelImages {
+  for (PopupMatchSection* section in self.model.sections) {
+    for (PopupMatch* match in section.matches) {
+      PopupImage* popupImage = match.image;
+      switch (popupImage.icon.iconType) {
+        case OmniboxIconTypeSuggestionIcon:
+          break;
+        case OmniboxIconTypeImage: {
+          [self fetchImage:popupImage.icon.imageURL.gurl
+                completion:^(UIImage* image) {
+                  popupImage.iconUIImageFromURL = image;
+                }];
+          break;
+        }
+        case OmniboxIconTypeFavicon: {
+          [self fetchFavicon:popupImage.icon.imageURL.gurl
+                  completion:^(UIImage* image) {
+                    popupImage.iconUIImageFromURL = image;
+                  }];
+          break;
+        }
+      }
+    }
+  }
+}
+
 #pragma mark - ImageFetcher
 
 - (void)fetchImage:(GURL)imageURL completion:(void (^)(UIImage*))completion {
-  image_fetcher::ImageDataFetcherBlock callback =
-      ^(NSData* data, const image_fetcher::RequestMetadata& metadata) {
+  auto callback =
+      base::BindOnce(^(const std::string& image_data,
+                       const image_fetcher::RequestMetadata& metadata) {
+        NSData* data = [NSData dataWithBytes:image_data.data()
+                                      length:image_data.size()];
         if (data) {
-          UIImage* image =
-              [UIImage imageWithData:data scale:[UIScreen mainScreen].scale];
+          UIImage* image = [UIImage imageWithData:data
+                                            scale:[UIScreen mainScreen].scale];
           completion(image);
         } else {
           completion(nil);
         }
-      };
-  _imageFetcher->FetchImageDataWebpDecoded(imageURL, callback);
+      });
+
+  _imageFetcher->FetchImageData(imageURL, std::move(callback),
+                                NO_TRAFFIC_ANNOTATION_YET);
 }
 
 #pragma mark - FaviconRetriever

@@ -25,20 +25,10 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_destination_node.h"
 
-#include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+#include "third_party/blink/renderer/modules/webaudio/audio_destination_handler.h"
+#include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
 
 namespace blink {
-
-AudioDestinationHandler::AudioDestinationHandler(AudioNode& node)
-    : AudioHandler(kNodeTypeDestination, node, 0) {
-  AddInput();
-}
-
-AudioDestinationHandler::~AudioDestinationHandler() {
-  DCHECK(!IsInitialized());
-}
-
-// ----------------------------------------------------------------
 
 AudioDestinationNode::AudioDestinationNode(BaseAudioContext& context)
     : AudioNode(context) {}
@@ -50,6 +40,14 @@ AudioDestinationHandler& AudioDestinationNode::GetAudioDestinationHandler()
 
 uint32_t AudioDestinationNode::maxChannelCount() const {
   return GetAudioDestinationHandler().MaxChannelCount();
+}
+
+void AudioDestinationNode::ReportDidCreate() {
+  GraphTracer().DidCreateAudioNode(this);
+}
+
+void AudioDestinationNode::ReportWillBeDestroyed() {
+  GraphTracer().WillDestroyAudioNode(this);
 }
 
 }  // namespace blink

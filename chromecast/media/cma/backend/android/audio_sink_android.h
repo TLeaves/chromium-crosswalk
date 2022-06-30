@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/thread_checker.h"
 #include "chromecast/media/cma/backend/android/media_pipeline_backend_android.h"
@@ -19,8 +18,6 @@ namespace chromecast {
 namespace media {
 
 const int kDefaultSlewTimeMs = 15;
-
-const char* GetAudioContentTypeName(const AudioContentType type);
 
 class DecoderBufferBase;
 
@@ -56,14 +53,6 @@ class AudioSinkAndroid {
    protected:
     virtual ~Delegate() {}
   };
-
-  // Gets the Android audio session ids used for media and communication (TTS)
-  // tracks.
-  // Set a return value pointer to null if that id is not needed.
-  // Returns true if the ids populated are valid.
-  static bool GetSessionIds(SinkType sink_type,
-                            int* media_id,
-                            int* communication_id);
 
   static int64_t GetMinimumBufferedTime(SinkType sink_type,
                                         const AudioConfig& config);
@@ -101,7 +90,6 @@ class AudioSinkAndroid {
   virtual bool primary() const = 0;
   virtual std::string device_id() const = 0;
   virtual AudioContentType content_type() const = 0;
-  virtual const char* GetContentTypeName() const = 0;
 };
 
 // Implementation of "managed" AudioSinkAndroid* object that is
@@ -113,6 +101,10 @@ class ManagedAudioSink {
   using Delegate = AudioSinkAndroid::Delegate;
 
   explicit ManagedAudioSink(SinkType sink_type);
+
+  ManagedAudioSink(const ManagedAudioSink&) = delete;
+  ManagedAudioSink& operator=(const ManagedAudioSink&) = delete;
+
   ~ManagedAudioSink();
 
   // Resets the sink_ object by removing it from the manager and deleting it.
@@ -122,8 +114,11 @@ class ManagedAudioSink {
   // the manager. If a valid instance existed on entry it is removed from the
   // manager and deleted before creating the new one.
   void Reset(Delegate* delegate,
+             int num_channels,
              int samples_per_second,
+             int audio_track_session_id,
              bool primary,
+             bool use_hw_av_sync,
              const std::string& device_id,
              AudioContentType content_type);
 
@@ -135,8 +130,6 @@ class ManagedAudioSink {
 
   SinkType sink_type_;
   AudioSinkAndroid* sink_;
-
-  DISALLOW_COPY_AND_ASSIGN(ManagedAudioSink);
 };
 
 }  // namespace media

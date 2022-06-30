@@ -21,21 +21,25 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowLooper;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.metrics.test.ShadowRecordHistogram;
 import org.chromium.base.task.test.BackgroundShadowAsyncTask;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.chrome.browser.compositor.layouts.OverviewModeBehavior;
+import org.chromium.chrome.browser.layouts.LayoutStateProvider;
+import org.chromium.chrome.browser.layouts.LayoutStateProvider.LayoutStateObserver;
+import org.chromium.chrome.browser.layouts.LayoutType;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabObserver;
+import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabList;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
-import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.PageTransition;
 
@@ -46,6 +50,7 @@ import java.util.List;
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(manifest = Config.NONE,
         shadows = {ShadowRecordHistogram.class, BackgroundShadowAsyncTask.class})
+@LooperMode(LooperMode.Mode.LEGACY)
 public final class JourneyManagerTest {
     private static final int LAST_ENGAGEMENT_ELAPSED_MS = 5000;
     private static final int LAST_ENGAGEMENT_ELAPSED_S = 5;
@@ -61,10 +66,10 @@ public final class JourneyManagerTest {
     private TabModelSelector mTabModelSelector;
 
     @Mock
-    private OverviewModeBehavior.OverviewModeObserver mOverviewModeObserver;
+    private LayoutStateObserver mLayoutStateObserver;
 
     @Mock
-    private OverviewModeBehavior mOverviewModeBehavior;
+    private LayoutStateProvider mLayoutStateProvider;
 
     @Mock
     private Tab mTab;
@@ -98,10 +103,10 @@ public final class JourneyManagerTest {
         mSharedPreferences.edit().clear().commit();
 
         mJourneyManager = new JourneyManager(
-                mTabModelSelector, mDispatcher, mOverviewModeBehavior, mEngagementTimeUtil);
+                mTabModelSelector, mDispatcher, mLayoutStateProvider, mEngagementTimeUtil);
         mTabModelSelectorTabObserver = mJourneyManager.getTabModelSelectorTabObserver();
         mTabModelSelectorTabModelObserver = mJourneyManager.getTabModelSelectorTabModelObserver();
-        mOverviewModeObserver = mJourneyManager.getOverviewModeObserver();
+        mLayoutStateObserver = mJourneyManager.getOverviewModeObserver();
 
         verify(mDispatcher).register(mJourneyManager);
 
@@ -229,7 +234,7 @@ public final class JourneyManagerTest {
         // Advance time.
         doReturn(BASE_TIME_MS + LAST_ENGAGEMENT_ELAPSED_MS).when(mEngagementTimeUtil).currentTime();
 
-        mTabModelSelectorTabObserver.onHidden(mTab, Tab.TabHidingType.ACTIVITY_HIDDEN);
+        mTabModelSelectorTabObserver.onHidden(mTab, TabHidingType.ACTIVITY_HIDDEN);
         flushAsyncPrefs();
 
         assertEquals(BASE_TIME_MS + LAST_ENGAGEMENT_ELAPSED_MS,
@@ -419,7 +424,7 @@ public final class JourneyManagerTest {
         // Advance time.
         doReturn(BASE_TIME_MS + LAST_ENGAGEMENT_ELAPSED_MS).when(mEngagementTimeUtil).currentTime();
 
-        mOverviewModeObserver.onOverviewModeStartedShowing(true);
+        mLayoutStateObserver.onStartedShowing(LayoutType.TAB_SWITCHER, true);
         flushAsyncPrefs();
 
         assertEquals(BASE_TIME_MS + LAST_ENGAGEMENT_ELAPSED_MS,
@@ -428,9 +433,9 @@ public final class JourneyManagerTest {
 
     @Test
     public void destroy_unregistersLifecycleObserver() {
-        mJourneyManager.destroy();
+        mJourneyManager.onDestroy();
         verify(mDispatcher).unregister(mJourneyManager);
-        verify(mOverviewModeBehavior).removeOverviewModeObserver(mOverviewModeObserver);
+        verify(mLayoutStateProvider).removeObserver(mLayoutStateObserver);
     }
 
     private void flushAsyncPrefs() {

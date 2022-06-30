@@ -4,21 +4,23 @@
 
 #include "ui/base/ime/init/input_method_initializer.h"
 
-#include "build/build_config.h"
+#include <ostream>
 
-#if defined(OS_CHROMEOS)
-#include "ui/base/ime/ime_bridge.h"
-#elif defined(USE_AURA) && defined(OS_LINUX)
-#include "base/logging.h"
+#include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
+
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && defined(USE_AURA) && \
+    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
+#include "base/check.h"
 #include "ui/base/ime/linux/fake_input_method_context_factory.h"
-#elif defined(OS_WIN)
+#elif BUILDFLAG(IS_WIN)
 #include "ui/base/ime/init/input_method_factory.h"
 #include "ui/base/ime/win/tsf_bridge.h"
 #endif
 
 namespace {
 
-#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(OS_LINUX)
+#if defined(USE_AURA) && (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
 const ui::LinuxInputMethodContextFactory*
     g_linux_input_method_context_factory_for_testing;
 #endif
@@ -28,25 +30,20 @@ const ui::LinuxInputMethodContextFactory*
 namespace ui {
 
 void InitializeInputMethod() {
-#if defined(OS_CHROMEOS)
-  IMEBridge::Initialize();
-#elif defined(OS_WIN)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && BUILDFLAG(IS_WIN)
   TSFBridge::Initialize();
 #endif
 }
 
 void ShutdownInputMethod() {
-#if defined(OS_CHROMEOS)
-  IMEBridge::Shutdown();
-#elif defined(OS_WIN)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && BUILDFLAG(IS_WIN)
   TSFBridge::Shutdown();
 #endif
 }
 
 void InitializeInputMethodForTesting() {
-#if defined(OS_CHROMEOS)
-  IMEBridge::Initialize();
-#elif defined(USE_AURA) && defined(OS_LINUX)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && defined(USE_AURA) && \
+    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
   if (!g_linux_input_method_context_factory_for_testing)
     g_linux_input_method_context_factory_for_testing =
         new FakeInputMethodContextFactory();
@@ -57,27 +54,23 @@ void InitializeInputMethodForTesting() {
       << "else.";
   LinuxInputMethodContextFactory::SetInstance(
       g_linux_input_method_context_factory_for_testing);
-#elif defined(OS_WIN)
-  // Make sure COM is initialized because TSF depends on COM.
-  CoInitialize(nullptr);
-  TSFBridge::Initialize();
+#elif BUILDFLAG(IS_WIN)
+  TSFBridge::InitializeForTesting();
 #endif
 }
 
 void ShutdownInputMethodForTesting() {
-#if defined(OS_CHROMEOS)
-  IMEBridge::Shutdown();
-#elif defined(USE_AURA) && defined(OS_LINUX)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && defined(USE_AURA) && \
+    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
   const LinuxInputMethodContextFactory* factory =
       LinuxInputMethodContextFactory::instance();
   CHECK(!factory || factory == g_linux_input_method_context_factory_for_testing)
       << "An unknown LinuxInputMethodContextFactory was set.";
-  LinuxInputMethodContextFactory::SetInstance(NULL);
+  LinuxInputMethodContextFactory::SetInstance(nullptr);
   delete g_linux_input_method_context_factory_for_testing;
-  g_linux_input_method_context_factory_for_testing = NULL;
-#elif defined(OS_WIN)
+  g_linux_input_method_context_factory_for_testing = nullptr;
+#elif BUILDFLAG(IS_WIN)
   TSFBridge::Shutdown();
-  CoUninitialize();
 #endif
 }
 

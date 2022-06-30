@@ -10,9 +10,7 @@
 #include "ash/keyboard/ui/keyboard_ui_controller.h"
 #include "ash/shell.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/macros.h"
-#include "base/no_destructor.h"
+#include "base/callback_helpers.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_bounds_observer.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_web_contents.h"
@@ -20,7 +18,7 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/base/ime/ime_bridge.h"
+#include "ui/base/ime/ash/ime_bridge.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor_extra/shadow.h"
 #include "ui/gfx/geometry/rect.h"
@@ -66,6 +64,12 @@ aura::Window* ChromeKeyboardUI::LoadKeyboardWindow(LoadCallback callback) {
 aura::Window* ChromeKeyboardUI::GetKeyboardWindow() const {
   return keyboard_contents_
              ? keyboard_contents_->web_contents()->GetNativeView()
+             : nullptr;
+}
+
+ui::GestureConsumer* ChromeKeyboardUI::GetGestureConsumer() const {
+  return keyboard_contents_
+             ? keyboard_contents_->web_contents()->GetContentNativeView()
              : nullptr;
 }
 

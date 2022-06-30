@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gl/gl_display.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_format.h"
 #include "ui/gl/gpu_preference.h"
@@ -30,29 +31,49 @@ namespace init {
 
 // Returns a list of allowed GL implementations. The default implementation will
 // be the first item.
-GL_INIT_EXPORT std::vector<GLImplementation> GetAllowedGLImplementations();
+GL_INIT_EXPORT std::vector<GLImplementationParts> GetAllowedGLImplementations();
 
-// Initializes GL bindings.
-GL_INIT_EXPORT bool InitializeGLOneOff();
+// Initializes GL bindings and extension settings.
+// |system_device_id| specifies which GPU to use on a multi-GPU system.
+// If its value is 0, use the default GPU of the system.
+GL_INIT_EXPORT GLDisplay* InitializeGLOneOff(uint64_t system_device_id);
 
 // Initializes GL bindings without initializing extension settings.
-GL_INIT_EXPORT bool InitializeGLNoExtensionsOneOff();
+// |system_device_id| specifies which GPU to use on a multi-GPU system.
+// If its value is 0, use the default GPU of the system.
+GL_INIT_EXPORT GLDisplay* InitializeGLNoExtensionsOneOff(
+    bool init_bindings,
+    uint64_t system_device_id);
+
+// Initializes GL bindings - load dlls and get proc address according to gl
+// command line switch.
+GL_INIT_EXPORT bool InitializeStaticGLBindingsOneOff();
 
 // Initialize plaiform dependent extension settings, including bindings,
 // capabilities, etc.
-GL_INIT_EXPORT bool InitializeExtensionSettingsOneOffPlatform();
+GL_INIT_EXPORT bool InitializeExtensionSettingsOneOffPlatform(
+    GLDisplay* display);
 
 // Initializes GL bindings using the provided parameters. This might be required
-// for use in tests, otherwise use InitializeGLOneOff() instead.
-GL_INIT_EXPORT bool InitializeGLOneOffImplementation(
-    GLImplementation impl,
+// for use in tests.
+GL_INIT_EXPORT bool InitializeStaticGLBindingsImplementation(
+    GLImplementationParts impl,
+    bool fallback_to_software_gl);
+
+// Initializes GL platform using the provided parameters. This might be required
+// for use in tests. This should be called only after GL bindings are initilzed
+// successfully.
+// |system_device_id| specifies which GPU to use on a multi-GPU system.
+// If its value is 0, use the default GPU of the system.
+GL_INIT_EXPORT GLDisplay* InitializeGLOneOffPlatformImplementation(
     bool fallback_to_software_gl,
-    bool gpu_service_logging,
     bool disable_gl_drawing,
-    bool init_extensions);
+    bool init_extensions,
+    uint64_t system_device_id);
 
 // Clears GL bindings and resets GL implementation.
-GL_INIT_EXPORT void ShutdownGL(bool due_to_fallback);
+// Calling this function a second time on the same |display| is a no-op.
+GL_INIT_EXPORT void ShutdownGL(GLDisplay* display, bool due_to_fallback);
 
 // Return information about the GL window system binding implementation (e.g.,
 // EGL, GLX, WGL). Returns true if the information was retrieved successfully.
@@ -92,6 +113,9 @@ GL_INIT_EXPORT scoped_refptr<GLSurface> CreateOffscreenGLSurfaceWithFormat(
 // bindings.
 GL_INIT_EXPORT void SetDisabledExtensionsPlatform(
     const std::string& disabled_extensions);
+
+// Disable ANGLE and force to use native or other GL implementation.
+GL_INIT_EXPORT void DisableANGLE();
 
 }  // namespace init
 }  // namespace gl

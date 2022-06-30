@@ -8,8 +8,9 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/single_thread_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "cc/base/switches.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/viz_utils.h"
@@ -21,22 +22,29 @@
 #include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
+#include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
+#include "ui/gfx/switches.h"
+
+// TODO(b/192563524): remove it when the legacy video decoder is replaced for
+// all devices.
+#if BUILDFLAG(IS_CHROMEOS)
+#include "ui/ozone/public/ozone_switches.h"  // nogncheck
+#endif                                       // BUILDFLAG(IS_CHROMEOS)
 
 namespace {
 
-void RunTaskOnTaskRunner(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    const base::Closure& callback) {
-  task_runner->PostTask(FROM_HERE, callback);
+void KillGpuProcessImpl(content::GpuProcessHost* host) {
+  if (host) {
+    host->ForceShutdown();
+  }
 }
 
-void StopGpuProcessImpl(const base::Closure& callback,
-                        content::GpuProcessHost* host) {
-  if (host)
-    host->gpu_service()->Stop(callback);
-  else
-    callback.Run();
+bool GetUintFromSwitch(const base::CommandLine* command_line,
+                       const base::StringPiece& switch_string,
+                       uint32_t* value) {
+  std::string switch_value(command_line->GetSwitchValueASCII(switch_string));
+  return base::StringToUint(switch_value, value);
 }
 
 }  // namespace
@@ -44,7 +52,7 @@ void StopGpuProcessImpl(const base::Closure& callback,
 namespace content {
 
 bool ShouldEnableAndroidSurfaceControl(const base::CommandLine& cmd_line) {
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
   return false;
 #else
   if (viz::PreferRGB565ResourcesForDisplay())
@@ -63,7 +71,7 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
       command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode);
   gpu_preferences.disable_accelerated_video_encode =
       command_line->HasSwitch(switches::kDisableAcceleratedVideoEncode);
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   gpu_preferences.enable_low_latency_dxva =
       !command_line->HasSwitch(switches::kDisableLowLatencyDxva);
   gpu_preferences.enable_zero_copy_dxgi_video =
@@ -83,31 +91,12 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
       command_line->HasSwitch(switches::kInProcessGPU);
   gpu_preferences.gpu_sandbox_start_early =
       command_line->HasSwitch(switches::kGpuSandboxStartEarly);
-
-  gpu_preferences.enable_oop_rasterization =
-      command_line->HasSwitch(switches::kEnableOopRasterization);
-  gpu_preferences.disable_oop_rasterization =
-      command_line->HasSwitch(switches::kDisableOopRasterization);
-
-  gpu_preferences.enable_oop_rasterization_ddl =
-      command_line->HasSwitch(switches::kEnableOopRasterizationDDL);
-  if (command_line->HasSwitch(switches::kUseVulkan)) {
-    auto value = command_line->GetSwitchValueASCII(switches::kUseVulkan);
-    if (value.empty() || value == switches::kVulkanImplementationNameNative) {
-      gpu_preferences.use_vulkan = gpu::VulkanImplementationName::kNative;
-    } else if (value == switches::kVulkanImplementationNameSwiftshader) {
-      gpu_preferences.use_vulkan = gpu::VulkanImplementationName::kSwiftshader;
-    } else {
-      gpu_preferences.use_vulkan = gpu::VulkanImplementationName::kNone;
-    }
-  } else {
-    gpu_preferences.use_vulkan = gpu::VulkanImplementationName::kNone;
-  }
-
+  gpu_preferences.enable_vulkan_protected_memory =
+      command_line->HasSwitch(switches::kEnableVulkanProtectedMemory);
   gpu_preferences.disable_vulkan_fallback_to_gl_for_testing =
       command_line->HasSwitch(switches::kDisableVulkanFallbackToGLForTesting);
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
   gpu_preferences.enable_metal = base::FeatureList::IsEnabled(features::kMetal);
 #endif
 
@@ -117,22 +106,71 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
   gpu_preferences.enable_android_surface_control =
       ShouldEnableAndroidSurfaceControl(*command_line);
 
+  gpu_preferences.enable_native_gpu_memory_buffers =
+      command_line->HasSwitch(switches::kEnableNativeGpuMemoryBuffers);
+
+#if BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+  // The direct VideoDecoder is disallowed on some particular SoC/platforms.
+  const bool should_use_direct_video_decoder =
+      !command_line->HasSwitch(
+          switches::kPlatformDisallowsChromeOSDirectVideoDecoder) &&
+      base::FeatureList::IsEnabled(media::kUseChromeOSDirectVideoDecoder);
+
+  // For testing purposes, the following flag allows using the "other" video
+  // decoder implementation.
+  if (base::FeatureList::IsEnabled(
+          media::kUseAlternateVideoDecoderImplementation)) {
+    gpu_preferences.enable_chromeos_direct_video_decoder =
+        !should_use_direct_video_decoder;
+  } else {
+    gpu_preferences.enable_chromeos_direct_video_decoder =
+        should_use_direct_video_decoder;
+  }
+#else   // !BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+  gpu_preferences.enable_chromeos_direct_video_decoder = false;
+#endif  // BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_ANDROID)
+  gpu_preferences.disable_oopr_debug_crash_dump =
+      command_line->HasSwitch(switches::kDisableOoprDebugCrashDump);
+#endif
+
+  if (GetUintFromSwitch(command_line, switches::kVulkanHeapMemoryLimitMb,
+                        &gpu_preferences.vulkan_heap_memory_limit)) {
+    gpu_preferences.vulkan_heap_memory_limit *= 1024 * 1024;
+  }
+  if (GetUintFromSwitch(command_line, switches::kVulkanSyncCpuMemoryLimitMb,
+                        &gpu_preferences.vulkan_sync_cpu_memory_limit)) {
+    gpu_preferences.vulkan_sync_cpu_memory_limit *= 1024 * 1024;
+  }
+
   // Some of these preferences are set or adjusted in
   // GpuDataManagerImplPrivate::AppendGpuCommandLine.
   return gpu_preferences;
 }
 
-void StopGpuProcess(const base::Closure& callback) {
-  content::GpuProcessHost::CallOnIO(
-      content::GPU_PROCESS_KIND_SANDBOXED, false /* force_create */,
-      base::Bind(&StopGpuProcessImpl,
-                 base::Bind(RunTaskOnTaskRunner,
-                            base::ThreadTaskRunnerHandle::Get(), callback)));
+void KillGpuProcess() {
+  GpuProcessHost::CallOnIO(GPU_PROCESS_KIND_SANDBOXED, false /* force_create */,
+                           base::BindOnce(&KillGpuProcessImpl));
 }
 
 gpu::GpuChannelEstablishFactory* GetGpuChannelEstablishFactory() {
-  return content::BrowserMainLoop::GetInstance()
-      ->gpu_channel_establish_factory();
+  return BrowserMainLoop::GetInstance()->gpu_channel_establish_factory();
 }
+
+#if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
+void DumpGpuProfilingData(base::OnceClosure callback) {
+  content::GpuProcessHost::CallOnIO(
+      content::GPU_PROCESS_KIND_SANDBOXED, false /* force_create */,
+      base::BindOnce(
+          [](base::OnceClosure callback, content::GpuProcessHost* host) {
+            host->gpu_service()->WriteClangProfilingProfile(
+                std::move(callback));
+          },
+          std::move(callback)));
+}
+#endif  // BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
 
 }  // namespace content

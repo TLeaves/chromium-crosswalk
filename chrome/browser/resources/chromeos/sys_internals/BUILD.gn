@@ -17,20 +17,18 @@ js_library("index") {
     ":constants",
     ":types",
     "line_chart:line_chart",
-    "//ui/webui/resources/js:cr",
+    "line_chart:unit_label",
+    "//ui/webui/resources/js:cr.m",
+    "//ui/webui/resources/js:promise_resolver.m",
+    "//ui/webui/resources/js:util.m",
   ]
 
   externs_list = [ "externs.js" ]
 }
 
 js_library("constants") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
 }
 
 js_library("types") {
-  deps = [
-    "line_chart:data_series",
-  ]
+  deps = [ "line_chart:data_series" ]
 }

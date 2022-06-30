@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/sync/test/integration/status_change_checker.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/test/fake_server/fake_server.h"
@@ -23,14 +24,14 @@ class FakeServerMatchStatusChecker : public StatusChangeChecker,
   ~FakeServerMatchStatusChecker() override;
 
   // FakeServer::Observer implementation.
-  void OnCommit(const std::string& committer_id,
+  void OnCommit(const std::string& committer_invalidator_client_id,
                 syncer::ModelTypeSet committed_model_types) override;
 
  protected:
   FakeServer* fake_server() const;
 
  private:
-  FakeServer* fake_server_;
+  raw_ptr<FakeServer> fake_server_;
 };
 
 }  // namespace fake_server

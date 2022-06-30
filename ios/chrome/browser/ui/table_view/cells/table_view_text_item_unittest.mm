@@ -5,10 +5,10 @@
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_item.h"
 
 #include "base/mac/foundation_util.h"
-#import "ios/chrome/browser/ui/table_view/cells/table_view_cells_constants.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
-#import "ios/chrome/common/colors/UIColor+cr_semantic_colors.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
+#import "ios/chrome/common/ui/table_view/table_view_cells_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -21,7 +21,7 @@ namespace {
 using TableViewTextItemTest = PlatformTest;
 }
 
-// Tests that the UILabels are set properly after a call to |configureCell:|.
+// Tests that the UILabels are set properly after a call to `configureCell:`.
 TEST_F(TableViewTextItemTest, TextLabels) {
   NSString* text = @"Cell text";
 
@@ -41,7 +41,7 @@ TEST_F(TableViewTextItemTest, TextLabels) {
 }
 
 // Tests that item's text is shown as masked string in UILabel after a call to
-// |configureCell:| with item.masked set to YES.
+// `configureCell:` with item.masked set to YES.
 TEST_F(TableViewTextItemTest, MaskedTextLabels) {
   NSString* text = @"Cell text";
 
@@ -59,21 +59,6 @@ TEST_F(TableViewTextItemTest, MaskedTextLabels) {
   ChromeTableViewStyler* styler = [[ChromeTableViewStyler alloc] init];
   [item configureCell:textCell withStyler:styler];
   EXPECT_NSEQ(kMaskedPassword, textCell.textLabel.text);
-}
-
-TEST_F(TableViewTextItemTest, ConfigureCellWithStyler) {
-  TableViewTextItem* item = [[TableViewTextItem alloc] initWithType:0];
-  TableViewTextCell* cell = [[[item cellClass] alloc] init];
-  ASSERT_TRUE([cell isMemberOfClass:[TableViewTextCell class]]);
-
-  ChromeTableViewStyler* styler = [[ChromeTableViewStyler alloc] init];
-  UIColor* testTextColor = UIColor.redColor;
-  styler.cellTitleColor = testTextColor;
-  UIColor* testBackgroundColor = UIColor.blueColor;
-  styler.tableViewBackgroundColor = testBackgroundColor;
-  [item configureCell:cell withStyler:styler];
-  EXPECT_NSEQ(testBackgroundColor, cell.textLabel.backgroundColor);
-  EXPECT_NSEQ(testTextColor, cell.textLabel.textColor);
 }
 
 TEST_F(TableViewTextItemTest, ConfigureLabelColorWithProperty) {
@@ -97,5 +82,5 @@ TEST_F(TableViewTextItemTest, ConfigureLabelColorWithDefaultColor) {
   ASSERT_TRUE([cell isMemberOfClass:[TableViewTextCell class]]);
   ChromeTableViewStyler* styler = [[ChromeTableViewStyler alloc] init];
   [item configureCell:cell withStyler:styler];
-  EXPECT_NSEQ(UIColor.cr_labelColor, cell.textLabel.textColor);
+  EXPECT_NSEQ([UIColor colorNamed:kTextPrimaryColor], cell.textLabel.textColor);
 }

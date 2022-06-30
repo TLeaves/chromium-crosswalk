@@ -9,17 +9,21 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "components/sync_bookmarks/synced_bookmark_tracker.h"
 #include "url/gurl.h"
+
+namespace sync_pb {
+class EntitySpecifics;
+}
 
 namespace syncer {
 class UniquePosition;
 }
 
 namespace sync_bookmarks {
-
-class SyncedBookmarkTracker;
 
 // Class for listening to local changes in the bookmark model and updating
 // metadata in SyncedBookmarkTracker, such that ultimately the processor exposes
@@ -31,6 +35,11 @@ class BookmarkModelObserverImpl : public bookmarks::BookmarkModelObserver {
       const base::RepeatingClosure& nudge_for_commit_closure,
       base::OnceClosure on_bookmark_model_being_deleted_closure,
       SyncedBookmarkTracker* bookmark_tracker);
+
+  BookmarkModelObserverImpl(const BookmarkModelObserverImpl&) = delete;
+  BookmarkModelObserverImpl& operator=(const BookmarkModelObserverImpl&) =
+      delete;
+
   ~BookmarkModelObserverImpl() override;
 
   // BookmarkModelObserver:
@@ -72,16 +81,21 @@ class BookmarkModelObserverImpl : public bookmarks::BookmarkModelObserver {
                                          size_t index,
                                          const std::string& sync_id);
 
+  // Process a modification of a local node and updates |bookmark_tracker_|
+  // accordingly. No-op if the commit can be optimized away, i.e. if |specifics|
+  // are identical to the previously-known specifics (in hashed form).
+  void ProcessUpdate(const SyncedBookmarkTrackerEntity* entity,
+                     const sync_pb::EntitySpecifics& specifics);
+
   // Processes the deletion of a bookmake node and updates the
   // |bookmark_tracker_| accordingly. If |node| is a bookmark, it gets marked
   // as deleted and that it requires a commit. If it's a folder, it recurses
   // over all children before processing the folder itself.
-  void ProcessDelete(const bookmarks::BookmarkNode* parent,
-                     const bookmarks::BookmarkNode* node);
+  void ProcessDelete(const bookmarks::BookmarkNode* node);
 
   // Points to the tracker owned by the processor. It keeps the mapping between
   // bookmark nodes and corresponding sync server entities.
-  SyncedBookmarkTracker* const bookmark_tracker_;
+  const raw_ptr<SyncedBookmarkTracker> bookmark_tracker_;
 
   // The callback used to inform the sync engine that there are local changes to
   // be committed.
@@ -90,8 +104,6 @@ class BookmarkModelObserverImpl : public bookmarks::BookmarkModelObserver {
   // The callback used to inform the processor that the bookmark is getting
   // deleted.
   base::OnceClosure on_bookmark_model_being_deleted_closure_;
-
-  DISALLOW_COPY_AND_ASSIGN(BookmarkModelObserverImpl);
 };
 
 }  // namespace sync_bookmarks

@@ -2,184 +2,310 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/common/features.gni")
+import("//crypto/features.gni")
 import("//third_party/closure_compiler/compile_js.gni")
 import("//tools/grit/grit_rule.gni")
+import("//tools/grit/preprocess_if_expr.gni")
+import("//tools/polymer/css_to_wrapper.gni")
+import("//tools/polymer/html_to_js.gni")
+import("//tools/polymer/html_to_wrapper.gni")
+import("//tools/typescript/ts_library.gni")
+import("//ui/webui/resources/tools/generate_grd.gni")
 import("//ui/webui/webui_features.gni")
-import("../optimize_webui.gni")
+import("../tools/optimize_webui.gni")
+import("settings.gni")
+
+assert(!is_android, "Android does not use these settings")
+
+preprocess_folder = "preprocessed"
 
 if (optimize_webui) {
-  settings_pak_file = "settings_resources.pak"
-  unpak_folder = "settings_resources.unpak"
+  build_manifest = "build_manifest.json"
 
   optimize_webui("build") {
     host = "settings"
-    html_in_files = [
-      "settings.html",
-      "lazy_load.html",
+    input = rebase_path("$target_gen_dir/tsc", root_build_dir)
+    js_module_in_files = [
+      "settings.js",
+      "lazy_load.js",
     ]
-    html_out_files = [
-      "vulcanized.html",
-      "lazy_load.vulcanized.html",
-    ]
-    insert_in_head = "<base href=\"chrome://settings\">"
-    input = rebase_path("$target_gen_dir/$unpak_folder", root_build_dir)
     js_out_files = [
-      "crisper.js",
-      "lazy_load.crisper.js",
+      "settings.rollup.js",
+      "lazy_load.rollup.js",
+      "shared.rollup.js",
     ]
+    out_manifest = "$target_gen_dir/$build_manifest"
 
     deps = [
-      ":unpak",
+      ":build_ts",
+      "//ui/webui/resources:preprocess",
     ]
-  }
 
-  unpak("unpak") {
-    pak_file = settings_pak_file
-    out_folder = unpak_folder
+    if (!is_chromeos_ash) {
+      deps += [ "//ui/webui/resources/cr_components/customize_themes:build_ts" ]
+    }
 
-    deps = [
-      ":flattened_resources",
+    if (use_nss_certs) {
+      deps +=
+          [ "//ui/webui/resources/cr_components/certificate_manager:build_ts" ]
+    }
+
+    excludes = [
+      "chrome://resources/js/cr.m.js",
+      "chrome://resources/mojo/mojo/public/js/bindings.js",
+      "chrome://resources/mojo/skia/public/mojom/skcolor.mojom-webui.js",
     ]
-  }
-
-  grit("flattened_resources") {
-    source = "settings_resources.grd"
-
-    # The .grd contains references to generated files.
-    source_is_generated = true
-
-    defines = chrome_grit_defines
-    outputs = [
-      "grit/settings_resources.h",
-      "grit/settings_resources_map.cc",
-      "grit/settings_resources_map.h",
-      settings_pak_file,
-    ]
-    output_dir = "$root_gen_dir/chrome/browser/resources/settings"
   }
 }
 
-group("closure_compile") {
+generate_grd("build_grd") {
+  grd_prefix = "settings"
+  out_grd = "$target_gen_dir/${grd_prefix}_resources.grd"
+  input_files = [
+    "images/cookies_banner_dark.svg",
+    "images/cookies_banner.svg",
+    "images/googleg_standard_clr_32px.svg",
+    "images/password_check_neutral_dark.svg",
+    "images/password_check_neutral.svg",
+    "images/password_check_positive_dark.svg",
+    "images/password_check_positive.svg",
+    "images/permissions_banner_dark.svg",
+    "images/permissions_banner.svg",
+    "images/privacy_guide/clear_on_exit_graphic_dark_v2.svg",
+    "images/privacy_guide/clear_on_exit_graphic_dark.svg",
+    "images/privacy_guide/clear_on_exit_graphic_v2.svg",
+    "images/privacy_guide/clear_on_exit_graphic.svg",
+    "images/privacy_guide/clouds_graphic_dark.svg",
+    "images/privacy_guide/clouds_graphic.svg",
+    "images/privacy_guide/completion_banner_circle.svg",
+    "images/privacy_guide/completion_banner_dark_v2.svg",
+    "images/privacy_guide/completion_banner_dark.svg",
+    "images/privacy_guide/completion_banner_pill.svg",
+    "images/privacy_guide/completion_banner_square.svg",
+    "images/privacy_guide/completion_banner_triangle.svg",
+    "images/privacy_guide/completion_banner_v2.svg",
+    "images/privacy_guide/completion_banner.svg",
+    "images/privacy_guide/cookies_graphic_dark_v2.svg",
+    "images/privacy_guide/cookies_graphic_dark.svg",
+    "images/privacy_guide/cookies_graphic_v2.svg",
+    "images/privacy_guide/cookies_graphic.svg",
+    "images/privacy_guide/hills_graphic_dark.svg",
+    "images/privacy_guide/hills_graphic.svg",
+    "images/privacy_guide/history_sync_graphic_dark_v2.svg",
+    "images/privacy_guide/history_sync_graphic_dark.svg",
+    "images/privacy_guide/history_sync_graphic_v2.svg",
+    "images/privacy_guide/history_sync_graphic.svg",
+    "images/privacy_guide/horizon_graphic_dark.svg",
+    "images/privacy_guide/horizon_graphic.svg",
+    "images/privacy_guide/msbb_graphic_dark_v2.svg",
+    "images/privacy_guide/msbb_graphic_dark.svg",
+    "images/privacy_guide/msbb_graphic_v2.svg",
+    "images/privacy_guide/msbb_graphic.svg",
+    "images/privacy_guide/privacy_sandbox_graphic_dark.svg",
+    "images/privacy_guide/privacy_sandbox_graphic.svg",
+    "images/privacy_guide/promo_banner_dark.svg",
+    "images/privacy_guide/promo_banner.svg",
+    "images/privacy_guide/safe_browsing_graphic_dark_v2.svg",
+    "images/privacy_guide/safe_browsing_graphic_dark.svg",
+    "images/privacy_guide/safe_browsing_graphic_v2.svg",
+    "images/privacy_guide/safe_browsing_graphic.svg",
+    "images/privacy_guide/waa_graphic_dark.svg",
+    "images/privacy_guide/waa_graphic.svg",
+    "images/privacy_guide/welcome_banner_dark.svg",
+    "images/privacy_guide/welcome_banner.svg",
+    "images/privacy_sandbox_banner_dark.svg",
+    "images/privacy_sandbox_banner.svg",
+    "images/privacy_sandbox_banner_v3_dark.svg",
+    "images/privacy_sandbox_banner_v3.svg",
+    "images/privacy_sandbox_floc_banner_dark.svg",
+    "images/privacy_sandbox_floc_banner.svg",
+    "images/safe_browsing_banner_dark.svg",
+    "images/safe_browsing_banner.svg",
+    "images/sync_banner_dark.svg",
+    "images/sync_banner.svg",
+    "privacy_sandbox/privacy_sandbox.html",
+    "settings.html",
+  ]
+  input_files_base_dir = rebase_path(".", "//")
+
+  if (optimize_webui) {
+    deps = [
+      ":build",
+      "privacy_sandbox:build_grdp",
+    ]
+    manifest_files = [ "$target_gen_dir/$build_manifest" ]
+    resource_path_rewrites = [
+      "settings.rollup.js|settings.js",
+      "lazy_load.rollup.js|lazy_load.js",
+    ]
+    grdp_files = [ "$target_gen_dir/privacy_sandbox/resources.grdp" ]
+  } else {
+    deps = [ ":build_ts" ]
+    manifest_files = [ "$target_gen_dir/tsconfig.manifest" ]
+  }
+}
+
+preprocess_if_expr("preprocess") {
+  defines = chrome_grit_defines
+  in_folder = "."
+  out_folder = "$target_gen_dir/$preprocess_folder"
+  in_files = ts_files
+}
+
+preprocess_if_expr("preprocess_generated") {
+  defines = chrome_grit_defines
   deps = [
-    ":settings_resources",
-    "a11y_page:closure_compile",
-    "about_page:closure_compile",
-    "appearance_page:closure_compile",
-    "autofill_page:closure_compile",
-    "basic_page:closure_compile",
-    "change_password_page:closure_compile",
-    "clear_browsing_data_dialog:closure_compile",
-    "controls:closure_compile",
-    "downloads_page:closure_compile",
-    "languages_page:closure_compile",
-    "on_startup_page:closure_compile",
-    "people_page:closure_compile",
-    "prefs:closure_compile",
-    "printing_page:closure_compile",
-    "privacy_page:closure_compile",
-    "reset_page:closure_compile",
-    "search_engines_page:closure_compile",
-    "search_page:closure_compile",
-    "settings_main:closure_compile",
-    "settings_menu:closure_compile",
-    "settings_page:closure_compile",
-    "settings_ui:closure_compile",
-    "site_settings:closure_compile",
-    "site_settings_page:closure_compile",
+    ":css_wrapper_files",
+    ":css_wrapper_files_old",
+    ":html_wrapper_files",
+  ]
+  in_folder = target_gen_dir
+  out_folder = "$target_gen_dir/$preprocess_folder"
+  in_files = html_wrapper_files + css_wrapper_files + css_wrapper_files_old
+}
+
+grit("resources") {
+  defines = chrome_grit_defines
+
+  # These arguments are needed since the grd is generated at build time.
+  enable_input_discovery_for_gn_analyze = false
+  source = "$target_gen_dir/settings_resources.grd"
+  deps = [ ":build_grd" ]
+
+  outputs = [
+    "grit/settings_resources.h",
+    "grit/settings_resources_map.cc",
+    "grit/settings_resources_map.h",
+    "settings_resources.pak",
+  ]
+  output_dir = "$root_gen_dir/chrome"
+}
+
+if (is_chromeos_ash) {
+  group("closure_compile") {
+    deps = [
+      ":closure_compile_local",
+      "chromeos:closure_compile_module",
+    ]
+  }
+
+  js_type_check("closure_compile_local") {
+    is_polymer3 = true
+    closure_flags = settings_closure_flags
+    deps = [
+      ":extension_control_browser_proxy",
+      ":i18n_setup",
+      ":lifetime_browser_proxy",
+      ":router",
+      ":setting_id_param_util",
+      ":settings",
+    ]
+  }
+
+  js_library("settings") {
+    sources =
+        [ "$root_gen_dir/chrome/browser/resources/settings/tsc/settings.js" ]
+    deps = [
+      ":i18n_setup",
+      ":lifetime_browser_proxy",
+    ]
+    extra_deps = [ ":build_ts" ]
+  }
+
+  js_library("extension_control_browser_proxy") {
+    sources = [ "$root_gen_dir/chrome/browser/resources/settings/tsc/extension_control_browser_proxy.js" ]
+    deps = [ "//ui/webui/resources/js:cr.m" ]
+    externs_list = [ "$externs_path/chrome_send.js" ]
+    extra_deps = [ ":build_ts" ]
+  }
+
+  js_library("i18n_setup") {
+    sources =
+        [ "$root_gen_dir/chrome/browser/resources/settings/tsc/i18n_setup.js" ]
+    deps = [ "//ui/webui/resources/js:load_time_data.m" ]
+    extra_deps = [ ":build_ts" ]
+  }
+
+  js_library("lifetime_browser_proxy") {
+    sources = [ "$root_gen_dir/chrome/browser/resources/settings/tsc/lifetime_browser_proxy.js" ]
+    deps = [ "//ui/webui/resources/js:cr.m" ]
+    extra_deps = [ ":build_ts" ]
+  }
+
+  js_library("open_window_proxy") {
+    sources = [ "$root_gen_dir/chrome/browser/resources/settings/tsc/open_window_proxy.js" ]
+    extra_deps = [ ":build_ts" ]
+  }
+
+  js_library("router") {
+    deps = [
+      "//ui/webui/resources/js:assert.m",
+      "//ui/webui/resources/js:load_time_data.m",
+    ]
+    externs_list = [ "$externs_path/metrics_private.js" ]
+  }
+
+  js_library("setting_id_param_util") {
+    sources = [ "$root_gen_dir/chrome/browser/resources/settings/tsc/setting_id_param_util.js" ]
+    deps = [
+      ":router",
+      "//ui/webui/resources/js:load_time_data.m",
+    ]
+    extra_deps = [ ":build_ts" ]
+  }
+}
+
+html_to_js("css_wrapper_files_old") {
+  js_files = css_wrapper_files_old
+}
+
+html_to_wrapper("html_wrapper_files") {
+  in_files = html_files + icons_html_files
+}
+
+css_to_wrapper("css_wrapper_files") {
+  in_files = css_files
+}
+
+ts_library("build_ts") {
+  root_dir = "$target_gen_dir/$preprocess_folder"
+  out_dir = "$target_gen_dir/tsc"
+  composite = true
+  tsconfig_base = "tsconfig_base.json"
+  in_files =
+      ts_files + css_wrapper_files + css_wrapper_files_old + html_wrapper_files
+
+  deps = [
+    "//third_party/polymer/v3_0:library",
+    "//ui/webui/resources:library",
+    "//ui/webui/resources/cr_components/customize_themes:build_ts",
   ]
 
-  if (is_win) {
-    deps += [
-      "chrome_cleanup_page:closure_compile",
-      "incompatible_applications_page:closure_compile",
-    ]
+  if (use_nss_certs) {
+    deps +=
+        [ "//ui/webui/resources/cr_components/certificate_manager:build_ts" ]
   }
 
-  if (!is_chromeos) {
-    deps += [
-      "default_browser_page:closure_compile",
-      "system_page:closure_compile",
-    ]
-  }
-
+  definitions = [
+    "//tools/typescript/definitions/autofill_private.d.ts",
+    "//tools/typescript/definitions/chrome_send.d.ts",
+    "//tools/typescript/definitions/language_settings_private.d.ts",
+    "//tools/typescript/definitions/management.d.ts",
+    "//tools/typescript/definitions/metrics_private.d.ts",
+    "//tools/typescript/definitions/passwords_private.d.ts",
+    "//tools/typescript/definitions/pending.d.ts",
+    "//tools/typescript/definitions/runtime.d.ts",
+    "//tools/typescript/definitions/settings_private.d.ts",
+  ]
   if (is_chromeos) {
-    deps += [
-      "android_apps_page:closure_compile",
-      "app_management_page:closure_compile",
-      "bluetooth_page:closure_compile",
-      "chromeos:closure_compile",
-      "crostini_page:closure_compile",
-      "date_time_page:closure_compile",
-      "device_page:closure_compile",
-      "internet_page:closure_compile",
-      "multidevice_page:closure_compile",
-      "parental_controls_page:closure_compile",
-      "plugin_vm_page:closure_compile",
-    ]
+    definitions +=
+        [ "//tools/typescript/definitions/quick_unlock_private.d.ts" ]
   }
-}
 
-js_type_check("settings_resources") {
-  deps = [
-    ":extension_control_browser_proxy",
-    ":global_scroll_target_behavior",
-    ":lifetime_browser_proxy",
-    ":open_window_proxy",
-    ":page_visibility",
-    ":route",
-    ":search_settings",
+  extra_deps = [
+    ":preprocess",
+    ":preprocess_generated",
   ]
-}
-
-js_library("extension_control_browser_proxy") {
-  deps = [
-    "//ui/webui/resources/js:assert",
-    "//ui/webui/resources/js:cr",
-  ]
-  externs_list = [ "$externs_path/chrome_send.js" ]
-}
-
-js_library("global_scroll_target_behavior") {
-  deps = [
-    ":route",
-    "//ui/webui/resources/js:cr",
-  ]
-}
-
-js_library("lifetime_browser_proxy") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
-  externs_list = [ "$externs_path/chrome_send.js" ]
-}
-
-js_library("open_window_proxy") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
-}
-
-js_library("route") {
-  deps = [
-    ":page_visibility",
-    "//ui/webui/resources/js:cr",
-    "//ui/webui/resources/js:load_time_data",
-  ]
-  externs_list = [ "$externs_path/metrics_private.js" ]
-}
-
-js_library("page_visibility") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-    "//ui/webui/resources/js:load_time_data",
-  ]
-}
-
-js_library("search_settings") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-    "//ui/webui/resources/js:search_highlight_utils",
-  ]
-  externs_list = [ "$externs_path/pending.js" ]
 }

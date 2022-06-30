@@ -7,6 +7,7 @@
 #import <Foundation/Foundation.h>
 
 #include "base/memory/ptr_util.h"
+#include "ios/web/common/features.h"
 #import "ios/web/navigation/navigation_item_impl.h"
 #include "net/http/http_response_headers.h"
 
@@ -130,6 +131,14 @@ void NavigationContextImpl::SetResponseHeaders(
   response_headers_ = response_headers;
 }
 
+HttpsUpgradeType NavigationContextImpl::GetFailedHttpsUpgradeType() const {
+  return failed_https_upgrade_type_;
+}
+
+void NavigationContextImpl::SetFailedHttpsUpgradeType(HttpsUpgradeType type) {
+  failed_https_upgrade_type_ = type;
+}
+
 int NavigationContextImpl::GetNavigationItemUniqueID() const {
   return navigation_item_unique_id_;
 }
@@ -163,23 +172,6 @@ void NavigationContextImpl::SetLoadingHtmlString(bool is_loading_html_string) {
   is_loading_html_string_ = is_loading_html_string;
 }
 
-bool NavigationContextImpl::IsNativeContentPresented() const {
-  return is_native_content_presented_;
-}
-
-void NavigationContextImpl::SetIsNativeContentPresented(
-    bool is_native_content_presented) {
-  is_native_content_presented_ = is_native_content_presented;
-}
-
-bool NavigationContextImpl::IsPlaceholderNavigation() const {
-  return is_placeholder_navigation_;
-}
-
-void NavigationContextImpl::SetPlaceholderNavigation(bool flag) {
-  is_placeholder_navigation_ = flag;
-}
-
 void NavigationContextImpl::SetMimeType(NSString* mime_type) {
   mime_type_ = mime_type;
 }
@@ -207,6 +199,10 @@ void NavigationContextImpl::SetItem(std::unique_ptr<NavigationItemImpl> item) {
   item_ = std::move(item);
 }
 
+base::TimeDelta NavigationContextImpl::GetElapsedTimeSinceCreation() const {
+  return elapsed_timer_.Elapsed();
+}
+
 NavigationContextImpl::NavigationContextImpl(WebState* web_state,
                                              const GURL& url,
                                              bool has_user_gesture,
@@ -220,7 +216,8 @@ NavigationContextImpl::NavigationContextImpl(WebState* web_state,
       is_same_document_(false),
       error_(nil),
       response_headers_(nullptr),
-      is_renderer_initiated_(is_renderer_initiated) {}
+      is_renderer_initiated_(is_renderer_initiated),
+      elapsed_timer_(base::ElapsedTimer()) {}
 
 NavigationContextImpl::~NavigationContextImpl() = default;
 

@@ -7,7 +7,6 @@
 
 #include "ash/public/cpp/ash_public_export.h"
 #include "base/callback_forward.h"
-#include "base/macros.h"
 
 namespace ash {
 
@@ -25,6 +24,9 @@ class ASH_PUBLIC_EXPORT AssistantSetup {
  public:
   static AssistantSetup* GetInstance();
 
+  AssistantSetup(const AssistantSetup&) = delete;
+  AssistantSetup& operator=(const AssistantSetup&) = delete;
+
   using StartAssistantOptInFlowCallback = base::OnceCallback<void(bool)>;
 
   // Start the assistant setup flow.
@@ -34,12 +36,12 @@ class ASH_PUBLIC_EXPORT AssistantSetup {
       FlowType type,
       StartAssistantOptInFlowCallback on_completed) = 0;
 
+  // Returns true and bounces the opt-in window if it is active.
+  virtual bool BounceOptInWindowIfActive() = 0;
+
  protected:
   AssistantSetup();
   virtual ~AssistantSetup();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AssistantSetup);
 };
 
 }  // namespace ash

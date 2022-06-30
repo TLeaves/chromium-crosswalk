@@ -6,10 +6,12 @@
 
 #include <utility>
 
+#include "components/password_manager/core/browser/password_change_success_tracker.h"
+
 namespace autofill_assistant {
 
 FakeScriptExecutorDelegate::FakeScriptExecutorDelegate()
-    : trigger_context_(TriggerContext::CreateEmpty()) {}
+    : trigger_context_(std::make_unique<TriggerContext>()) {}
 
 FakeScriptExecutorDelegate::~FakeScriptExecutorDelegate() = default;
 
@@ -25,16 +27,16 @@ const GURL& FakeScriptExecutorDelegate::GetDeeplinkURL() {
   return current_url_;
 }
 
+const GURL& FakeScriptExecutorDelegate::GetScriptURL() {
+  return current_url_;
+}
+
 Service* FakeScriptExecutorDelegate::GetService() {
   return service_;
 }
 
 WebController* FakeScriptExecutorDelegate::GetWebController() {
   return web_controller_;
-}
-
-ClientMemory* FakeScriptExecutorDelegate::GetClientMemory() {
-  return &memory_;
 }
 
 TriggerContext* FakeScriptExecutorDelegate::GetTriggerContext() {
@@ -46,58 +48,65 @@ FakeScriptExecutorDelegate::GetPersonalDataManager() {
   return nullptr;
 }
 
-content::WebContents* FakeScriptExecutorDelegate::GetWebContents() {
+WebsiteLoginManager* FakeScriptExecutorDelegate::GetWebsiteLoginManager() {
   return nullptr;
 }
 
-void FakeScriptExecutorDelegate::EnterState(AutofillAssistantState state) {
-  state_ = state;
+password_manager::PasswordChangeSuccessTracker*
+FakeScriptExecutorDelegate::GetPasswordChangeSuccessTracker() {
+  return nullptr;
+}
+
+content::WebContents* FakeScriptExecutorDelegate::GetWebContents() {
+  return web_contents_;
+}
+
+void FakeScriptExecutorDelegate::SetJsFlowLibrary(
+    const std::string& js_flow_library) {
+  GetJsFlowDevtoolsWrapper()->SetJsFlowLibrary(js_flow_library);
+}
+
+JsFlowDevtoolsWrapper* FakeScriptExecutorDelegate::GetJsFlowDevtoolsWrapper() {
+  if (!js_flow_devtools_wrapper_) {
+    content::WebContents* web_contents = GetWebContents();
+    DCHECK(web_contents_)
+        << "devtools wrapper is only available in browsertests";
+
+    js_flow_devtools_wrapper_ =
+        std::make_unique<JsFlowDevtoolsWrapper>(web_contents);
+  }
+
+  return js_flow_devtools_wrapper_.get();
+}
+
+std::string FakeScriptExecutorDelegate::GetEmailAddressForAccessTokenAccount() {
+  return std::string();
+}
+
+ukm::UkmRecorder* FakeScriptExecutorDelegate::GetUkmRecorder() {
+  return nullptr;
+}
+
+bool FakeScriptExecutorDelegate::EnterState(AutofillAssistantState state) {
+  if (GetState() == state)
+    return false;
+
+  state_history_.emplace_back(state);
+  return true;
+}
+
+AutofillAssistantState FakeScriptExecutorDelegate::GetState() const {
+  return state_history_.empty() ? AutofillAssistantState::INACTIVE
+                                : state_history_.back();
 }
 
 void FakeScriptExecutorDelegate::SetTouchableElementArea(
-    const ElementAreaProto& element) {}
-
-void FakeScriptExecutorDelegate::SetStatusMessage(const std::string& message) {
-  status_message_ = message;
+    const ElementAreaProto& element_area) {
+  touchable_element_area_history_.emplace_back(element_area);
 }
 
-std::string FakeScriptExecutorDelegate::GetStatusMessage() const {
-  return status_message_;
-}
-
-void FakeScriptExecutorDelegate::SetBubbleMessage(const std::string& message) {
-  status_message_ = message;
-}
-
-std::string FakeScriptExecutorDelegate::GetBubbleMessage() const {
-  return status_message_;
-}
-
-void FakeScriptExecutorDelegate::SetDetails(std::unique_ptr<Details> details) {
-  details_ = std::move(details);
-}
-
-void FakeScriptExecutorDelegate::SetInfoBox(const InfoBox& info_box) {
-  info_box_ = std::make_unique<InfoBox>(info_box);
-}
-
-void FakeScriptExecutorDelegate::ClearInfoBox() {
-  info_box_ = nullptr;
-}
-
-void FakeScriptExecutorDelegate::SetProgress(int progress) {}
-
-void FakeScriptExecutorDelegate::SetProgressVisible(bool visible) {}
-
-void FakeScriptExecutorDelegate::SetUserActions(
-    std::unique_ptr<std::vector<UserAction>> user_actions) {
-  user_actions_ = std::move(user_actions);
-}
-
-void FakeScriptExecutorDelegate::SetPaymentRequestOptions(
-    std::unique_ptr<PaymentRequestOptions> options) {
-  payment_request_options_ = std::move(options);
-}
+void FakeScriptExecutorDelegate::WriteUserData(
+    base::OnceCallback<void(UserData*, UserDataFieldChange*)> write_callback) {}
 
 void FakeScriptExecutorDelegate::SetViewportMode(ViewportMode mode) {
   viewport_mode_ = mode;
@@ -107,14 +116,7 @@ ViewportMode FakeScriptExecutorDelegate::GetViewportMode() {
   return viewport_mode_;
 }
 
-void FakeScriptExecutorDelegate::SetPeekMode(
-    ConfigureBottomSheetProto::PeekMode peek_mode) {
-  peek_mode_ = peek_mode;
-}
-
-ConfigureBottomSheetProto::PeekMode FakeScriptExecutorDelegate::GetPeekMode() {
-  return peek_mode_;
-}
+void FakeScriptExecutorDelegate::ExpectNavigation() {}
 
 bool FakeScriptExecutorDelegate::HasNavigationError() {
   return navigation_error_;
@@ -128,17 +130,50 @@ void FakeScriptExecutorDelegate::RequireUI() {
   require_ui_ = true;
 }
 
-void FakeScriptExecutorDelegate::AddListener(Listener* listener) {
-  listeners_.insert(listener);
+ProcessedActionStatusDetailsProto& FakeScriptExecutorDelegate::GetLogInfo() {
+  return log_info_;
 }
 
-void FakeScriptExecutorDelegate::RemoveListener(Listener* listener) {
-  listeners_.erase(listener);
+bool FakeScriptExecutorDelegate::MustUseBackendData() const {
+  return must_use_backend_data_;
 }
 
-bool FakeScriptExecutorDelegate::SetForm(
-    std::unique_ptr<FormProto> form,
-    base::RepeatingCallback<void(const FormProto::Result*)> callback) {
+void FakeScriptExecutorDelegate::AddNavigationListener(
+    ScriptExecutorDelegate::NavigationListener* listener) {
+  navigation_listeners_.insert(listener);
+}
+
+void FakeScriptExecutorDelegate::RemoveNavigationListener(
+    ScriptExecutorDelegate::NavigationListener* listener) {
+  navigation_listeners_.erase(listener);
+}
+
+void FakeScriptExecutorDelegate::SetBrowseDomainsAllowlist(
+    std::vector<std::string> domains) {
+  browse_domains_ = std::move(domains);
+}
+
+void FakeScriptExecutorDelegate::SetClientSettings(
+    const ClientSettingsProto& client_settings) {
+  client_settings_.UpdateFromProto(client_settings);
+}
+
+UserModel* FakeScriptExecutorDelegate::GetUserModel() {
+  return user_model_;
+}
+
+void FakeScriptExecutorDelegate::SetOverlayBehavior(
+    ConfigureUiStateProto::OverlayBehavior overaly_behavior) {}
+
+void FakeScriptExecutorDelegate::SetBrowseModeInvisible(bool invisible) {}
+
+bool FakeScriptExecutorDelegate::ShouldShowWarning() {
   return true;
 }
+
+std::vector<std::string>*
+FakeScriptExecutorDelegate::GetCurrentBrowseDomainsList() {
+  return &browse_domains_;
+}
+
 }  // namespace autofill_assistant

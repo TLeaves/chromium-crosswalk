@@ -46,12 +46,12 @@ void shm_pool_create_buffer(wl_client* client,
                             uint32_t format) {
   const auto* supported_format =
       std::find_if(shm_supported_formats,
-                   shm_supported_formats + base::size(shm_supported_formats),
+                   shm_supported_formats + std::size(shm_supported_formats),
                    [format](const shm_supported_format& supported_format) {
                      return supported_format.shm_format == format;
                    });
   if (supported_format ==
-      (shm_supported_formats + base::size(shm_supported_formats))) {
+      (shm_supported_formats + std::size(shm_supported_formats))) {
     wl_resource_post_error(resource, WL_SHM_ERROR_INVALID_FORMAT,
                            "invalid format 0x%x", format);
     return;
@@ -75,8 +75,8 @@ void shm_pool_create_buffer(wl_client* client,
   wl_resource* buffer_resource =
       wl_resource_create(client, &wl_buffer_interface, 1, id);
 
-  buffer->set_release_callback(base::Bind(&HandleBufferReleaseCallback,
-                                          base::Unretained(buffer_resource)));
+  buffer->set_release_callback(base::BindRepeating(
+      &HandleBufferReleaseCallback, base::Unretained(buffer_resource)));
 
   SetImplementation(buffer_resource, &buffer_implementation, std::move(buffer));
 }

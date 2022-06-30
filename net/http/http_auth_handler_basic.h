@@ -26,7 +26,8 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerBasic : public HttpAuthHandler {
     int CreateAuthHandler(HttpAuthChallengeTokenizer* challenge,
                           HttpAuth::Target target,
                           const SSLInfo& ssl_info,
-                          const GURL& origin,
+                          const NetworkIsolationKey& network_isolation_key,
+                          const url::SchemeHostPort& scheme_host_port,
                           CreateReason reason,
                           int digest_nonce_count,
                           const NetLogWithSource& net_log,
@@ -37,7 +38,8 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerBasic : public HttpAuthHandler {
  private:
   // HttpAuthHandler
   bool Init(HttpAuthChallengeTokenizer* challenge,
-            const SSLInfo& ssl_info) override;
+            const SSLInfo& ssl_info,
+            const NetworkIsolationKey& network_isolation_key) override;
   int GenerateAuthTokenImpl(const AuthCredentials* credentials,
                             const HttpRequestInfo* request,
                             CompletionOnceCallback callback,
@@ -46,7 +48,7 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerBasic : public HttpAuthHandler {
       HttpAuthChallengeTokenizer* challenge) override;
 
  private:
-  ~HttpAuthHandlerBasic() override {}
+  ~HttpAuthHandlerBasic() override = default;
 
   bool ParseChallenge(HttpAuthChallengeTokenizer* challenge);
 };

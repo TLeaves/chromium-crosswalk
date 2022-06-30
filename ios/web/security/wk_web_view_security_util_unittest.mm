@@ -9,13 +9,12 @@
 
 #include <memory>
 
-#include "base/mac/foundation_util.h"
+#include "base/mac/bridging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "crypto/rsa_private_key.h"
-#include "net/cert/x509_cert_types.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
-#include "net/cert/x509_util_ios.h"
+#include "net/cert/x509_util_apple.h"
 #include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -38,9 +37,8 @@ NSArray* MakeTestCertChain(const std::string& subject) {
   std::unique_ptr<crypto::RSAPrivateKey> private_key;
   std::string der_cert;
   net::x509_util::CreateKeyAndSelfSignedCert(
-      "CN=" + subject, 1, base::Time::Now(),
-      base::Time::Now() + base::TimeDelta::FromDays(1), &private_key,
-      &der_cert);
+      "CN=" + subject, 1, base::Time::Now(), base::Time::Now() + base::Days(1),
+      &private_key, &der_cert);
 
   base::ScopedCFTypeRef<SecCertificateRef> cert(
       net::x509_util::CreateSecCertificateFromBytes(
@@ -62,7 +60,7 @@ NSDictionary* MakeTestSSLCertErrorUserInfo() {
 base::ScopedCFTypeRef<SecTrustRef> CreateTestTrust(NSArray* cert_chain) {
   base::ScopedCFTypeRef<SecPolicyRef> policy(SecPolicyCreateBasicX509());
   SecTrustRef trust = nullptr;
-  SecTrustCreateWithCertificates(base::mac::NSToCFCast(cert_chain), policy,
+  SecTrustCreateWithCertificates(base::mac::NSToCFPtrCast(cert_chain), policy,
                                  &trust);
   return base::ScopedCFTypeRef<SecTrustRef>(trust);
 }
@@ -96,15 +94,15 @@ TEST_F(WKWebViewSecurityUtilTest, MakingTrustValid) {
   base::ScopedCFTypeRef<SecTrustRef> trust =
       CreateTestTrust(MakeTestCertChain(kTestSubject));
 
-  SecTrustResultType result = kSecTrustResultInvalid;
-  SecTrustEvaluate(trust, &result);
-  EXPECT_EQ(kSecTrustResultRecoverableTrustFailure, result);
+  CFErrorRef error;
+  BOOL trusted = SecTrustEvaluateWithError(trust, &error);
+  EXPECT_TRUE(!trusted && error);
 
   // Make sure that trust becomes valid after
   // |EnsureFutureTrustEvaluationSucceeds| call.
   EnsureFutureTrustEvaluationSucceeds(trust);
-  SecTrustEvaluate(trust, &result);
-  EXPECT_EQ(kSecTrustResultProceed, result);
+  trusted = SecTrustEvaluateWithError(trust, &error);
+  EXPECT_TRUE(trusted && !error);
 }
 
 // Tests CreateCertFromTrust.

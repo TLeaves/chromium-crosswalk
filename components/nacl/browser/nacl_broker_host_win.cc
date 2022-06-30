@@ -10,7 +10,6 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "components/nacl/browser/nacl_broker_service_win.h"
 #include "components/nacl/browser/nacl_browser.h"
@@ -24,6 +23,7 @@
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
+#include "sandbox/policy/mojom/sandbox.mojom.h"
 
 namespace {
 // NOTE: changes to this class need to be reviewed by the security team.
@@ -32,12 +32,14 @@ class NaClBrokerSandboxedProcessLauncherDelegate
  public:
   NaClBrokerSandboxedProcessLauncherDelegate() {}
 
-  service_manager::SandboxType GetSandboxType() override {
-    return service_manager::SANDBOX_TYPE_NO_SANDBOX;
-  }
+  NaClBrokerSandboxedProcessLauncherDelegate(
+      const NaClBrokerSandboxedProcessLauncherDelegate&) = delete;
+  NaClBrokerSandboxedProcessLauncherDelegate& operator=(
+      const NaClBrokerSandboxedProcessLauncherDelegate&) = delete;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(NaClBrokerSandboxedProcessLauncherDelegate);
+  sandbox::mojom::Sandbox GetSandboxType() override {
+    return sandbox::mojom::Sandbox::kNoSandbox;
+  }
 };
 }  // namespace
 
@@ -51,10 +53,10 @@ NaClBrokerHost::~NaClBrokerHost() {
 
 bool NaClBrokerHost::Init() {
   DCHECK(!process_);
-  process_.reset(content::BrowserChildProcessHost::Create(
+  process_ = content::BrowserChildProcessHost::Create(
       static_cast<content::ProcessType>(PROCESS_TYPE_NACL_BROKER), this,
-      kNaClBrokerServiceName));
-
+      content::ChildProcessHost::IpcMode::kLegacy);
+  process_->SetMetricsName("NaCl Broker");
   process_->GetHost()->CreateChannelMojo();
 
   // Create the path to the nacl broker/loader executable.
@@ -89,9 +91,9 @@ bool NaClBrokerHost::OnMessageReceived(const IPC::Message& msg) {
 
 bool NaClBrokerHost::LaunchLoader(
     int launch_id,
-    service_manager::mojom::ServiceRequest service_request) {
+    mojo::ScopedMessagePipeHandle ipc_channel_handle) {
   return process_->Send(new NaClProcessMsg_LaunchLoaderThroughBroker(
-      launch_id, service_request.PassMessagePipe().release()));
+      launch_id, ipc_channel_handle.release()));
 }
 
 void NaClBrokerHost::OnLoaderLaunched(int launch_id,

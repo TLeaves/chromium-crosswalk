@@ -43,12 +43,12 @@ void ExternalAudioPipelineShlib::SetExternalMediaMuted(bool muted) {
 }
 
 void ExternalAudioPipelineShlib::AddExternalLoopbackAudioObserver(
-    CastMediaShlib::LoopbackAudioObserver* observer) {
+    LoopbackAudioObserver* observer) {
   NOTREACHED();
 }
 
 void ExternalAudioPipelineShlib::RemoveExternalLoopbackAudioObserver(
-    CastMediaShlib::LoopbackAudioObserver* observer) {
+    LoopbackAudioObserver* observer) {
   NOTREACHED();
 }
 
@@ -64,7 +64,6 @@ void ExternalAudioPipelineShlib::RemoveExternalMediaMetadataChangeObserver(
 
 std::unique_ptr<MixerOutputStream>
 ExternalAudioPipelineShlib::CreateMixerOutputStream() {
-  NOTREACHED();
   return nullptr;
 }
 

@@ -4,7 +4,7 @@
 
 package org.chromium.android_webview.test;
 
-import android.support.test.filters.SmallTest;
+import androidx.test.filters.SmallTest;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -15,7 +15,6 @@ import org.junit.runner.RunWith;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient.AwWebResourceRequest;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.content_public.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.net.test.util.TestWebServer;
 
@@ -66,7 +65,7 @@ public class AwServiceWorkerClientTest {
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         if (mWebServer != null) mWebServer.shutdown();
     }
 
@@ -92,7 +91,6 @@ public class AwServiceWorkerClientTest {
     // in ServiceWorker fetches.
     @Test
     @SmallTest
-    @DisabledTest(message = "Disable for flakyness http://crbug.com/676422")
     public void testFetchHttpError() throws Throwable {
         final String fullIndexUrl = mWebServer.setResponse("/index.html", INDEX_HTML, null);
         final String fullSwUrl = mWebServer.setResponse("/sw.js", SW_HTML, null);

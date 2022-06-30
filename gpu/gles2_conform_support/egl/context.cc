@@ -5,7 +5,7 @@
 #include "gpu/gles2_conform_support/egl/context.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
@@ -44,6 +44,7 @@ const bool kLoseContextWhenOutOfMemory = false;
 const bool kSupportClientSideArrays = true;
 }
 
+namespace gles2_conform_support {
 namespace egl {
 // static
 gpu::GpuFeatureInfo Context::platform_gpu_feature_info_;
@@ -61,6 +62,8 @@ Context::Context(Display* display, const Config* config)
       is_destroyed_(false),
       gpu_driver_bug_workarounds_(
           platform_gpu_feature_info_.enabled_gpu_driver_bug_workarounds),
+      discardable_manager_(gpu::GpuPreferences()),
+      passthrough_discardable_manager_(gpu::GpuPreferences()),
       translator_cache_(gpu::GpuPreferences()) {}
 
 Context::~Context() {
@@ -170,15 +173,6 @@ const gpu::Capabilities& Context::GetCapabilities() const {
   return capabilities_;
 }
 
-int32_t Context::CreateImage(ClientBuffer buffer, size_t width, size_t height) {
-  NOTREACHED();
-  return -1;
-}
-
-void Context::DestroyImage(int32_t id) {
-  NOTREACHED();
-}
-
 void Context::SignalQuery(uint32_t query, base::OnceClosure callback) {
   NOTREACHED();
 }
@@ -234,10 +228,6 @@ void Context::WaitSyncToken(const gpu::SyncToken& sync_token) {
 
 bool Context::CanWaitUnverifiedSyncToken(const gpu::SyncToken& sync_token) {
   return false;
-}
-
-void Context::SetDisplayTransform(gfx::OverlayTransform transform) {
-  NOTREACHED();
 }
 
 void Context::ApplyCurrentContext(gl::GLSurface* current_surface) {
@@ -397,3 +387,4 @@ bool Context::Flush(gl::GLSurface* gl_surface) {
 }
 
 }  // namespace egl
+}  // namespace gles2_conform_support

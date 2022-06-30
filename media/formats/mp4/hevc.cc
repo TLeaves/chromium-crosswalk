@@ -15,10 +15,17 @@
 #include "media/formats/mp4/avc.h"
 #include "media/formats/mp4/box_definitions.h"
 #include "media/formats/mp4/box_reader.h"
+#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 #include "media/video/h265_parser.h"
+#else
+#include "media/video/h265_nalu_parser.h"
+#endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 
 namespace media {
 namespace mp4 {
+
+static constexpr uint8_t kAnnexBStartCode[] = {0, 0, 0, 1};
+static constexpr int kAnnexBStartCodeSize = 4;
 
 HEVCDecoderConfigurationRecord::HEVCDecoderConfigurationRecord()
     : configurationVersion(0),
@@ -123,7 +130,7 @@ bool HEVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
 
 VideoCodecProfile HEVCDecoderConfigurationRecord::GetVideoProfile() const {
   // The values of general_profile_idc are taken from the HEVC standard, see
-  // the latest https://www.itu.int/rec/T-REC-H.265/en section A.3
+  // the latest https://www.itu.int/rec/T-REC-H.265/en
   switch (general_profile_idc) {
     case 1:
       return HEVCPROFILE_MAIN;
@@ -131,12 +138,66 @@ VideoCodecProfile HEVCDecoderConfigurationRecord::GetVideoProfile() const {
       return HEVCPROFILE_MAIN10;
     case 3:
       return HEVCPROFILE_MAIN_STILL_PICTURE;
+    case 4:
+      return HEVCPROFILE_REXT;
+    case 5:
+      return HEVCPROFILE_HIGH_THROUGHPUT;
+    case 6:
+      return HEVCPROFILE_MULTIVIEW_MAIN;
+    case 7:
+      return HEVCPROFILE_SCALABLE_MAIN;
+    case 8:
+      return HEVCPROFILE_3D_MAIN;
+    case 9:
+      return HEVCPROFILE_SCREEN_EXTENDED;
+    case 10:
+      return HEVCPROFILE_SCALABLE_REXT;
+    case 11:
+      return HEVCPROFILE_HIGH_THROUGHPUT_SCREEN_EXTENDED;
   }
   return VIDEO_CODEC_PROFILE_UNKNOWN;
 }
 
-static const uint8_t kAnnexBStartCode[] = {0, 0, 0, 1};
-static const int kAnnexBStartCodeSize = 4;
+#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
+VideoColorSpace HEVCDecoderConfigurationRecord::GetColorSpace() {
+  if (!arrays.size()) {
+    DVLOG(1) << "HVCCNALArray not found, fallback to default colorspace";
+    return VideoColorSpace();
+  }
+
+  std::vector<uint8_t> param_sets;
+  if (!HEVC::ConvertConfigToAnnexB(*this, &param_sets))
+    return VideoColorSpace();
+
+  H265Parser parser;
+  H265NALU nalu;
+  parser.SetStream(param_sets.data(), param_sets.size());
+  while (true) {
+    H265Parser::Result result = parser.AdvanceToNextNALU(&nalu);
+
+    if (result != H265Parser::kOk)
+      return VideoColorSpace();
+
+    switch (nalu.nal_unit_type) {
+      case H265NALU::SPS_NUT: {
+        int sps_id = -1;
+        result = parser.ParseSPS(&sps_id);
+        if (result != H265Parser::kOk) {
+          DVLOG(1) << "Could not parse SPS, fallback to default colorspace";
+          return VideoColorSpace();
+        }
+
+        const H265SPS* sps = parser.GetSPS(sps_id);
+        DCHECK(sps);
+        return sps->GetColorSpace();
+      }
+      default:
+        break;
+    }
+  }
+  NOTREACHED();
+}
+#endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 
 // static
 bool HEVC::InsertParamSetsAnnexB(
@@ -146,12 +207,12 @@ bool HEVC::InsertParamSetsAnnexB(
   DCHECK(HEVC::AnalyzeAnnexB(buffer->data(), buffer->size(), *subsamples)
              .is_conformant.value_or(true));
 
-  std::unique_ptr<H265Parser> parser(new H265Parser());
+  std::unique_ptr<H265NaluParser> parser(new H265NaluParser());
   const uint8_t* start = buffer->data();
   parser->SetEncryptedStream(start, buffer->size(), *subsamples);
 
   H265NALU nalu;
-  if (parser->AdvanceToNextNALU(&nalu) != H265Parser::kOk)
+  if (parser->AdvanceToNextNALU(&nalu) != H265NaluParser::kOk)
     return false;
 
   std::vector<uint8_t>::iterator config_insert_point = buffer->begin();
@@ -225,7 +286,7 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
     return result;
   }
 
-  H265Parser parser;
+  H265NaluParser parser;
   parser.SetEncryptedStream(buffer, size, subsamples);
 
   enum NALUOrderState {
@@ -243,13 +304,13 @@ BitstreamConverter::AnalysisResult HEVC::AnalyzeAnnexB(
   // 7.4.2.4.4 Order of NAL units and coded pictures and their association to
   // access units
   while (true) {
-    H265Parser::Result h265_result = parser.AdvanceToNextNALU(&nalu);
-    if (h265_result == H265Parser::kEOStream) {
+    H265NaluParser::Result h265_result = parser.AdvanceToNextNALU(&nalu);
+    if (h265_result == H265NaluParser::kEOStream) {
       break;
     }
 
-    if (h265_result != H265Parser::kOk) {
-      DCHECK_NE(h265_result, H265Parser::kUnsupportedStream)
+    if (h265_result != H265NaluParser::kOk) {
+      DCHECK_NE(h265_result, H265NaluParser::kUnsupportedStream)
           << "AdvanceToNextNALU() returned kUnsupportedStream!";
       return result;
     }

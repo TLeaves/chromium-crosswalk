@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import <EarlGrey/EarlGrey.h>
-#import <XCTest/XCTest.h>
-
 #include "base/bind.h"
+#include "base/ios/ios_util.h"
+#import "base/test/ios/wait_util.h"
 #include "components/strings/grit/components_strings.h"
-#import "ios/chrome/browser/ui/util/uikit_ui_util.h"
-#import "ios/chrome/test/app/chrome_test_util.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
 #include "ios/net/url_test_util.h"
+#import "ios/testing/earl_grey/earl_grey_test.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -21,10 +20,10 @@
 #error "This file requires ARC support."
 #endif
 
-using chrome_test_util::ContentSuggestionCollectionView;
+using base::test::ios::kWaitForUIElementTimeout;
+using chrome_test_util::NTPCollectionView;
 using chrome_test_util::BackButton;
 using chrome_test_util::ForwardButton;
-using chrome_test_util::PurgeCachedWebViewPages;
 using chrome_test_util::OmniboxText;
 
 namespace {
@@ -326,7 +325,7 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
   // Tap the back button and verify NTP is loaded.
   [[EarlGrey selectElementWithMatcher:BackButton()] performAction:grey_tap()];
   [ChromeEarlGrey waitForPageToFinishLoading];
-  [[EarlGrey selectElementWithMatcher:ContentSuggestionCollectionView()]
+  [[EarlGrey selectElementWithMatcher:NTPCollectionView()]
       assertWithMatcher:grey_notNil()];
 
   // Tap the forward button and verify test page is loaded.
@@ -341,7 +340,7 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
 // and verifies the URLs and that hashchange event is fired.
 - (void)testWindowLocationChangeHash {
   self.testServer->RegisterRequestHandler(
-      base::Bind(&WindowLocationHashHandlers));
+      base::BindRepeating(&WindowLocationHashHandlers));
   GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
   const GURL page1URL = self.testServer->GetURL(kPage1URL);
   const GURL hashChangedWithHistoryURL =
@@ -385,7 +384,7 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
 // and verifies that going back returns to the replaced entry.
 - (void)testWindowLocationReplaceAndChangeHash {
   self.testServer->RegisterRequestHandler(
-      base::Bind(&WindowLocationHashHandlers));
+      base::BindRepeating(&WindowLocationHashHandlers));
   GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
   const GURL page1URL = self.testServer->GetURL(kPage1URL);
   const GURL hashChangedWithHistoryURL =
@@ -423,7 +422,7 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
 // only one entry in the history by navigating back.
 - (void)testWindowLocationChangeToSameHash {
   self.testServer->RegisterRequestHandler(
-      base::Bind(&WindowLocationHashHandlers));
+      base::BindRepeating(&WindowLocationHashHandlers));
   GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
   const GURL page1URL = self.testServer->GetURL(kPage1URL);
   const GURL hashChangedWithHistoryURL =
@@ -462,7 +461,8 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
 // Navigates to a page that immediately redirects to another page via JavaScript
 // then verifies the browsing history.
 - (void)testJavaScriptRedirect {
-  self.testServer->RegisterRequestHandler(base::Bind(&RedirectHandlers));
+  self.testServer->RegisterRequestHandler(
+      base::BindRepeating(&RedirectHandlers));
   GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
   // A starting page.
   const GURL initialURL = self.testServer->GetURL(kDefaultPageURL);
@@ -516,12 +516,12 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
                      "});",
                     kNoHashChangeText, content.c_str()];
 
-  NSError* error = nil;
-  chrome_test_util::ExecuteJavaScript(script, &error);
+  [ChromeEarlGrey evaluateJavaScriptForSideEffect:script];
 }
 
 - (void)verifyBackAndForwardAfterRedirect:(std::string)redirectLabel {
-  self.testServer->RegisterRequestHandler(base::Bind(&RedirectHandlers));
+  self.testServer->RegisterRequestHandler(
+      base::BindRepeating(&RedirectHandlers));
   GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
   const GURL indexURL(self.testServer->GetURL(kRedirectIndexURL));
   const GURL destinationURL(self.testServer->GetURL(kDestinationURL));
@@ -570,7 +570,7 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
   [ChromeEarlGrey loadURL:destinationURL];
   [ChromeEarlGrey goBack];
 
-  GREYAssert(PurgeCachedWebViewPages(), @"History not restored");
+  [ChromeEarlGrey triggerRestoreViaTabGridRemoveAllUndo];
 
   [ChromeEarlGrey waitForWebStateContainingText:"Revision"];
   [[EarlGrey selectElementWithMatcher:OmniboxText("chrome://version")]
@@ -589,12 +589,78 @@ std::unique_ptr<net::test_server::HttpResponse> WindowLocationHashHandlers(
   [ChromeEarlGrey loadURL:destinationURL];
   [ChromeEarlGrey goBack];
 
-  GREYAssert(PurgeCachedWebViewPages(), @"History not restored");
+  [ChromeEarlGrey triggerRestoreViaTabGridRemoveAllUndo];
 
   [ChromeEarlGrey goForward];
+
+  // Navigating right after session restore seems to sometimes be slow, so wait with twice the
+  // usual timeout.
   [ChromeEarlGrey waitForWebStateContainingText:"pony"];
   [[EarlGrey selectElementWithMatcher:OmniboxText(destinationURL.GetContent())]
       assertWithMatcher:grey_notNil()];
+}
+
+// Tests that restoring a placeholder URL is correctly restored.  This is a
+// regression test from http://crbug.com/1011758.
+- (void)testRestoreHistoryToPlaceholderURL {
+  GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
+  const GURL destinationURL("chrome://crash");
+  [ChromeEarlGrey loadURL:destinationURL];
+  [ChromeEarlGrey triggerRestoreViaTabGridRemoveAllUndo];
+  [[EarlGrey selectElementWithMatcher:OmniboxText("chrome://crash")]
+      assertWithMatcher:grey_notNil()];
+}
+
+- (void)testEdgeSwipe {
+  GREYAssertTrue(self.testServer->Start(), @"Test server failed to start.");
+  [ChromeEarlGrey loadURL:self.testServer->GetURL(kSimpleFileBasedTestURL)];
+  [ChromeEarlGrey waitForWebStateContainingText:"pony"];
+  [ChromeEarlGrey loadURL:self.testServer->GetURL("/history.html")];
+
+  // Edge swipes don't work with EG, use XCUI directly.
+  XCUIApplication* app = [[XCUIApplication alloc] init];
+
+  // Swiping back from WKWebView to WKWebView or to NTP seems fine with an edge
+  // of zero.
+  CGFloat leftEdge = 0;
+  XCUICoordinate* leftEdgeCoord =
+      [app coordinateWithNormalizedOffset:CGVectorMake(leftEdge, 0.5)];
+  XCUICoordinate* swipeRight =
+      [leftEdgeCoord coordinateWithOffset:CGVectorMake(600, 0.5)];
+
+  // Swipe back twice.
+  [leftEdgeCoord pressForDuration:0.1f thenDragToCoordinate:swipeRight];
+  GREYWaitForAppToIdle(@"App failed to idle");
+  [leftEdgeCoord pressForDuration:0.1f thenDragToCoordinate:swipeRight];
+  GREYWaitForAppToIdle(@"App failed to idle");
+
+  // Verify the NTP is visible.
+  [ChromeEarlGrey waitForPageToFinishLoading];
+  [[EarlGrey selectElementWithMatcher:NTPCollectionView()]
+      assertWithMatcher:grey_notNil()];
+
+  // Swiping forward on a WKWebView works with an edge of one, but swiping
+  // forward from the NTP seems to fail with one, so use 0.99.
+  CGFloat rightEdgeNTP = 0.99;
+  CGFloat rightEdge = 1;
+  XCUICoordinate* rightEdgeCoordFromNTP =
+      [app coordinateWithNormalizedOffset:CGVectorMake(rightEdgeNTP, 0.5)];
+  XCUICoordinate* swipeLeftFromNTP =
+      [rightEdgeCoordFromNTP coordinateWithOffset:CGVectorMake(-600, 0.5)];
+
+  // Swiping forward twice and verify each page.
+  [rightEdgeCoordFromNTP pressForDuration:0.1f
+                     thenDragToCoordinate:swipeLeftFromNTP];
+  GREYWaitForAppToIdle(@"App failed to idle");
+  [ChromeEarlGrey waitForWebStateContainingText:"pony"];
+
+  XCUICoordinate* rightEdgeCoord =
+      [app coordinateWithNormalizedOffset:CGVectorMake(rightEdge, 0.5)];
+  XCUICoordinate* swipeLeft =
+      [rightEdgeCoord coordinateWithOffset:CGVectorMake(-600, 0.5)];
+  [rightEdgeCoord pressForDuration:0.1f thenDragToCoordinate:swipeLeft];
+  GREYWaitForAppToIdle(@"App failed to idle");
+  [ChromeEarlGrey waitForWebStateContainingText:"onload"];
 }
 
 @end

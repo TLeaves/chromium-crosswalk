@@ -20,14 +20,14 @@ function output(src, txt) {
   } else {
     domAutomationController.send(txt);
   }
-  console.log(txt);
+  console.warn(txt);
 }
 
 /**
  * Installs a payment app.
  * @param {String} method - The payment method name that this app supports.
  */
-function install(method) {  // eslint-disable-line no-unused-vars
+function install(method) { // eslint-disable-line no-unused-vars
   if (!navigator.serviceWorker) {
     output('install()', 'ServiceWorker API not found.');
     return;

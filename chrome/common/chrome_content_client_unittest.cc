@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "base/containers/contains.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/test/scoped_command_line.h"
@@ -14,12 +16,17 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/origin_util.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/common/constants.h"
+#include "extensions/buildflags/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
+#include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 #include "url/url_util.h"
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/common/constants.h"
+#endif
 
 namespace chrome_common {
 
@@ -92,6 +99,7 @@ TEST(ChromeContentClientTest, FindMostRecent) {
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 TEST(ChromeContentClientTest, AdditionalSchemes) {
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   EXPECT_TRUE(url::IsStandard(
       extensions::kExtensionScheme,
       url::Component(0, strlen(extensions::kExtensionScheme))));
@@ -101,14 +109,36 @@ TEST(ChromeContentClientTest, AdditionalSchemes) {
   url::Origin origin = url::Origin::Create(extension_url);
   EXPECT_EQ("chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef",
             origin.Serialize());
+#endif
 
-  EXPECT_TRUE(content::IsOriginSecure(GURL("chrome-native://newtab/")));
+  // IsUrlPotentiallyTrustworthy assertions test for https://crbug.com/734581.
+  constexpr const char* kChromeLayerUrlsRegisteredAsSecure[] = {
+    // The schemes below are registered both as secure and no-access.  Product
+    // code needs to treat such URLs as trustworthy, even though no-access
+    // schemes translate into an opaque origin (which is untrustworthy).
+    "chrome-native://newtab/",
+    "chrome-error://foo/",
+    // The schemes below are registered as secure (but not as no-access).
+    "chrome://foo/",
+    "chrome-untrusted://foo/",
+    "chrome-search://foo/",
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+    "chrome-extension://foo/",
+#endif
+    "devtools://foo/",
+  };
+  for (const std::string& str : kChromeLayerUrlsRegisteredAsSecure) {
+    SCOPED_TRACE(str);
+    GURL url(str);
+    EXPECT_TRUE(base::Contains(url::GetSecureSchemes(), url.scheme()));
+    EXPECT_TRUE(network::IsUrlPotentiallyTrustworthy(url));
+  }
 
   GURL chrome_url(content::GetWebUIURL("dummyurl"));
-  EXPECT_TRUE(content::IsOriginSecure(chrome_url));
+  EXPECT_TRUE(network::IsUrlPotentiallyTrustworthy(chrome_url));
   EXPECT_FALSE(content::OriginCanAccessServiceWorkers(chrome_url));
   EXPECT_TRUE(
-      content::IsPotentiallyTrustworthyOrigin(url::Origin::Create(chrome_url)));
+      network::IsOriginPotentiallyTrustworthy(url::Origin::Create(chrome_url)));
 }
 
 class OriginTrialInitializationTestThread
@@ -117,6 +147,11 @@ class OriginTrialInitializationTestThread
   explicit OriginTrialInitializationTestThread(
       ChromeContentClient* chrome_client)
       : chrome_client_(chrome_client) {}
+
+  OriginTrialInitializationTestThread(
+      const OriginTrialInitializationTestThread&) = delete;
+  OriginTrialInitializationTestThread& operator=(
+      const OriginTrialInitializationTestThread&) = delete;
 
   void ThreadMain() override { AccessPolicy(chrome_client_, &policy_objects_); }
 
@@ -137,10 +172,8 @@ class OriginTrialInitializationTestThread
   }
 
  private:
-  ChromeContentClient* chrome_client_;
+  raw_ptr<ChromeContentClient> chrome_client_;
   std::vector<blink::OriginTrialPolicy*> policy_objects_;
-
-  DISALLOW_COPY_AND_ASSIGN(OriginTrialInitializationTestThread);
 };
 
 // Test that the lazy initialization of Origin Trial policy is resistant to

@@ -8,9 +8,8 @@
 #include <set>
 
 #include "base/callback_forward.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "services/device/geolocation/wifi_data.h"
 
 namespace device {
@@ -18,6 +17,9 @@ namespace device {
 class WifiDataProvider : public base::RefCountedThreadSafe<WifiDataProvider> {
  public:
   WifiDataProvider();
+
+  WifiDataProvider(const WifiDataProvider&) = delete;
+  WifiDataProvider& operator=(const WifiDataProvider&) = delete;
 
   // Tells the provider to start looking for data. Callbacks will start
   // receiving notifications after this call.
@@ -35,7 +37,9 @@ class WifiDataProvider : public base::RefCountedThreadSafe<WifiDataProvider> {
   // obtain.
   virtual bool GetData(WifiData* data) = 0;
 
-  typedef base::Closure WifiDataUpdateCallback;
+  virtual void ForceRescan() = 0;
+
+  typedef base::RepeatingClosure WifiDataUpdateCallback;
 
   void AddCallback(WifiDataUpdateCallback* callback);
 
@@ -66,8 +70,6 @@ class WifiDataProvider : public base::RefCountedThreadSafe<WifiDataProvider> {
   scoped_refptr<base::SingleThreadTaskRunner> client_task_runner_;
 
   CallbackSet callbacks_;
-
-  DISALLOW_COPY_AND_ASSIGN(WifiDataProvider);
 };
 
 }  // namespace device

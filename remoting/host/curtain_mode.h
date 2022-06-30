@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 
@@ -22,6 +21,9 @@ class ClientSessionControl;
 
 class CurtainMode {
  public:
+  CurtainMode(const CurtainMode&) = delete;
+  CurtainMode& operator=(const CurtainMode&) = delete;
+
   virtual ~CurtainMode() {}
 
   // Creates a platform-specific curtain mode implementation object that
@@ -39,11 +41,8 @@ class CurtainMode {
 
  protected:
   CurtainMode() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CurtainMode);
 };
 
 }  // namespace remoting
 
-#endif
+#endif  // REMOTING_HOST_CURTAIN_MODE_H_

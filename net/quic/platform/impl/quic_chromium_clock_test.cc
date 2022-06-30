@@ -4,10 +4,10 @@
 
 #include "net/quic/platform/impl/quic_chromium_clock.h"
 
+#include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace quic {
-namespace test {
+namespace quic::test {
 
 TEST(QuicChromiumClockTest, Now) {
   QuicChromiumClock clock;
@@ -34,5 +34,4 @@ TEST(QuicChromiumClockTest, WallNow) {
   }
 }
 
-}  // namespace test
-}  // namespace quic
+}  // namespace quic::test

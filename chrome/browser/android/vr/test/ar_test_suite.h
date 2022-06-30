@@ -9,7 +9,7 @@
 
 namespace base {
 namespace test {
-class ScopedTaskEnvironment;
+class TaskEnvironment;
 }  // namespace test
 }  // namespace base
 
@@ -18,6 +18,10 @@ namespace vr {
 class ArTestSuite : public base::TestSuite {
  public:
   ArTestSuite(int argc, char** argv);
+
+  ArTestSuite(const ArTestSuite&) = delete;
+  ArTestSuite& operator=(const ArTestSuite&) = delete;
+
   ~ArTestSuite() override;
 
  protected:
@@ -25,9 +29,7 @@ class ArTestSuite : public base::TestSuite {
   void Shutdown() override;
 
  private:
-  std::unique_ptr<base::test::ScopedTaskEnvironment> scoped_task_environment_;
-
-  DISALLOW_COPY_AND_ASSIGN(ArTestSuite);
+  std::unique_ptr<base::test::TaskEnvironment> task_environment_;
 };
 
 }  // namespace vr

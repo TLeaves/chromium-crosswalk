@@ -5,43 +5,46 @@
 #ifndef SANDBOX_WIN_SRC_SANDBOX_POLICY_BASE_H_
 #define SANDBOX_WIN_SRC_SANDBOX_POLICY_BASE_H_
 
-#include <windows.h>
-
 #include <stddef.h>
 #include <stdint.h>
 
 #include <list>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/process/launch.h"
-#include "base/strings/string16.h"
+#include "base/synchronization/lock.h"
 #include "base/win/scoped_handle.h"
-#include "sandbox/win/src/app_container_profile_base.h"
-#include "sandbox/win/src/crosscall_server.h"
+#include "base/win/windows_types.h"
+#include "sandbox/win/src/app_container_base.h"
 #include "sandbox/win/src/handle_closer.h"
 #include "sandbox/win/src/ipc_tags.h"
+#include "sandbox/win/src/job.h"
 #include "sandbox/win/src/policy_engine_opcodes.h"
 #include "sandbox/win/src/policy_engine_params.h"
 #include "sandbox/win/src/sandbox_policy.h"
-#include "sandbox/win/src/win_utils.h"
 
 namespace sandbox {
 
+class Dispatcher;
 class LowLevelPolicy;
+class PolicyDiagnostic;
 class TargetProcess;
 struct PolicyGlobal;
 
 class PolicyBase final : public TargetPolicy {
  public:
   PolicyBase();
+  ~PolicyBase() override;
+
+  PolicyBase(const PolicyBase&) = delete;
+  PolicyBase& operator=(const PolicyBase&) = delete;
 
   // TargetPolicy:
-  void AddRef() override;
-  void Release() override;
   ResultCode SetTokenLevel(TokenLevel initial, TokenLevel lockdown) override;
   TokenLevel GetInitialTokenLevel() const override;
   TokenLevel GetLockdownTokenLevel() const override;
@@ -49,7 +52,7 @@ class PolicyBase final : public TargetPolicy {
   JobLevel GetJobLevel() const override;
   ResultCode SetJobMemoryLimit(size_t memory_limit) override;
   ResultCode SetAlternateDesktop(bool alternate_winstation) override;
-  base::string16 GetAlternateDesktop() const override;
+  std::wstring GetAlternateDesktop() const override;
   ResultCode CreateAlternateDesktop(bool alternate_winstation) override;
   void DestroyAlternateDesktop() override;
   ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) override;
@@ -68,23 +71,32 @@ class PolicyBase final : public TargetPolicy {
                      Semantics semantics,
                      const wchar_t* pattern) override;
   ResultCode AddDllToUnload(const wchar_t* dll_name) override;
-  ResultCode AddKernelObjectToClose(const base::char16* handle_type,
-                                    const base::char16* handle_name) override;
+  ResultCode AddKernelObjectToClose(const wchar_t* handle_type,
+                                    const wchar_t* handle_name) override;
   void AddHandleToShare(HANDLE handle) override;
   void SetLockdownDefaultDacl() override;
-  void SetEnableOPMRedirection() override;
-  bool GetEnableOPMRedirection() override;
+  void AddRestrictingRandomSid() override;
   ResultCode AddAppContainerProfile(const wchar_t* package_name,
                                     bool create_profile) override;
-  scoped_refptr<AppContainerProfile> GetAppContainerProfile() override;
+  scoped_refptr<AppContainer> GetAppContainer() override;
   void SetEffectiveToken(HANDLE token) override;
-
-  // Get the AppContainer profile as its internal type.
-  scoped_refptr<AppContainerProfileBase> GetAppContainerProfileBase();
+  void SetAllowNoSandboxJob() override;
+  bool GetAllowNoSandboxJob() override;
 
   // Creates a Job object with the level specified in a previous call to
   // SetJobLevel().
-  ResultCode MakeJobObject(base::win::ScopedHandle* job);
+  ResultCode InitJob();
+
+  // Returns the handle for this policy's job, or INVALID_HANDLE_VALUE if the
+  // job is not initialized.
+  HANDLE GetJobHandle();
+
+  // Returns true if a job is associated with this policy.
+  bool HasJob();
+
+  // Updates the active process limit on the policy's job to zero.
+  // Has no effect if the job is allowed to spawn processes.
+  ResultCode DropActiveProcessLimit();
 
   // Creates the two tokens with the levels specified in a previous call to
   // SetTokenLevel(). Also creates a lowbox token if specified based on the
@@ -93,18 +105,19 @@ class PolicyBase final : public TargetPolicy {
                         base::win::ScopedHandle* lockdown,
                         base::win::ScopedHandle* lowbox);
 
-  PSID GetLowBoxSid() const;
-
-  // Adds a target process to the internal list of targets. Internally a
+  // Applies the sandbox to |target| and takes ownership. Internally a
   // call to TargetProcess::Init() is issued.
-  ResultCode AddTarget(TargetProcess* target);
+  ResultCode ApplyToTarget(std::unique_ptr<TargetProcess> target);
 
-  // Called when there are no more active processes in a Job.
-  // Removes a Job object associated with this policy and the target associated
-  // with the job.
-  bool OnJobEmpty(HANDLE job);
+  // Called when there are no more active processes in the policy's Job.
+  // If a process is not in a job, call OnProcessFinished().
+  bool OnJobEmpty();
 
-  EvalResult EvalPolicy(int service, CountedParameterSetBase* params);
+  // Called when a process no longer needs to be tracked. Processes in jobs
+  // should be notified via OnJobEmpty instead.
+  bool OnProcessFinished(DWORD process_id);
+
+  EvalResult EvalPolicy(IpcTag service, CountedParameterSetBase* params);
 
   HANDLE GetStdoutHandle();
   HANDLE GetStderrHandle();
@@ -113,26 +126,21 @@ class PolicyBase final : public TargetPolicy {
   const base::HandlesToInheritVector& GetHandlesBeingShared();
 
  private:
-  ~PolicyBase();
+  // Allow PolicyDiagnostic to snapshot PolicyBase for diagnostics.
+  friend class PolicyDiagnostic;
 
-  // Sets up interceptions for a new target.
-  ResultCode SetupAllInterceptions(TargetProcess* target);
+  // Sets up interceptions for a new target. This policy must own |target|.
+  ResultCode SetupAllInterceptions(TargetProcess& target);
 
-  // Sets up the handle closer for a new target.
-  bool SetupHandleCloser(TargetProcess* target);
+  // Sets up the handle closer for a new target. This policy must own |target|.
+  bool SetupHandleCloser(TargetProcess& target);
 
   ResultCode AddRuleInternal(SubSystem subsystem,
                              Semantics semantics,
                              const wchar_t* pattern);
 
-  // This lock synchronizes operations on the targets_ collection.
-  CRITICAL_SECTION lock_;
-  // Maintains the list of target process associated with this policy.
-  // The policy takes ownership of them.
-  typedef std::list<TargetProcess*> TargetSet;
-  TargetSet targets_;
-  // Standard object-lifetime reference counter.
-  volatile LONG ref_count;
+  // The policy takes ownership of a target as it is applied to it.
+  std::unique_ptr<TargetProcess> target_;
   // The user-defined global policy settings.
   TokenLevel lockdown_level_;
   TokenLevel initial_level_;
@@ -141,8 +149,6 @@ class PolicyBase final : public TargetPolicy {
   size_t memory_limit_;
   bool use_alternate_desktop_;
   bool use_alternate_winstation_;
-  // Helps the file system policy initialization.
-  bool file_system_init_;
   bool relaxed_interceptions_;
   HANDLE stdout_handle_;
   HANDLE stderr_handle_;
@@ -152,19 +158,18 @@ class PolicyBase final : public TargetPolicy {
   MitigationFlags delayed_mitigations_;
   bool is_csrss_connected_;
   // Object in charge of generating the low level policy.
-  LowLevelPolicy* policy_maker_;
+  raw_ptr<LowLevelPolicy> policy_maker_;
   // Memory structure that stores the low level policy.
-  PolicyGlobal* policy_;
+  raw_ptr<PolicyGlobal> policy_;
   // The list of dlls to unload in the target process.
-  std::vector<base::string16> blocklisted_dlls_;
+  std::vector<std::wstring> blocklisted_dlls_;
   // This is a map of handle-types to names that we need to close in the
   // target process. A null set means we need to close all handles of the
   // given type.
   HandleCloser handle_closer_;
-  PSID lowbox_sid_;
-  base::win::ScopedHandle lowbox_directory_;
   std::unique_ptr<Dispatcher> dispatcher_;
   bool lockdown_default_dacl_;
+  bool add_restricting_random_sid_;
 
   static HDESK alternate_desktop_handle_;
   static HWINSTA alternate_winstation_handle_;
@@ -177,13 +182,12 @@ class PolicyBase final : public TargetPolicy {
   // This list contains handles other than the stderr/stdout handles which are
   // shared with the target at times.
   base::HandlesToInheritVector handles_to_share_;
-  bool enable_opm_redirection_;
 
-  scoped_refptr<AppContainerProfileBase> app_container_profile_;
+  scoped_refptr<AppContainerBase> app_container_;
 
   HANDLE effective_token_;
-
-  DISALLOW_COPY_AND_ASSIGN(PolicyBase);
+  bool allow_no_sandbox_job_;
+  Job job_;
 };
 
 }  // namespace sandbox

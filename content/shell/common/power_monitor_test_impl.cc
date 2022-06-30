@@ -4,23 +4,27 @@
 
 #include "content/shell/common/power_monitor_test_impl.h"
 
-#include "mojo/public/cpp/bindings/strong_binding.h"
+#include <memory>
+#include <utility>
+
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 
 namespace content {
 
 // static
-void PowerMonitorTestImpl::MakeStrongBinding(
-    mojom::PowerMonitorTestRequest request) {
-  mojo::MakeStrongBinding(std::make_unique<PowerMonitorTestImpl>(),
-                          std::move(request));
+void PowerMonitorTestImpl::MakeSelfOwnedReceiver(
+    mojo::PendingReceiver<mojom::PowerMonitorTest> receiver) {
+  mojo::MakeSelfOwnedReceiver(std::make_unique<PowerMonitorTestImpl>(),
+                              std::move(receiver));
 }
 
 PowerMonitorTestImpl::PowerMonitorTestImpl() {
-  base::PowerMonitor::AddObserver(this);
+  base::PowerMonitor::AddPowerStateObserver(this);
 }
 
 PowerMonitorTestImpl::~PowerMonitorTestImpl() {
-  base::PowerMonitor::RemoveObserver(this);
+  base::PowerMonitor::RemovePowerStateObserver(this);
 }
 
 void PowerMonitorTestImpl::QueryNextState(QueryNextStateCallback callback) {

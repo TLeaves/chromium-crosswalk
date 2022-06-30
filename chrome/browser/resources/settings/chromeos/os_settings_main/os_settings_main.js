@@ -3,91 +3,124 @@
 // found in the LICENSE file.
 
 /**
+ * @fileoverview
+ * 'os-settings-main' displays the selected settings page.
+ */
+import 'chrome://resources/cr_components/managed_footnote/managed_footnote.js';
+import 'chrome://resources/cr_elements/hidden_style_css.m.js';
+import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/js/search_highlight_utils.js';
+import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
+import '../os_about_page/os_about_page.js';
+import '../os_settings_page/os_settings_page.js';
+import '../../prefs/prefs.js';
+import '../../settings_shared_css.js';
+import '../../settings_vars.css.js';
+
+import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {loadTimeData} from '../../i18n_setup.js';
+import {Route, Router} from '../../router.js';
+import {OSPageVisibility} from '../os_page_visibility.js';
+import {routes} from '../os_route.js';
+import {RouteObserverBehavior, RouteObserverBehaviorInterface} from '../route_observer_behavior.js';
+
+/**
  * @typedef {{about: boolean, settings: boolean}}
  */
 let MainPageVisibility;
 
 /**
- * @fileoverview
- * 'os-settings-main' displays the selected settings page.
+ * @constructor
+ * @extends {PolymerElement}
+ * @implements {RouteObserverBehaviorInterface}
  */
-Polymer({
-  is: 'os-settings-main',
+const OsSettingsMainElementBase =
+    mixinBehaviors([RouteObserverBehavior], PolymerElement);
 
-  behaviors: [settings.RouteObserverBehavior],
+/** @polymer */
+class OsSettingsMainElement extends OsSettingsMainElementBase {
+  static get is() {
+    return 'os-settings-main';
+  }
 
-  properties: {
-    /**
-     * Preferences state.
-     */
-    prefs: {
-      type: Object,
-      notify: true,
-    },
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
-    advancedToggleExpanded: {
-      type: Boolean,
-      notify: true,
-    },
-
-    /** @private */
-    overscroll_: {
-      type: Number,
-      observer: 'overscrollChanged_',
-    },
-
-    /**
-     * Controls which main pages are displayed via dom-ifs, based on the current
-     * route.
-     * @private {!MainPageVisibility}
-     */
-    showPages_: {
-      type: Object,
-      value: function() {
-        return {about: false, settings: false};
+  static get properties() {
+    return {
+      /**
+       * Preferences state.
+       */
+      prefs: {
+        type: Object,
+        notify: true,
       },
-    },
 
-    /**
-     * Whether a search operation is in progress or previous search results are
-     * being displayed.
-     * @private {boolean}
-     */
-    inSearchMode_: {
-      type: Boolean,
-      value: false,
-    },
+      advancedToggleExpanded: {
+        type: Boolean,
+        notify: true,
+      },
 
-    /** @private */
-    showNoResultsFound_: {
-      type: Boolean,
-      value: false,
-    },
+      /** @private */
+      overscroll_: {
+        type: Number,
+        observer: 'overscrollChanged_',
+      },
 
-    /** @private */
-    showingSubpage_: Boolean,
+      /**
+       * Controls which main pages are displayed via dom-ifs, based on the
+       * current route.
+       * @private {!MainPageVisibility}
+       */
+      showPages_: {
+        type: Object,
+        value() {
+          return {about: false, settings: false};
+        },
+      },
 
-    toolbarSpinnerActive: {
-      type: Boolean,
-      value: false,
-      notify: true,
-    },
+      /** @private */
+      showingSubpage_: Boolean,
 
-    /**
-     * Dictionary defining page visibility.
-     * @type {!PageVisibility}
-     */
-    pageVisibility: Object,
+      toolbarSpinnerActive: {
+        type: Boolean,
+        value: false,
+        notify: true,
+      },
 
-    showApps: Boolean,
+      /**
+       * Dictionary defining page visibility.
+       * @type {!OSPageVisibility}
+       */
+      pageVisibility: Object,
 
-    showAndroidApps: Boolean,
+      showAndroidApps: Boolean,
 
-    havePlayStoreApp: Boolean,
-  },
+      showArcvmManageUsb: Boolean,
+
+      showCrostini: Boolean,
+
+      showReset: Boolean,
+
+      showStartup: Boolean,
+
+      showKerberosSection: Boolean,
+
+      havePlayStoreApp: Boolean,
+    };
+  }
+
+  constructor() {
+    super();
+
+    /** @private {?function(): void} */
+    this.boundScroll_ = null;
+  }
 
   /** @private */
-  overscrollChanged_: function() {
+  overscrollChanged_() {
     if (!this.overscroll_ && this.boundScroll_) {
       this.offsetParent.removeEventListener('scroll', this.boundScroll_);
       window.removeEventListener('resize', this.boundScroll_);
@@ -101,7 +134,7 @@ Polymer({
       this.offsetParent.addEventListener('scroll', this.boundScroll_);
       window.addEventListener('resize', this.boundScroll_);
     }
-  },
+  }
 
   /**
    * Sets the overscroll padding. Never forces a scroll, i.e., always leaves
@@ -109,7 +142,7 @@ Polymer({
    * @param {number=} opt_minHeight The minimum overscroll height needed.
    * @private
    */
-  setOverscroll_: function(opt_minHeight) {
+  setOverscroll_(opt_minHeight) {
     const scroller = this.offsetParent;
     if (!scroller) {
       return;
@@ -122,15 +155,16 @@ Polymer({
         overscroll.scrollHeight - (overscrollBottom - visibleBottom);
     this.overscroll_ =
         Math.max(opt_minHeight || 0, Math.ceil(visibleOverscroll));
-  },
+  }
 
   /**
    * Updates the hidden state of the about and settings pages based on the
    * current route.
-   * @param {!settings.Route} newRoute
+   * @param {!Route} newRoute
    */
-  currentRouteChanged: function(newRoute) {
-    const inAbout = settings.routes.ABOUT.contains(settings.getCurrentRoute());
+  currentRouteChanged(newRoute) {
+    const inAbout =
+        routes.ABOUT.contains(Router.getInstance().getCurrentRoute());
     this.showPages_ = {about: inAbout, settings: !inAbout};
 
     if (!newRoute.isSubpage()) {
@@ -139,17 +173,17 @@ Polymer({
                                      loadTimeData.getString('aboutPageTitle')) :
                                  loadTimeData.getString('settings');
     }
-  },
+  }
 
   /** @private */
-  onShowingSubpage_: function() {
+  onShowingSubpage_() {
     this.showingSubpage_ = true;
-  },
+  }
 
   /** @private */
-  onShowingMainPage_: function() {
+  onShowingMainPage_() {
     this.showingSubpage_ = false;
-  },
+  }
 
   /**
    * A handler for the 'showing-section' event fired from os-settings-page,
@@ -158,7 +192,7 @@ Polymer({
    * @param {!CustomEvent<!HTMLElement>} e
    * @private
    */
-  onShowingSection_: function(e) {
+  onShowingSection_(e) {
     const section = e.detail;
     // Calculate the height that the overscroll padding should be set to, so
     // that the given section is displayed at the top of the viewport.
@@ -168,69 +202,16 @@ Polymer({
     const overscroll = Math.max(0, this.offsetParent.clientHeight - distance);
     this.setOverscroll_(overscroll);
     section.scrollIntoView();
-  },
-
-  /**
-   * Returns the root page (if it exists) for a route.
-   * @param {!settings.Route} route
-   * @return {?OsSettingsPageElement}
-   */
-  getPage_: function(route) {
-    if (settings.routes.BASIC.contains(route) ||
-        (settings.routes.ADVANCED &&
-         settings.routes.ADVANCED.contains(route))) {
-      return /** @type {?OsSettingsPageElement} */ (
-          this.$$('os-settings-page'));
-    }
-    assertNotReached();
-  },
-
-  /**
-   * @param {string} query
-   * @return {!Promise} A promise indicating that searching finished.
-   */
-  searchContents: function(query) {
-    // Trigger rendering of the basic and advanced pages and search once ready.
-    this.inSearchMode_ = true;
-    this.toolbarSpinnerActive = true;
-
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const whenSearchDone =
-            assert(this.getPage_(settings.routes.BASIC)).searchContents(query);
-        whenSearchDone.then(result => {
-          resolve();
-          if (result.canceled) {
-            // Nothing to do here. A previous search request was canceled
-            // because a new search request was issued with a different query
-            // before the previous completed.
-            return;
-          }
-
-          this.toolbarSpinnerActive = false;
-          this.inSearchMode_ = !result.wasClearSearch;
-          this.showNoResultsFound_ =
-              this.inSearchMode_ && !result.didFindMatches;
-
-          if (this.inSearchMode_) {
-            Polymer.IronA11yAnnouncer.requestAvailability();
-            this.fire('iron-announce', {
-              text: this.showNoResultsFound_ ?
-                  loadTimeData.getString('searchNoResults') :
-                  loadTimeData.getStringF('searchResults', query)
-            });
-          }
-        });
-      }, 0);
-    });
-  },
+    section.focus();
+  }
 
   /**
    * @return {boolean}
    * @private
    */
-  showManagedHeader_: function() {
-    return !this.inSearchMode_ && !this.showingSubpage_ &&
-        !this.showPages_.about;
-  },
-});
+  showManagedHeader_() {
+    return !this.showingSubpage_ && !this.showPages_.about;
+  }
+}
+
+customElements.define(OsSettingsMainElement.is, OsSettingsMainElement);

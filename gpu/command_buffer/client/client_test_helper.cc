@@ -98,11 +98,8 @@ void FakeCommandBufferServiceBase::SetContextLostReason(
   state_.context_lost_reason = reason;
 }
 
-// GCC requires these declarations, but MSVC requires they not be present
-#ifndef _MSC_VER
 const int32_t FakeCommandBufferServiceBase::kTransferBufferBaseId;
 const int32_t FakeCommandBufferServiceBase::kMaxTransferBuffers;
-#endif
 
 MockClientCommandBuffer::MockClientCommandBuffer() {
   DelegateToFake();
@@ -139,7 +136,8 @@ void MockClientCommandBuffer::SetGetBuffer(int transfer_buffer_id) {
 
 scoped_refptr<gpu::Buffer> MockClientCommandBuffer::CreateTransferBuffer(
     uint32_t size,
-    int32_t* id) {
+    int32_t* id,
+    TransferBufferAllocationOption option) {
   return CreateTransferBufferHelper(size, id);
 }
 
@@ -155,6 +153,13 @@ void MockClientCommandBuffer::DelegateToFake() {
   ON_CALL(*this, DestroyTransferBuffer(_))
       .WillByDefault(Invoke(
           this, &FakeCommandBufferServiceBase::DestroyTransferBufferHelper));
+}
+
+void MockClientCommandBuffer::ForceLostContext(
+    error::ContextLostReason reason) {
+  // TODO(kbr): add a test for a call to this method.
+  SetParseError(error::kLostContext);
+  SetContextLostReason(reason);
 }
 
 MockClientCommandBufferMockFlush::MockClientCommandBufferMockFlush() {

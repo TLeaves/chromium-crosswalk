@@ -5,8 +5,9 @@
 package org.chromium.chromoting;
 
 import android.app.Activity;
-import android.support.annotation.IntDef;
 import android.text.TextUtils;
+
+import androidx.annotation.IntDef;
 
 import org.chromium.base.Log;
 
@@ -26,7 +27,7 @@ import java.util.List;
  * a chance to handle the message.
  */
 public class CapabilityManager {
-    /** Used to allow objects to receive notifications when the host capabilites are received. */
+    /** Used to allow objects to receive notifications when the host capabilities are received. */
     public interface CapabilitiesChangedListener {
         void onCapabilitiesChanged(List<String> newCapabilities);
     }

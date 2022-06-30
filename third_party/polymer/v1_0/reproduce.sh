@@ -108,9 +108,6 @@ echo 'Creating a summary of components...'
 python create_components_summary.py > components_summary.txt
 
 echo 'Creating GN files for interfaces and externs...'
-./generate_gn.sh
+./generate_gn.sh 2 # polymer_version=2
 
 popd > /dev/null
-
-echo 'Searching for unused elements...'
-python "$(dirname "$0")"/find_unused_elements.py

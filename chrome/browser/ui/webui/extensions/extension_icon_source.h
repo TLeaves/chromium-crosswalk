@@ -8,7 +8,7 @@
 #include <map>
 #include <string>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "components/favicon/core/favicon_service.h"
@@ -53,12 +53,20 @@ class ExtensionIconSource : public content::URLDataSource,
                             public base::SupportsWeakPtr<ExtensionIconSource> {
  public:
   explicit ExtensionIconSource(Profile* profile);
+
+  ExtensionIconSource(const ExtensionIconSource&) = delete;
+  ExtensionIconSource& operator=(const ExtensionIconSource&) = delete;
+
   ~ExtensionIconSource() override;
 
   // Gets the URL of the |extension| icon in the given |icon_size|, falling back
   // based on the |match| type. If |grayscale|, the URL will be for the
   // desaturated version of the icon.
   static GURL GetIconURL(const Extension* extension,
+                         int icon_size,
+                         ExtensionIconSet::MatchType match,
+                         bool grayscale);
+  static GURL GetIconURL(const std::string& extension_id,
                          int icon_size,
                          ExtensionIconSet::MatchType match,
                          bool grayscale);
@@ -71,9 +79,9 @@ class ExtensionIconSource : public content::URLDataSource,
   std::string GetSource() override;
   std::string GetMimeType(const std::string&) override;
   void StartDataRequest(
-      const std::string& path,
-      const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
-      const content::URLDataSource::GotDataCallback& callback) override;
+      const GURL& url,
+      const content::WebContents::Getter& wc_getter,
+      content::URLDataSource::GotDataCallback callback) override;
   bool AllowCaching() override;
 
  private:
@@ -120,15 +128,15 @@ class ExtensionIconSource : public content::URLDataSource,
   void LoadIconFailed(int request_id);
 
   // Parses and saves an ExtensionIconRequest for the URL |path| for the
-  // specified |request_id|.
+  // specified |request_id|. Takes the |callback| if it returns true.
   bool ParseData(const std::string& path,
                  int request_id,
-                 const content::URLDataSource::GotDataCallback& callback);
+                 content::URLDataSource::GotDataCallback* callback);
 
   // Stores the parameters associated with the |request_id|, making them
   // as an ExtensionIconRequest via GetData.
   void SetData(int request_id,
-               const content::URLDataSource::GotDataCallback& callback,
+               content::URLDataSource::GotDataCallback callback,
                const Extension* extension,
                bool grayscale,
                int size,
@@ -140,7 +148,7 @@ class ExtensionIconSource : public content::URLDataSource,
   // Removes temporary data associated with |request_id|.
   void ClearData(int request_id);
 
-  Profile* profile_;
+  raw_ptr<Profile> profile_;
 
   // Maps tracker ids to request ids.
   std::map<int, int> tracker_map_;
@@ -153,8 +161,6 @@ class ExtensionIconSource : public content::URLDataSource,
   std::unique_ptr<SkBitmap> default_extension_data_;
 
   base::CancelableTaskTracker cancelable_task_tracker_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExtensionIconSource);
 };
 
 }  // namespace extensions

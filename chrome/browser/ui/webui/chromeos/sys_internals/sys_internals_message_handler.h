@@ -7,9 +7,7 @@
 
 #include <stdint.h>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/task/post_task.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
@@ -17,6 +15,11 @@
 class SysInternalsMessageHandler : public content::WebUIMessageHandler {
  public:
   SysInternalsMessageHandler();
+
+  SysInternalsMessageHandler(const SysInternalsMessageHandler&) = delete;
+  SysInternalsMessageHandler& operator=(const SysInternalsMessageHandler&) =
+      delete;
+
   ~SysInternalsMessageHandler() override;
 
   // content::WebUIMessageHandler methods:
@@ -59,9 +62,7 @@ class SysInternalsMessageHandler : public content::WebUIMessageHandler {
   //
   void ReplySysInfo(base::Value callback_id, base::Value result);
 
-  base::WeakPtrFactory<SysInternalsMessageHandler> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(SysInternalsMessageHandler);
+  base::WeakPtrFactory<SysInternalsMessageHandler> weak_ptr_factory_{this};
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_CHROMEOS_SYS_INTERNALS_SYS_INTERNALS_MESSAGE_HANDLER_H_

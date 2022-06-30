@@ -4,11 +4,15 @@
 
 #include "sandbox/win/src/target_services.h"
 
+#include <windows.h>
+#include <winsock2.h>
+
 #include <new>
 
 #include <process.h>
 #include <stdint.h>
 
+#include "base/logging.h"
 #include "base/win/windows_version.h"
 #include "sandbox/win/src/crosscall_client.h"
 #include "sandbox/win/src/handle_closer_agent.h"
@@ -164,7 +168,39 @@ TargetServicesBase* TargetServicesBase::GetInstance() {
   return g_target_services;
 }
 
-// The broker services a 'test' IPC service with the IPC_PING_TAG tag.
+SOCKET TargetServicesBase::CreateBrokeredSocket(int af,
+                                                int type,
+                                                int protocol) {
+  if (!GetState()->InitCalled())
+    return INVALID_SOCKET;
+
+  // IPC must be fully started.
+  void* memory = GetGlobalIPCMemory();
+  if (!memory)
+    return INVALID_SOCKET;
+
+  CrossCallReturn answer = {0};
+  SharedMemIPCClient ipc(memory);
+
+  WSAPROTOCOL_INFOW protocol_info = {};
+
+  InOutCountedBuffer protocol_info_buffer(&protocol_info,
+                                          sizeof(WSAPROTOCOL_INFOW));
+
+  ResultCode code = CrossCall(ipc, IpcTag::WS2SOCKET, af, type, protocol,
+                              protocol_info_buffer, &answer);
+
+  if (code != SBOX_ALL_OK)
+    return INVALID_SOCKET;
+
+  if (answer.extended_count == 1)
+    WSASetLastError(static_cast<int>(answer.extended[0].unsigned_int));
+
+  return ::WSASocket(af, type, protocol, &protocol_info, 0,
+                     WSA_FLAG_OVERLAPPED);
+}
+
+// The broker services a 'test' IPC service with the PING tag.
 bool TargetServicesBase::TestIPCPing(int version) {
   void* memory = GetGlobalIPCMemory();
   if (!memory)
@@ -175,7 +211,7 @@ bool TargetServicesBase::TestIPCPing(int version) {
   if (1 == version) {
     uint32_t tick1 = ::GetTickCount();
     uint32_t cookie = 717115;
-    ResultCode code = CrossCall(ipc, IPC_PING1_TAG, cookie, &answer);
+    ResultCode code = CrossCall(ipc, IpcTag::PING1, cookie, &answer);
 
     if (SBOX_ALL_OK != code) {
       return false;
@@ -201,7 +237,7 @@ bool TargetServicesBase::TestIPCPing(int version) {
   } else if (2 == version) {
     uint32_t cookie = 717111;
     InOutCountedBuffer counted_buffer(&cookie, sizeof(cookie));
-    ResultCode code = CrossCall(ipc, IPC_PING2_TAG, counted_buffer, &answer);
+    ResultCode code = CrossCall(ipc, IpcTag::PING2, counted_buffer, &answer);
 
     if (SBOX_ALL_OK != code) {
       return false;

@@ -2,34 +2,88 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// clang-format off
+// #import 'chrome://resources/mojo/mojo/public/js/mojo_bindings_lite.js';
+// #import 'chrome://resources/mojo/url/mojom/url.mojom-lite.js';
+// #import 'chrome://resources/mojo/mojo/public/mojom/base/big_buffer.mojom-lite.js';
+// #import 'chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-lite.js';
+// #import 'chrome://resources/mojo/ash/services/cellular_setup/public/mojom/cellular_setup.mojom-lite.js';
+// #import 'chrome://resources/mojo/ash/services/cellular_setup/public/mojom/esim_manager.mojom-lite.js';
+// clang-format on
+
 cr.define('cellular_setup', function() {
-  /** @interface */
-  class MojoInterfaceProvider {
-    /** @return {!chromeos.cellularSetup.mojom.CellularSetupProxy} */
-    getMojoServiceProxy() {}
+  let cellularRemote = null;
+  let eSimManagerRemote = null;
+  let isTesting = false;
+
+  /**
+   * @param {?ash.cellularSetup.mojom.CellularSetupRemote}
+   *        testCellularRemote A test cellular remote
+   */
+  /* #export */ function setCellularSetupRemoteForTesting(testCellularRemote) {
+    cellularRemote = testCellularRemote;
+    isTesting = true;
   }
 
-  /** @implements {cellular_setup.MojoInterfaceProvider} */
-  class MojoInterfaceProviderImpl {
-    constructor() {
-      /** @private {?chromeos.cellularSetup.mojom.CellularSetupProxy} */
-      this.proxy_ = null;
+  /**
+   * @returns {!ash.cellularSetup.mojom.CellularSetupRemote}
+   */
+  /* #export */ function getCellularSetupRemote() {
+    if (cellularRemote) {
+      return cellularRemote;
     }
 
-    /** @override */
-    getMojoServiceProxy() {
-      if (!this.proxy_) {
-        this.proxy_ = chromeos.cellularSetup.mojom.CellularSetup.getProxy();
-      }
+    cellularRemote = ash.cellularSetup.mojom.CellularSetup.getRemote();
 
-      return this.proxy_;
-    }
+    return cellularRemote;
   }
 
-  cr.addSingletonGetter(MojoInterfaceProviderImpl);
+  /**
+   * @param {?ash.cellularSetup.mojom.ESimManagerRemote}
+   *        testESimManagerRemote A test eSimManager remote
+   */
+  /* #export */ function setESimManagerRemoteForTesting(testESimManagerRemote) {
+    eSimManagerRemote = testESimManagerRemote;
+    isTesting = true;
+  }
 
+  /**
+   * @returns {!ash.cellularSetup.mojom.ESimManagerRemote}
+   */
+  /* #export */ function getESimManagerRemote() {
+    if (eSimManagerRemote) {
+      return eSimManagerRemote;
+    }
+
+    eSimManagerRemote = ash.cellularSetup.mojom.ESimManager.getRemote();
+
+    return eSimManagerRemote;
+  }
+
+  /**
+   * @param {!ash.cellularSetup.mojom.ESimManagerObserverInterface} observer
+   * @returns {?ash.cellularSetup.mojom.ESimManagerObserverReceiver}
+   */
+  /* #export */ function observeESimManager(observer) {
+    if (isTesting) {
+      getESimManagerRemote().addObserver(
+          /** @type {!ash.cellularSetup.mojom.ESimManagerObserverRemote} */
+          (observer));
+      return null;
+    }
+
+    const receiver =
+        new ash.cellularSetup.mojom.ESimManagerObserverReceiver(observer);
+    getESimManagerRemote().addObserver(receiver.$.bindNewPipeAndPassRemote());
+    return receiver;
+  }
+
+  // #cr_define_end
   return {
-    MojoInterfaceProvider: MojoInterfaceProvider,
-    MojoInterfaceProviderImpl: MojoInterfaceProviderImpl,
+    setCellularSetupRemoteForTesting,
+    getCellularSetupRemote,
+    setESimManagerRemoteForTesting,
+    getESimManagerRemote,
+    observeESimManager
   };
 });

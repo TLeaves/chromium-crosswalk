@@ -6,11 +6,10 @@
 
 #include "base/bind.h"
 #include "base/files/file_util.h"
-#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/post_task.h"
+#include "base/task/thread_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
@@ -37,14 +36,17 @@ class MockJobInterceptor : public URLRequestInterceptor {
                      bool map_all_requests_to_base_path)
       : base_path_(base_path),
         map_all_requests_to_base_path_(map_all_requests_to_base_path) {}
+
+  MockJobInterceptor(const MockJobInterceptor&) = delete;
+  MockJobInterceptor& operator=(const MockJobInterceptor&) = delete;
+
   ~MockJobInterceptor() override = default;
 
   // URLRequestJobFactory::ProtocolHandler implementation
-  URLRequestJob* MaybeInterceptRequest(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const override {
-    return new URLRequestMockHTTPJob(
-        request, network_delegate,
+  std::unique_ptr<URLRequestJob> MaybeInterceptRequest(
+      URLRequest* request) const override {
+    return std::make_unique<URLRequestMockHTTPJob>(
+        request,
         map_all_requests_to_base_path_ ? base_path_ : GetOnDiskPath(request));
   }
 
@@ -63,8 +65,6 @@ class MockJobInterceptor : public URLRequestInterceptor {
 
   const base::FilePath base_path_;
   const bool map_all_requests_to_base_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockJobInterceptor);
 };
 
 std::string DoFileIO(const base::FilePath& file_path) {
@@ -125,12 +125,11 @@ URLRequestMockHTTPJob::CreateInterceptorForSingleFile(
 }
 
 URLRequestMockHTTPJob::URLRequestMockHTTPJob(URLRequest* request,
-                                             NetworkDelegate* network_delegate,
                                              const base::FilePath& file_path)
-    : URLRequestFileJob(request,
-                        network_delegate,
-                        file_path,
-                        base::CreateTaskRunnerWithTraits({base::MayBlock()})) {}
+    : URLRequestTestJobBackedByFile(
+          request,
+          file_path,
+          base::ThreadPool::CreateTaskRunner({base::MayBlock()})) {}
 
 URLRequestMockHTTPJob::~URLRequestMockHTTPJob() = default;
 
@@ -144,8 +143,8 @@ bool URLRequestMockHTTPJob::IsRedirectResponse(
     GURL* location,
     int* http_status_code,
     bool* insecure_scheme_was_upgraded) {
-  // Override the URLRequestFileJob implementation to invoke the default
-  // one based on HttpResponseInfo.
+  // Override the URLRequestTestJobBackedByFile implementation to invoke the
+  // default one based on HttpResponseInfo.
   return URLRequestJob::IsRedirectResponse(location, http_status_code,
                                            insecure_scheme_was_upgraded);
 }
@@ -157,10 +156,10 @@ void URLRequestMockHTTPJob::OnReadComplete(net::IOBuffer* buffer, int result) {
 
 // Public virtual version.
 void URLRequestMockHTTPJob::Start() {
-  base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock()}, base::Bind(&DoFileIO, file_path_),
-      base::Bind(&URLRequestMockHTTPJob::SetHeadersAndStart,
-                 weak_ptr_factory_.GetWeakPtr()));
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock()}, base::BindOnce(&DoFileIO, file_path_),
+      base::BindOnce(&URLRequestMockHTTPJob::SetHeadersAndStart,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void URLRequestMockHTTPJob::SetHeadersAndStart(const std::string& raw_headers) {
@@ -171,7 +170,7 @@ void URLRequestMockHTTPJob::SetHeadersAndStart(const std::string& raw_headers) {
   base::ReplaceSubstringsAfterOffset(
       &raw_headers_, 0, "\n", base::StringPiece("\0", 1));
   total_received_bytes_ += raw_headers_.size();
-  URLRequestFileJob::Start();
+  URLRequestTestJobBackedByFile::Start();
 }
 
 // Private const version.

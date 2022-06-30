@@ -4,8 +4,9 @@
 
 #include "extensions/shell/browser/desktop_controller.h"
 
-#include "base/logging.h"
-#include "base/macros.h"
+#include <ostream>
+
+#include "base/check.h"
 
 namespace extensions {
 namespace {

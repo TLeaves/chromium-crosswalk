@@ -66,13 +66,10 @@ GlTestEnvironment::GlTestEnvironment(const gfx::Size frame_buffer_size) {
   attributes.bind_generates_resource = false;
 
   context_ = std::make_unique<gpu::GLInProcessContext>();
-  auto result = context_->Initialize(
-      gpu::GetTestGpuThreadHolder()->GetTaskExecutor(), nullptr, /* surface */
-      true,                                                      /* offscreen */
-      gpu::kNullSurfaceHandle,                                   /* window */
-      attributes, gpu::SharedMemoryLimits(),
-      nullptr /* memory_buffer_manager */, nullptr, /* image_factory */
-      base::ThreadTaskRunnerHandle::Get());
+  auto result =
+      context_->Initialize(gpu::GetTestGpuThreadHolder()->GetTaskExecutor(),
+                           attributes, gpu::SharedMemoryLimits(),
+                           /*image_factory=*/nullptr);
   DCHECK_EQ(result, gpu::ContextResult::kSuccess);
   gles2::SetGLContext(context_->GetImplementation());
 

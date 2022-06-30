@@ -4,12 +4,8 @@
 
 #include "third_party/blink/renderer/modules/presentation/presentation_availability_state.h"
 
-#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/modules/presentation/presentation_availability_observer.h"
-#include "third_party/blink/renderer/modules/presentation/presentation_controller.h"
-#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
-#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
 
@@ -96,8 +92,8 @@ void PresentationAvailabilityState::UpdateAvailability(
   if (!listening_status)
     return;
 
-  if (listening_status->listening_state == ListeningState::WAITING)
-    listening_status->listening_state = ListeningState::ACTIVE;
+  if (listening_status->listening_state == ListeningState::kWaiting)
+    listening_status->listening_state = ListeningState::kActive;
 
   if (listening_status->last_known_availability == availability)
     return;
@@ -136,7 +132,7 @@ void PresentationAvailabilityState::UpdateAvailability(
   }
 }
 
-void PresentationAvailabilityState::Trace(blink::Visitor* visitor) {
+void PresentationAvailabilityState::Trace(Visitor* visitor) const {
   visitor->Trace(availability_listeners_);
 }
 
@@ -148,10 +144,10 @@ void PresentationAvailabilityState::StartListeningToURL(const KURL& url) {
   }
 
   // Already listening.
-  if (listening_status->listening_state != ListeningState::INACTIVE)
+  if (listening_status->listening_state != ListeningState::kInactive)
     return;
 
-  listening_status->listening_state = ListeningState::WAITING;
+  listening_status->listening_state = ListeningState::kWaiting;
   presentation_service_->ListenForScreenAvailability(url);
 }
 
@@ -173,10 +169,10 @@ void PresentationAvailabilityState::MaybeStopListeningToURL(const KURL& url) {
     return;
   }
 
-  if (listening_status->listening_state == ListeningState::INACTIVE)
+  if (listening_status->listening_state == ListeningState::kInactive)
     return;
 
-  listening_status->listening_state = ListeningState::INACTIVE;
+  listening_status->listening_state = ListeningState::kInactive;
   presentation_service_->StopListeningForScreenAvailability(url);
 }
 
@@ -261,7 +257,7 @@ PresentationAvailabilityState::AvailabilityListener::~AvailabilityListener() =
     default;
 
 void PresentationAvailabilityState::AvailabilityListener::Trace(
-    blink::Visitor* visitor) {
+    blink::Visitor* visitor) const {
   visitor->Trace(availability_callbacks);
   visitor->Trace(availability_observers);
 }
@@ -270,7 +266,7 @@ PresentationAvailabilityState::ListeningStatus::ListeningStatus(
     const KURL& availability_url)
     : url(availability_url),
       last_known_availability(mojom::blink::ScreenAvailability::UNKNOWN),
-      listening_state(ListeningState::INACTIVE) {}
+      listening_state(ListeningState::kInactive) {}
 
 PresentationAvailabilityState::ListeningStatus::~ListeningStatus() = default;
 

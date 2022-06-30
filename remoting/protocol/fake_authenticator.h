@@ -6,7 +6,6 @@
 #define REMOTING_PROTOCOL_FAKE_AUTHENTICATOR_H_
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/protocol/authenticator.h"
 #include "remoting/protocol/channel_authenticator.h"
@@ -17,11 +16,15 @@ namespace protocol {
 class FakeChannelAuthenticator : public ChannelAuthenticator {
  public:
   FakeChannelAuthenticator(bool accept, bool async);
+
+  FakeChannelAuthenticator(const FakeChannelAuthenticator&) = delete;
+  FakeChannelAuthenticator& operator=(const FakeChannelAuthenticator&) = delete;
+
   ~FakeChannelAuthenticator() override;
 
   // ChannelAuthenticator interface.
   void SecureAndAuthenticate(std::unique_ptr<P2PStreamSocket> socket,
-                             const DoneCallback& done_callback) override;
+                             DoneCallback done_callback) override;
 
  private:
   void OnAuthBytesWritten(int result);
@@ -38,9 +41,7 @@ class FakeChannelAuthenticator : public ChannelAuthenticator {
   bool did_read_bytes_ = false;
   bool did_write_bytes_ = false;
 
-  base::WeakPtrFactory<FakeChannelAuthenticator> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeChannelAuthenticator);
+  base::WeakPtrFactory<FakeChannelAuthenticator> weak_factory_{this};
 };
 
 class FakeAuthenticator : public Authenticator {
@@ -75,6 +76,9 @@ class FakeAuthenticator : public Authenticator {
   // don't exchange any messages.
   FakeAuthenticator(Action action);
 
+  FakeAuthenticator(const FakeAuthenticator&) = delete;
+  FakeAuthenticator& operator=(const FakeAuthenticator&) = delete;
+
   ~FakeAuthenticator() override;
 
   // Set the number of messages that the authenticator needs to process before
@@ -98,7 +102,7 @@ class FakeAuthenticator : public Authenticator {
   bool started() const override;
   RejectionReason rejection_reason() const override;
   void ProcessMessage(const jingle_xmpp::XmlElement* message,
-                      const base::Closure& resume_callback) override;
+                      base::OnceClosure resume_callback) override;
   std::unique_ptr<jingle_xmpp::XmlElement> GetNextMessage() override;
   const std::string& GetAuthKey() const override;
   std::unique_ptr<ChannelAuthenticator> CreateChannelAuthenticator()
@@ -117,17 +121,20 @@ class FakeAuthenticator : public Authenticator {
   int messages_till_started_ = 0;
 
   int pause_message_index_ = -1;
-  base::Closure resume_closure_;
+  base::OnceClosure resume_closure_;
 
   std::string auth_key_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeAuthenticator);
 };
 
 class FakeHostAuthenticatorFactory : public AuthenticatorFactory {
  public:
   FakeHostAuthenticatorFactory(int messages_till_start,
                                FakeAuthenticator::Config config);
+
+  FakeHostAuthenticatorFactory(const FakeHostAuthenticatorFactory&) = delete;
+  FakeHostAuthenticatorFactory& operator=(const FakeHostAuthenticatorFactory&) =
+      delete;
+
   ~FakeHostAuthenticatorFactory() override;
 
   // AuthenticatorFactory interface.
@@ -138,8 +145,6 @@ class FakeHostAuthenticatorFactory : public AuthenticatorFactory {
  private:
   const int messages_till_started_;
   const FakeAuthenticator::Config config_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeHostAuthenticatorFactory);
 };
 
 }  // namespace protocol

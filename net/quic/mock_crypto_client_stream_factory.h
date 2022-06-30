@@ -6,14 +6,13 @@
 #define NET_QUIC_MOCK_CRYPTO_CLIENT_STREAM_FACTORY_H_
 
 #include <memory>
-#include <string>
 
 #include "base/containers/queue.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/mock_crypto_client_stream.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
-#include "net/third_party/quiche/src/quic/core/quic_server_id.h"
+#include "net/third_party/quiche/src/quiche/quic/core/quic_server_id.h"
 
 namespace quic {
 class QuicCryptoClientStream;
@@ -23,6 +22,11 @@ namespace net {
 class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory {
  public:
   MockCryptoClientStreamFactory();
+
+  MockCryptoClientStreamFactory(const MockCryptoClientStreamFactory&) = delete;
+  MockCryptoClientStreamFactory& operator=(
+      const MockCryptoClientStreamFactory&) = delete;
+
   ~MockCryptoClientStreamFactory() override;
 
   quic::QuicCryptoClientStream* CreateQuicCryptoClientStream(
@@ -52,13 +56,12 @@ class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory {
   void SetConfig(const quic::QuicConfig& config);
 
  private:
-  MockCryptoClientStream::HandshakeMode handshake_mode_;
-  MockCryptoClientStream* last_stream_;
+  MockCryptoClientStream::HandshakeMode handshake_mode_ =
+      MockCryptoClientStream::CONFIRM_HANDSHAKE;
+  raw_ptr<MockCryptoClientStream> last_stream_ = nullptr;
   base::queue<const ProofVerifyDetailsChromium*> proof_verify_details_queue_;
   std::unique_ptr<quic::QuicConfig> config_;
-  bool use_mock_crypter_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockCryptoClientStreamFactory);
+  bool use_mock_crypter_ = false;
 };
 
 }  // namespace net

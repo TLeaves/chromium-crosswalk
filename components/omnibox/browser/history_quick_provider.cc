@@ -9,9 +9,10 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/check.h"
 #include "base/i18n/break_iterator.h"
-#include "base/logging.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -26,11 +27,12 @@
 #include "components/omnibox/browser/autocomplete_result.h"
 #include "components/omnibox/browser/history_url_provider.h"
 #include "components/omnibox/browser/in_memory_url_index.h"
+#include "components/omnibox/browser/keyword_provider.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/url_prefix.h"
 #include "components/prefs/pref_service.h"
+#include "components/search_engines/omnibox_focus_type.h"
 #include "components/url_formatter/url_formatter.h"
-#include "net/base/escape.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "third_party/metrics_proto/omnibox_input_type.pb.h"
 #include "url/third_party/mozilla/url_parse.h"
@@ -47,14 +49,17 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
                                  bool minimal_changes) {
   TRACE_EVENT0("omnibox", "HistoryQuickProvider::Start");
   matches_.clear();
-  if (disabled_ || input.from_omnibox_focus())
+  if (disabled_ || input.focus_type() != OmniboxFocusType::DEFAULT)
     return;
 
   // Don't bother with INVALID.
   if ((input.type() == metrics::OmniboxInputType::EMPTY))
     return;
 
-  autocomplete_input_ = input;
+  // Remove the keyword from input if we're in keyword mode for a starter pack
+  // engine.
+  autocomplete_input_ = KeywordProvider::AdjustInputForStarterPackEngines(
+      input, client()->GetTemplateURLService());
 
   // TODO(pkasting): We should just block here until this loads.  Any time
   // someone unloads the history backend, we'll get inconsistent inline
@@ -204,11 +209,12 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
     const ScoredHistoryMatch& history_match,
     int score) {
   const history::URLRow& info = history_match.url_info;
-  AutocompleteMatch match(
-      this, score, !!info.visit_count(),
-      history_match.url_matches.empty() ?
-          AutocompleteMatchType::HISTORY_TITLE :
-          AutocompleteMatchType::HISTORY_URL);
+  bool deletable =
+      !!info.visit_count() && client()->AllowDeletingBrowserHistory();
+  AutocompleteMatch match(this, score, deletable,
+                          history_match.url_matches.empty()
+                              ? AutocompleteMatchType::HISTORY_TITLE
+                              : AutocompleteMatchType::HISTORY_URL);
   match.typed_count = info.typed_count();
   match.destination_url = info.url();
   DCHECK(match.destination_url.is_valid());
@@ -225,17 +231,9 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
       AutocompleteInput::FormattedStringWithEquivalentMeaning(
           info.url(),
           url_formatter::FormatUrl(info.url(), fill_into_edit_format_types,
-                                   net::UnescapeRule::SPACES, nullptr, nullptr,
+                                   base::UnescapeRule::SPACES, nullptr, nullptr,
                                    &inline_autocomplete_offset),
           client()->GetSchemeClassifier(), &inline_autocomplete_offset);
-
-  // Set |inline_autocompletion| and |allowed_to_be_default_match| if possible.
-  if (inline_autocomplete_offset != base::string16::npos) {
-    match.inline_autocompletion =
-        match.fill_into_edit.substr(inline_autocomplete_offset);
-    match.allowed_to_be_default_match = match.inline_autocompletion.empty() ||
-        !PreventInlineAutocomplete(autocomplete_input_);
-  }
 
   // HistoryQuick classification diverges from relevance scoring. Specifically,
   // 1) All occurrences of the input contribute to relevance; e.g. for the input
@@ -261,7 +259,7 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
           autocomplete_input_.parts().scheme.len > 0 ||
               history_match.match_in_scheme,
           history_match.match_in_subdomain),
-      net::UnescapeRule::SPACES, nullptr, nullptr, nullptr);
+      base::UnescapeRule::SPACES, nullptr, nullptr, nullptr);
   auto contents_terms =
       FindTermMatches(autocomplete_input_.text(), match.contents);
   match.contents_class = ClassifyTermMatches(
@@ -275,6 +273,16 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
   match.description_class = ClassifyTermMatches(
       description_terms, match.description.size(), ACMatchClassification::MATCH,
       ACMatchClassification::NONE);
+
+  // Set |inline_autocompletion| and |allowed_to_be_default_match| if possible.
+  if (match.TryRichAutocompletion(match.contents, match.description,
+                                  autocomplete_input_)) {
+    // If rich autocompletion applies, we skip trying the alternatives below.
+  } else if (inline_autocomplete_offset != std::u16string::npos) {
+    match.inline_autocompletion =
+        match.fill_into_edit.substr(inline_autocomplete_offset);
+    match.SetAllowedToBeDefault(autocomplete_input_);
+  }
 
   match.RecordAdditionalInfo("typed count", info.typed_count());
   match.RecordAdditionalInfo("visit count", info.visit_count());

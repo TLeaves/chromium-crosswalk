@@ -4,10 +4,11 @@
 
 #import "ui/base/test/scoped_fake_nswindow_fullscreen.h"
 
+#import <AppKit/AppKit.h>
+
 #import "base/mac/mac_util.h"
 #import "base/mac/scoped_nsobject.h"
-#import "base/mac/sdk_forward_declarations.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #import "ui/base/test/windowed_nsnotification_observer.h"
@@ -15,7 +16,7 @@
 
 @interface TestNSWindowDelegate : NSObject<NSWindowDelegate> {
  @private
-  NSSize targetSize_;
+  NSSize _targetSize;
 }
 - (instancetype)initWithFullScreenContentSize:(NSSize)targetSize;
 @end
@@ -24,14 +25,14 @@
 
 - (instancetype)initWithFullScreenContentSize:(NSSize)targetSize {
   if ((self = [super init])) {
-    targetSize_ = targetSize;
+    _targetSize = targetSize;
   }
   return self;
 }
 
 - (NSSize)window:(NSWindow*)window
     willUseFullScreenContentSize:(NSSize)proposedSize {
-  return targetSize_;
+  return _targetSize;
 }
 
 @end
@@ -41,12 +42,13 @@ namespace test {
 
 // Test the order of notifications sent when faking fullscreen transitions.
 TEST(ScopedFakeNSWindowFullscreenTest, TestOrdering) {
-  base::test::ScopedTaskEnvironment scoped_task_environment(
-      base::test::ScopedTaskEnvironment::MainThreadType::UI);
+  base::test::SingleThreadTaskEnvironment task_environment(
+      base::test::SingleThreadTaskEnvironment::MainThreadType::UI);
 
-  NSUInteger style_mask = NSTexturedBackgroundWindowMask | NSTitledWindowMask |
-                          NSClosableWindowMask | NSMiniaturizableWindowMask |
-                          NSResizableWindowMask;
+  NSUInteger style_mask = NSWindowStyleMaskTexturedBackground |
+                          NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                          NSWindowStyleMaskMiniaturizable |
+                          NSWindowStyleMaskResizable;
   base::scoped_nsobject<NSWindow> window(
       [[NSWindow alloc] initWithContentRect:NSMakeRect(50, 60, 130, 170)
                                   styleMask:style_mask
@@ -93,13 +95,13 @@ TEST(ScopedFakeNSWindowFullscreenTest, TestOrdering) {
   EXPECT_EQ(1, [will_enter notificationCount]);
   EXPECT_EQ(0, [did_enter notificationCount]);
   EXPECT_NSEQ(initial_frame, [window frame]);
-  EXPECT_FALSE([window styleMask] & NSFullScreenWindowMask);
+  EXPECT_FALSE([window styleMask] & NSWindowStyleMaskFullScreen);
 
   // Changes and DidEnter happen asynchronously.
   EXPECT_TRUE([did_enter wait]);
   EXPECT_EQ(fullscreen_content_size.width, [window frame].size.width);
   EXPECT_EQ(fullscreen_content_size.height, [window frame].size.height);
-  EXPECT_TRUE([window styleMask] & NSFullScreenWindowMask);
+  EXPECT_TRUE([window styleMask] & NSWindowStyleMaskFullScreen);
 
   // WillExit is immediate.
   [window toggleFullScreen:nil];
@@ -107,12 +109,12 @@ TEST(ScopedFakeNSWindowFullscreenTest, TestOrdering) {
   EXPECT_EQ(0, [did_exit notificationCount]);
   EXPECT_EQ(fullscreen_content_size.width, [window frame].size.width);
   EXPECT_EQ(fullscreen_content_size.height, [window frame].size.height);
-  EXPECT_TRUE([window styleMask] & NSFullScreenWindowMask);
+  EXPECT_TRUE([window styleMask] & NSWindowStyleMaskFullScreen);
 
   // Changes and DidExit happen asynchronously.
   EXPECT_TRUE([did_exit wait]);
   EXPECT_NSEQ(initial_frame, [window frame]);
-  EXPECT_FALSE([window styleMask] & NSFullScreenWindowMask);
+  EXPECT_FALSE([window styleMask] & NSWindowStyleMaskFullScreen);
 
   // Go back into fullscreen.
   [window toggleFullScreen:nil];

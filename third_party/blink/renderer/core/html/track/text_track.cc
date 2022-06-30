@@ -31,6 +31,7 @@
 
 #include "third_party/blink/renderer/core/html/track/text_track.h"
 
+#include "third_party/blink/renderer/core/event_target_names.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/track/cue_timeline.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue_list.h"
@@ -165,7 +166,7 @@ TextTrackCueList* TextTrack::cues() {
   return nullptr;
 }
 
-void TextTrack::RemoveAllCues() {
+void TextTrack::Reset() {
   if (!cues_)
     return;
 
@@ -178,6 +179,8 @@ void TextTrack::RemoveAllCues() {
   cues_->RemoveAll();
   if (active_cues_)
     active_cues_->RemoveAll();
+
+  style_sheets_.clear();
 }
 
 void TextTrack::AddListOfCues(
@@ -237,6 +240,12 @@ void TextTrack::addCue(TextTrackCue* cue) {
 
   if (GetCueTimeline() && mode_ != DisabledKeyword())
     GetCueTimeline()->AddCue(this, cue);
+}
+
+void TextTrack::SetCSSStyleSheets(
+    HeapVector<Member<CSSStyleSheet>> style_sheets) {
+  DCHECK(style_sheets_.IsEmpty());
+  style_sheets_ = std::move(style_sheets);
 }
 
 void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exception_state) {
@@ -368,10 +377,11 @@ Node* TextTrack::Owner() const {
   return MediaElement();
 }
 
-void TextTrack::Trace(Visitor* visitor) {
+void TextTrack::Trace(Visitor* visitor) const {
   visitor->Trace(cues_);
   visitor->Trace(active_cues_);
   visitor->Trace(track_list_);
+  visitor->Trace(style_sheets_);
   TrackBase::Trace(visitor);
   EventTargetWithInlineData::Trace(visitor);
 }

@@ -9,21 +9,23 @@
 
 namespace extensions {
 
-class SafeBrowsingPrivateGetReferrerChainFunction
-    : public UIThreadExtensionFunction {
+class SafeBrowsingPrivateGetReferrerChainFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("safeBrowsingPrivate.getReferrerChain",
                              SAFEBROWSINGPRIVATE_GETREFERRERCHAIN)
 
   SafeBrowsingPrivateGetReferrerChainFunction();
 
+  SafeBrowsingPrivateGetReferrerChainFunction(
+      const SafeBrowsingPrivateGetReferrerChainFunction&) = delete;
+  SafeBrowsingPrivateGetReferrerChainFunction& operator=(
+      const SafeBrowsingPrivateGetReferrerChainFunction&) = delete;
+
  protected:
   ~SafeBrowsingPrivateGetReferrerChainFunction() override;
 
   // ExtensionFunction:
   ResponseAction Run() override;
-
-  DISALLOW_COPY_AND_ASSIGN(SafeBrowsingPrivateGetReferrerChainFunction);
 };
 
 }  // namespace extensions

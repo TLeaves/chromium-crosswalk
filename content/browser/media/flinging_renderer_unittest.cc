@@ -4,12 +4,14 @@
 
 #include "content/browser/media/flinging_renderer.h"
 
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/version.h"
 #include "media/base/media_controller.h"
 #include "media/base/mock_filters.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -40,7 +42,7 @@ class MockFlingingController : public media::FlingingController {
   MOCK_METHOD0(GetApproximateCurrentTime, base::TimeDelta());
 
  private:
-  media::MediaController* media_controller_;
+  raw_ptr<media::MediaController> media_controller_;
 };
 
 class FlingingRendererTest : public testing::Test {
@@ -54,7 +56,7 @@ class FlingingRendererTest : public testing::Test {
 
     renderer_ = base::WrapUnique(new FlingingRenderer(
         std::unique_ptr<media::FlingingController>(flinging_controller_),
-        nullptr));
+        mojo::NullRemote()));
 
     renderer_->Initialize(nullptr, &renderer_client_, base::DoNothing());
   }
@@ -62,12 +64,12 @@ class FlingingRendererTest : public testing::Test {
  protected:
   NiceMock<media::MockRendererClient> renderer_client_;
   std::unique_ptr<MockMediaController> media_controller_;
-  StrictMock<MockFlingingController>* flinging_controller_;
+  raw_ptr<StrictMock<MockFlingingController>> flinging_controller_;
   std::unique_ptr<FlingingRenderer> renderer_;
 };
 
 TEST_F(FlingingRendererTest, StartPlayingFromTime) {
-  base::TimeDelta seek_time = base::TimeDelta::FromSeconds(10);
+  base::TimeDelta seek_time = base::Seconds(10);
   EXPECT_CALL(*media_controller_, Seek(seek_time));
 
   renderer_->StartPlayingFrom(seek_time);

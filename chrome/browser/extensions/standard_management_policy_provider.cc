@@ -7,9 +7,9 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_management.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 #include "extensions/strings/grit/extensions_strings.h"
@@ -23,7 +23,7 @@ namespace {
 // fills |error| with corresponding error message if necessary.
 bool AdminPolicyIsModifiable(const Extension* source_extension,
                              const Extension* extension,
-                             base::string16* error) {
+                             std::u16string* error) {
   // Component and force installed extensions can enable/disable all other
   // extensions including force installed ones (but component are off limits).
   const bool component_or_force_installed =
@@ -55,9 +55,8 @@ bool AdminPolicyIsModifiable(const Extension* source_extension,
 }  // namespace
 
 StandardManagementPolicyProvider::StandardManagementPolicyProvider(
-    const ExtensionManagement* settings)
-    : settings_(settings) {
-}
+    ExtensionManagement* settings)
+    : settings_(settings) {}
 
 StandardManagementPolicyProvider::~StandardManagementPolicyProvider() {
 }
@@ -73,23 +72,15 @@ std::string
 
 bool StandardManagementPolicyProvider::UserMayLoad(
     const Extension* extension,
-    base::string16* error) const {
-  // Component extensions are always allowed.
-  if (Manifest::IsComponentLocation(extension->location()))
+    std::u16string* error) const {
+  if (Manifest::IsComponentLocation(extension->location())) {
     return true;
+  }
 
   // Shared modules are always allowed too: they only contain resources that
   // are used by other extensions. The extension that depends on the shared
   // module may be filtered by policy.
   if (extension->is_shared_module())
-    return true;
-
-  // Always allow bookmark apps. The fact that bookmark apps are an extension is
-  // an internal implementation detail and hence they should not be controlled
-  // by extension management policies. See crbug.com/786061.
-  // TODO(calamity): This special case should be removed by removing bookmark
-  // apps from external sources. See crbug.com/788245.
-  if (extension->from_bookmark())
     return true;
 
   // Check whether the extension type is allowed.
@@ -109,7 +100,8 @@ bool StandardManagementPolicyProvider::UserMayLoad(
     case Manifest::TYPE_LEGACY_PACKAGED_APP:
     case Manifest::TYPE_PLATFORM_APP:
     case Manifest::TYPE_SHARED_MODULE:
-    case Manifest::TYPE_LOGIN_SCREEN_EXTENSION: {
+    case Manifest::TYPE_LOGIN_SCREEN_EXTENSION:
+    case Manifest::TYPE_CHROMEOS_SYSTEM_EXTENSION: {
       if (!settings_->IsAllowedManifestType(extension->GetType(),
                                             extension->id()))
         return ReturnLoadError(extension, error);
@@ -131,7 +123,7 @@ bool StandardManagementPolicyProvider::UserMayLoad(
 
 bool StandardManagementPolicyProvider::UserMayInstall(
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   ExtensionManagement::InstallationMode installation_mode =
       settings_->GetInstallationMode(extension);
 
@@ -146,27 +138,27 @@ bool StandardManagementPolicyProvider::UserMayInstall(
 
 bool StandardManagementPolicyProvider::UserMayModifySettings(
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   return AdminPolicyIsModifiable(nullptr, extension, error);
 }
 
 bool StandardManagementPolicyProvider::ExtensionMayModifySettings(
     const Extension* source_extension,
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   return AdminPolicyIsModifiable(source_extension, extension, error);
 }
 
 bool StandardManagementPolicyProvider::MustRemainEnabled(
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   return !AdminPolicyIsModifiable(nullptr, extension, error);
 }
 
 bool StandardManagementPolicyProvider::MustRemainDisabled(
     const Extension* extension,
     disable_reason::DisableReason* reason,
-    base::string16* error) const {
+    std::u16string* error) const {
   std::string required_version;
   if (!settings_->CheckMinimumVersion(extension, &required_version)) {
     if (reason)
@@ -184,7 +176,7 @@ bool StandardManagementPolicyProvider::MustRemainDisabled(
 
 bool StandardManagementPolicyProvider::MustRemainInstalled(
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   ExtensionManagement::InstallationMode mode =
       settings_->GetInstallationMode(extension);
   // Disallow removing of recommended extension, to avoid re-install it
@@ -204,7 +196,7 @@ bool StandardManagementPolicyProvider::MustRemainInstalled(
 
 bool StandardManagementPolicyProvider::ShouldForceUninstall(
     const Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   if (UserMayLoad(extension, error))
     return false;
   if (settings_->GetInstallationMode(extension) ==
@@ -216,7 +208,7 @@ bool StandardManagementPolicyProvider::ShouldForceUninstall(
 
 bool StandardManagementPolicyProvider::ReturnLoadError(
     const extensions::Extension* extension,
-    base::string16* error) const {
+    std::u16string* error) const {
   if (error) {
     *error = l10n_util::GetStringFUTF16(
         IDS_EXTENSION_CANT_INSTALL_POLICY_BLOCKED,

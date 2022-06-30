@@ -26,12 +26,12 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SCRIPT_HTML_PARSER_SCRIPT_RUNNER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SCRIPT_HTML_PARSER_SCRIPT_RUNNER_H_
 
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_reentry_permit.h"
 #include "third_party/blink/renderer/core/script/pending_script.h"
 #include "third_party/blink/renderer/platform/bindings/name_client.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_client.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
@@ -53,11 +53,9 @@ class ScriptLoader;
 //
 // An HTMLParserScriptRunner is owned by its host, an HTMLDocumentParser.
 class HTMLParserScriptRunner final
-    : public GarbageCollectedFinalized<HTMLParserScriptRunner>,
+    : public GarbageCollected<HTMLParserScriptRunner>,
       public PendingScriptClient,
       public NameClient {
-  USING_GARBAGE_COLLECTED_MIXIN(HTMLParserScriptRunner);
-
  public:
   static HTMLParserScriptRunner* Create(HTMLParserReentryPermit* reentry_permit,
                                         Document* document,
@@ -69,6 +67,8 @@ class HTMLParserScriptRunner final
   HTMLParserScriptRunner(HTMLParserReentryPermit*,
                          Document*,
                          HTMLParserScriptRunnerHost*);
+  HTMLParserScriptRunner(const HTMLParserScriptRunner&) = delete;
+  HTMLParserScriptRunner& operator=(const HTMLParserScriptRunner&) = delete;
   ~HTMLParserScriptRunner() override;
 
   // Invoked when the parser is detached.
@@ -86,14 +86,13 @@ class HTMLParserScriptRunner final
 
   // Invoked when the parsing-blocking script resource has loaded, to execute
   // parsing-blocking scripts.
-  void ExecuteScriptsWaitingForLoad(PendingScript*);
+  void ExecuteScriptsWaitingForLoad();
 
   // Invoked when all script-blocking resources (e.g., stylesheets) have loaded,
   // to execute parsing-blocking scripts.
   void ExecuteScriptsWaitingForResources();
 
-  // Invoked when parsing is stopping, to execute any deferred scripts.
-  // This includes forced deferred scripts as well as developer deferred
+  // Invoked when parsing is stopping, to execute any developer deferred
   // scripts.
   bool ExecuteScriptsWaitingForParsing();
 
@@ -102,11 +101,7 @@ class HTMLParserScriptRunner final
     return !!reentry_permit_->ScriptNestingLevel();
   }
 
-  // Records metrics related to the parsing phase. To be called when parsing
-  // is preparing to stop but before |ExecuteScriptsWaitingForParsing|.
-  void RecordMetricsAtParseEnd() const;
-
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
   const char* NameInHeapSnapshot() const override {
     return "HTMLParserScriptRunner";
   }
@@ -121,7 +116,6 @@ class HTMLParserScriptRunner final
 
   void RequestParsingBlockingScript(ScriptLoader*);
   void RequestDeferredScript(ScriptLoader*);
-  void RequestForceDeferredScript(ScriptLoader*);
 
   // Processes the provided script element, but does not execute any
   // parsing-blocking scripts that may remain after execution.
@@ -142,26 +136,18 @@ class HTMLParserScriptRunner final
   PendingScript* TryTakeReadyScriptWaitingForParsing(
       HeapDeque<Member<PendingScript>>* waiting_scripts);
 
-  scoped_refptr<HTMLParserReentryPermit> reentry_permit_;
+  Member<HTMLParserReentryPermit> reentry_permit_;
   Member<Document> document_;
   Member<HTMLParserScriptRunnerHost> host_;
 
   // https://html.spec.whatwg.org/C/#pending-parsing-blocking-script
   Member<PendingScript> parser_blocking_script_;
 
-  // Scripts that were force deferred by the defer all script optimization.
-  // These scripts will be executed after parsing but before
-  // |scripts_to_execute_after_parsing_|.  This is an ordered list.
-  // https://crbug.com/976061
-  HeapDeque<Member<PendingScript>> force_deferred_scripts_;
-
   // Scripts that were deferred by the web developer. This is an ordered list.
   // https://html.spec.whatwg.org/C/#list-of-scripts-that-will-execute-when-the-document-has-finished-parsing
   HeapDeque<Member<PendingScript>> scripts_to_execute_after_parsing_;
-
-  DISALLOW_COPY_AND_ASSIGN(HTMLParserScriptRunner);
 };
 
 }  // namespace blink
 
-#endif
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_SCRIPT_HTML_PARSER_SCRIPT_RUNNER_H_

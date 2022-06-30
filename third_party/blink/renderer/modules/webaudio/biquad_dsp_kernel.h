@@ -41,6 +41,7 @@ class BiquadDSPKernel final : public AudioDSPKernel {
  public:
   explicit BiquadDSPKernel(BiquadProcessor* processor)
       : AudioDSPKernel(processor),
+        biquad_(processor->RenderQuantumFrames()),
         tail_time_(std::numeric_limits<double>::infinity()) {}
 
   // AudioDSPKernel
@@ -80,7 +81,7 @@ class BiquadDSPKernel final : public AudioDSPKernel {
 
  private:
   // Compute the tail time using the BiquadFilter coefficients at
-  // index |coef_index|.
+  // index `coef_index`.
   void UpdateTailTime(int coef_index);
 
   // Synchronize process() with getting and setting the filter coefficients.

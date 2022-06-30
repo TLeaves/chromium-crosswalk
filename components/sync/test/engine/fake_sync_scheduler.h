@@ -8,7 +8,7 @@
 #include <map>
 #include <memory>
 
-#include "components/sync/engine_impl/sync_scheduler.h"
+#include "components/sync/engine/sync_scheduler.h"
 
 namespace syncer {
 
@@ -22,16 +22,14 @@ class FakeSyncScheduler : public SyncScheduler {
 
   void Start(Mode mode, base::Time last_poll_time) override;
   void Stop() override;
-  void ScheduleLocalNudge(ModelTypeSet types,
-                          const base::Location& nudge_location) override;
-  void ScheduleLocalRefreshRequest(
-      ModelTypeSet types,
-      const base::Location& nudge_location) override;
+  void ScheduleLocalNudge(ModelType type) override;
+  void ScheduleLocalRefreshRequest(ModelTypeSet types) override;
   void ScheduleInvalidationNudge(
       ModelType type,
-      std::unique_ptr<InvalidationInterface> interface,
-      const base::Location& nudge_location) override;
-  void ScheduleConfiguration(const ConfigurationParams& params) override;
+      std::unique_ptr<SyncInvalidation> interface) override;
+  void ScheduleConfiguration(sync_pb::SyncEnums::GetUpdatesOrigin origin,
+                             ModelTypeSet types_to_download,
+                             base::OnceClosure ready_task) override;
 
   void ScheduleInitialSyncNudge(ModelType model_type) override;
   void SetNotificationsEnabled(bool notifications_enabled) override;
@@ -53,6 +51,10 @@ class FakeSyncScheduler : public SyncScheduler {
   void OnSyncProtocolError(const SyncProtocolError& error) override;
   void OnReceivedGuRetryDelay(const base::TimeDelta& delay) override;
   void OnReceivedMigrationRequest(ModelTypeSet types) override;
+  void OnReceivedQuotaParamsForExtensionTypes(
+      absl::optional<int> max_tokens,
+      absl::optional<base::TimeDelta> refill_interval,
+      absl::optional<base::TimeDelta> depleted_quota_nudge_delay) override;
 };
 
 }  // namespace syncer

@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/nix/mime_util_xdg.h"
-#include "base/task/post_task.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/views/linux_ui/linux_ui.h"
@@ -21,8 +20,7 @@ IconLoader::IconGroup IconLoader::GroupForFilepath(
 scoped_refptr<base::TaskRunner> IconLoader::GetReadIconTaskRunner() {
   // ReadIcon() calls into views::LinuxUI and GTK code, so it must be on the UI
   // thread.
-  return base::CreateSingleThreadTaskRunnerWithTraits(
-      {content::BrowserThread::UI});
+  return content::GetUIThreadTaskRunner({});
 }
 
 void IconLoader::ReadIcon() {
@@ -44,7 +42,7 @@ void IconLoader::ReadIcon() {
   gfx::Image image;
   views::LinuxUI* ui = views::LinuxUI::instance();
   if (ui) {
-    image = gfx::Image(ui->GetIconForContentType(group_, size_pixels));
+    image = ui->GetIconForContentType(group_, size_pixels, scale_);
   }
 
   target_task_runner_->PostTask(

@@ -9,9 +9,12 @@
 #include <string>
 #include <unordered_map>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/webui/signin/signin_web_dialog_ui.h"
-#include "components/consent_auditor/consent_auditor.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+
+class Browser;
+class Profile;
 
 namespace content {
 class WebUIDataSource;
@@ -28,12 +31,21 @@ class WebUI;
 class SyncConfirmationUI : public SigninWebDialogUI {
  public:
   explicit SyncConfirmationUI(content::WebUI* web_ui);
+
+  SyncConfirmationUI(const SyncConfirmationUI&) = delete;
+  SyncConfirmationUI& operator=(const SyncConfirmationUI&) = delete;
+
   ~SyncConfirmationUI() override;
 
   // SigninWebDialogUI:
+  // `browser` can be nullptr when the UI is displayed without a browser.
   void InitializeMessageHandlerWithBrowser(Browser* browser) override;
 
  private:
+  void InitializeForSyncConfirmation(content::WebUIDataSource* source,
+                                     bool is_modal_dialog);
+  void InitializeForSyncDisabled(content::WebUIDataSource* source);
+
   // Adds a string resource with the given GRD |ids| to the WebUI data |source|
   // named as |name|. Also stores a reverse mapping from the localized version
   // of the string to the |ids| in order to later pass it to
@@ -42,9 +54,10 @@ class SyncConfirmationUI : public SigninWebDialogUI {
                          const std::string& name,
                          int ids);
 
+  // For consent auditing.
   std::unordered_map<std::string, int> js_localized_string_to_ids_map_;
 
-  DISALLOW_COPY_AND_ASSIGN(SyncConfirmationUI);
+  const raw_ptr<Profile> profile_;
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_SIGNIN_SYNC_CONFIRMATION_UI_H_

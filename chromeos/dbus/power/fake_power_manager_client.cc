@@ -9,10 +9,13 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
+#include "base/containers/contains.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/posix/unix_domain_socket.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -26,6 +29,9 @@ FakePowerManagerClient* g_instance = nullptr;
 
 // Minimum power for a USB power source to be classified as AC.
 constexpr double kUsbMinAcWatts = 24;
+
+// The time power manager will wait before resuspending from a dark resume.
+constexpr base::TimeDelta kDarkSuspendDelayTimeout = base::Seconds(20);
 
 // Callback fired when timer started through |StartArcTimer| expires. In
 // non-test environments this does a potentially blocking call on the UI
@@ -66,6 +72,11 @@ base::TimeDelta ClockNow(clockid_t clk_id) {
   return base::TimeDelta::FromTimeSpec(ts);
 }
 
+std::string SysnameFromBluetoothAddress(const std::string& address) {
+  return "/sys/class/power_supply/hid-" + base::ToLowerASCII(address) +
+         "-battery";
+}
+
 }  // namespace
 
 // static
@@ -97,6 +108,7 @@ FakePowerManagerClient::~FakePowerManagerClient() {
 void FakePowerManagerClient::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
   observer->PowerManagerBecameAvailable(true);
+  observer->PowerManagerInitialized();
 }
 
 void FakePowerManagerClient::RemoveObserver(Observer* observer) {
@@ -148,7 +160,12 @@ void FakePowerManagerClient::GetKeyboardBrightnessPercent(
       base::BindOnce(std::move(callback), keyboard_brightness_percent_));
 }
 
-const base::Optional<power_manager::PowerSupplyProperties>&
+void FakePowerManagerClient::SetKeyboardBacklightToggledOff(bool toggled_off) {}
+
+void FakePowerManagerClient::GetKeyboardBacklightToggledOff(
+    DBusMethodCallback<bool> callback) {}
+
+const absl::optional<power_manager::PowerSupplyProperties>&
 FakePowerManagerClient::GetLastStatus() {
   return props_;
 }
@@ -162,12 +179,18 @@ void FakePowerManagerClient::RequestStatusUpdate() {
                                 weak_ptr_factory_.GetWeakPtr()));
 }
 
+void FakePowerManagerClient::RequestAllPeripheralBatteryUpdate() {}
+
+void FakePowerManagerClient::RequestThermalState() {}
+
 void FakePowerManagerClient::RequestSuspend() {}
 
 void FakePowerManagerClient::RequestRestart(
     power_manager::RequestRestartReason reason,
     const std::string& description) {
   ++num_request_restart_calls_;
+  if (restart_callback_)
+    std::move(restart_callback_).Run();
 }
 
 void FakePowerManagerClient::RequestShutdown(
@@ -274,6 +297,10 @@ void FakePowerManagerClient::UnblockSuspend(
   --num_pending_suspend_readiness_callbacks_;
 }
 
+bool FakePowerManagerClient::SupportsAmbientColor() {
+  return supports_ambient_color_;
+}
+
 void FakePowerManagerClient::CreateArcTimers(
     const std::string& tag,
     std::vector<std::pair<clockid_t, base::ScopedFD>> arc_timer_requests,
@@ -360,6 +387,41 @@ void FakePowerManagerClient::DeleteArcTimers(const std::string& tag,
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
+
+base::TimeDelta FakePowerManagerClient::GetDarkSuspendDelayTimeout() {
+  return kDarkSuspendDelayTimeout;
+}
+
+void FakePowerManagerClient::RefreshBluetoothBattery(
+    const std::string& address) {
+  if (!base::Contains(peripheral_battery_refresh_levels_, address))
+    return;
+
+  for (auto& observer : observers_) {
+    observer.PeripheralBatteryStatusReceived(
+        SysnameFromBluetoothAddress(address), "somename",
+        peripheral_battery_refresh_levels_[address],
+        power_manager::
+            PeripheralBatteryStatus_ChargeStatus_CHARGE_STATUS_UNKNOWN,
+        /*serial_number=*/"",
+        /*active_update=*/true);
+  }
+}
+
+void FakePowerManagerClient::SetExternalDisplayALSBrightness(bool enabled) {
+  external_display_als_brightness_enabled_ = enabled;
+}
+
+void FakePowerManagerClient::GetExternalDisplayALSBrightness(
+    DBusMethodCallback<bool> callback) {
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback),
+                                external_display_als_brightness_enabled_));
+}
+
+// The real implementation of ChargeNowForAdaptiveCharging is just a simple
+// Dbus call without any callback, so there is not much to test for now.
+void FakePowerManagerClient::ChargeNowForAdaptiveCharging() {}
 
 bool FakePowerManagerClient::PopVideoActivityReport() {
   CHECK(!video_activity_reports_.empty());

@@ -28,15 +28,14 @@ std::string PrefsInternalsSource::GetMimeType(const std::string& path) {
 }
 
 void PrefsInternalsSource::StartDataRequest(
-    const std::string& path,
-    const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
-    const content::URLDataSource::GotDataCallback& callback) {
+    const GURL& url,
+    const content::WebContents::Getter& wc_getter,
+    content::URLDataSource::GotDataCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   std::string json;
-  std::unique_ptr<base::DictionaryValue> prefs =
+  base::Value prefs =
       profile_->GetPrefs()->GetPreferenceValues(PrefService::INCLUDE_DEFAULTS);
-  DCHECK(prefs);
   CHECK(base::JSONWriter::WriteWithOptions(
-      *prefs, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json));
-  callback.Run(base::RefCountedString::TakeString(&json));
+      prefs, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json));
+  std::move(callback).Run(base::RefCountedString::TakeString(&json));
 }

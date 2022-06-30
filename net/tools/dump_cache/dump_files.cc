@@ -19,10 +19,11 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
-#include "base/macros.h"
+#include "base/message_loop/message_pump_type.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_executor.h"
+#include "base/time/time.h"
 #include "net/disk_cache/blockfile/block_files.h"
 #include "net/disk_cache/blockfile/disk_format.h"
 #include "net/disk_cache/blockfile/mapped_file.h"
@@ -62,7 +63,7 @@ int GetMajorVersionFromFile(const base::FilePath& name) {
 // Dumps the contents of the Stats record.
 void DumpStats(const base::FilePath& path, disk_cache::CacheAddr addr) {
   // We need a task executor, although we really don't run any task.
-  base::SingleThreadTaskExecutor io_task_executor(base::MessagePump::Type::IO);
+  base::SingleThreadTaskExecutor io_task_executor(base::MessagePumpType::IO);
 
   disk_cache::BlockFiles block_files(path);
   if (!block_files.Init(false)) {
@@ -159,11 +160,10 @@ void DumpBlockHeader(const base::FilePath& name) {
 class CacheDumper {
  public:
   explicit CacheDumper(const base::FilePath& path)
-      : path_(path),
-        block_files_(path),
-        index_(nullptr),
-        current_hash_(0),
-        next_addr_(0) {}
+      : path_(path), block_files_(path) {}
+
+  CacheDumper(const CacheDumper&) = delete;
+  CacheDumper& operator=(const CacheDumper&) = delete;
 
   bool Init();
 
@@ -183,11 +183,10 @@ class CacheDumper {
   base::FilePath path_;
   disk_cache::BlockFiles block_files_;
   scoped_refptr<disk_cache::MappedFile> index_file_;
-  disk_cache::Index* index_;
-  int current_hash_;
-  disk_cache::CacheAddr next_addr_;
+  disk_cache::Index* index_ = nullptr;
+  int current_hash_ = 0;
+  disk_cache::CacheAddr next_addr_ = 0;
   std::set<disk_cache::CacheAddr> dumped_entries_;
-  DISALLOW_COPY_AND_ASSIGN(CacheDumper);
 };
 
 bool CacheDumper::Init() {
@@ -446,7 +445,7 @@ int DumpContents(const base::FilePath& input_path) {
     DumpIndexHeader(input_path.Append(kIndexName), nullptr);
 
   // We need a task executor, although we really don't run any task.
-  base::SingleThreadTaskExecutor io_task_executor(base::MessagePump::Type::IO);
+  base::SingleThreadTaskExecutor io_task_executor(base::MessagePumpType::IO);
   CacheDumper dumper(input_path);
   if (!dumper.Init())
     return -1;
@@ -482,7 +481,7 @@ int DumpLists(const base::FilePath& input_path) {
     return -1;
 
   // We need a task executor, although we really don't run any task.
-  base::SingleThreadTaskExecutor io_task_executor(base::MessagePump::Type::IO);
+  base::SingleThreadTaskExecutor io_task_executor(base::MessagePumpType::IO);
   CacheDumper dumper(input_path);
   if (!dumper.Init())
     return -1;
@@ -535,7 +534,7 @@ int DumpEntryAt(const base::FilePath& input_path, const std::string& at) {
     return -1;
 
   // We need a task executor, although we really don't run any task.
-  base::SingleThreadTaskExecutor io_task_executor(base::MessagePump::Type::IO);
+  base::SingleThreadTaskExecutor io_task_executor(base::MessagePumpType::IO);
   CacheDumper dumper(input_path);
   if (!dumper.Init())
     return -1;

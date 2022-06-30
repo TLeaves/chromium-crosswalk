@@ -1,4 +1,8 @@
 include_rules = [
+  "+ash/utility",
+  "+ash/system/human_presence",
+  "+ash/system/diagnostics",
+
   # Chrome OS depends on views, so allow code in this directory to depend on
   # ui/views.
   "+chrome/browser/ui/views",
@@ -7,10 +11,3 @@ include_rules = [
   "+services/device/public/mojom",
   "+services/network",
 ]
-
-specific_include_rules = {
-  "keyboard_overlay_ui\.cc": [
-    # TODO(mash): Remove. http://crbug.com/770866
-    "+ash/shell.h",
-  ],
-}

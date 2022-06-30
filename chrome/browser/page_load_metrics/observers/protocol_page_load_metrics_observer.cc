@@ -4,7 +4,8 @@
 
 #include "chrome/browser/page_load_metrics/observers/protocol_page_load_metrics_observer.h"
 
-#include "chrome/browser/page_load_metrics/page_load_metrics_util.h"
+#include "components/page_load_metrics/browser/page_load_metrics_util.h"
+#include "content/public/browser/navigation_handle.h"
 
 namespace {
 
@@ -34,9 +35,18 @@ ProtocolPageLoadMetricsObserver::OnStart(
 }
 
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
-ProtocolPageLoadMetricsObserver::OnCommit(
+ProtocolPageLoadMetricsObserver::OnFencedFramesStart(
     content::NavigationHandle* navigation_handle,
-    ukm::SourceId source_id) {
+    const GURL& currently_committed_url) {
+  // All observing events are preprocessed by PageLoadTracker so that the
+  // outermost page's observer instance sees gathered information. So, the
+  // instance for FencedFrames doesn't need to do anything.
+  return STOP_OBSERVING;
+}
+
+page_load_metrics::PageLoadMetricsObserver::ObservePolicy
+ProtocolPageLoadMetricsObserver::OnCommit(
+    content::NavigationHandle* navigation_handle) {
   protocol_ = page_load_metrics::GetNetworkProtocol(
       navigation_handle->GetConnectionInfo());
   return CONTINUE_OBSERVING;
@@ -44,21 +54,18 @@ ProtocolPageLoadMetricsObserver::OnCommit(
 
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 ProtocolPageLoadMetricsObserver::OnHidden(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   return STOP_OBSERVING;
 }
 
 void ProtocolPageLoadMetricsObserver::OnParseStart(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   PROTOCOL_HISTOGRAM("ParseTiming.NavigationToParseStart", protocol_,
                      timing.parse_timing->parse_start.value());
 }
 
 void ProtocolPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   PROTOCOL_HISTOGRAM("PaintTiming.NavigationToFirstContentfulPaint", protocol_,
                      timing.paint_timing->first_contentful_paint.value());
   PROTOCOL_HISTOGRAM("PaintTiming.ParseStartToFirstContentfulPaint", protocol_,
@@ -67,8 +74,7 @@ void ProtocolPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
 }
 
 void ProtocolPageLoadMetricsObserver::OnFirstMeaningfulPaintInMainFrameDocument(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   PROTOCOL_HISTOGRAM(
       "Experimental.PaintTiming.NavigationToFirstMeaningfulPaint", protocol_,
       timing.paint_timing->first_meaningful_paint.value());
@@ -79,16 +85,14 @@ void ProtocolPageLoadMetricsObserver::OnFirstMeaningfulPaintInMainFrameDocument(
 }
 
 void ProtocolPageLoadMetricsObserver::OnDomContentLoadedEventStart(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   PROTOCOL_HISTOGRAM(
       "DocumentTiming.NavigationToDOMContentLoadedEventFired", protocol_,
       timing.document_timing->dom_content_loaded_event_start.value());
 }
 
 void ProtocolPageLoadMetricsObserver::OnLoadEventStart(
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
   PROTOCOL_HISTOGRAM("DocumentTiming.NavigationToLoadEventFired", protocol_,
                      timing.document_timing->load_event_start.value());
 }

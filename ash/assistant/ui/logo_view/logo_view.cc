@@ -5,7 +5,7 @@
 #include "ash/assistant/ui/logo_view/logo_view.h"
 
 #include "build/buildflag.h"
-#include "chromeos/assistant/buildflags.h"
+#include "chromeos/ash/components/assistant/buildflags.h"
 
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #include "ash/assistant/ui/logo_view/logo_view_impl.h"
@@ -18,11 +18,11 @@ LogoView::LogoView() = default;
 LogoView::~LogoView() = default;
 
 // static
-LogoView* LogoView::Create() {
+std::unique_ptr<LogoView> LogoView::Create() {
 #if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
-  return new LogoViewImpl();
+  return std::make_unique<LogoViewImpl>();
 #else
-  return new LogoView();
+  return std::make_unique<LogoView>();
 #endif
 }
 

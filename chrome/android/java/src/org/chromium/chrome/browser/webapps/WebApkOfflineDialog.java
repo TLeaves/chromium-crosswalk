@@ -7,11 +7,10 @@ package org.chromium.chrome.browser.webapps;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.DialogInterface;
-import android.support.v7.app.AlertDialog;
 
-import org.chromium.base.ApiCompatibilityUtils;
+import androidx.appcompat.app.AlertDialog;
+
 import org.chromium.chrome.R;
-import org.chromium.ui.UiUtils;
 
 /**
  * A dialog to notify user of network errors while loading WebAPK's start URL.
@@ -30,13 +29,13 @@ public class WebApkOfflineDialog {
      * @param errorMessage
      */
     public void show(final Activity activity, String errorMessage) {
-        AlertDialog.Builder builder = new UiUtils.CompatibleAlertDialogBuilder(
-                activity, R.style.Theme_Chromium_AlertDialog);
+        AlertDialog.Builder builder =
+                new AlertDialog.Builder(activity, R.style.ThemeOverlay_BrowserUI_AlertDialog);
         builder.setMessage(errorMessage)
                 .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        ApiCompatibilityUtils.finishAndRemoveTask(activity);
+                        activity.finishAndRemoveTask();
                     }
                 });
 

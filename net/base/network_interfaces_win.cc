@@ -9,7 +9,7 @@
 
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
-#include "base/stl_util.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -17,7 +17,6 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "base/threading/scoped_thread_priority.h"
 #include "base/win/scoped_handle.h"
-#include "net/base/escape.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
@@ -106,7 +105,7 @@ WlanApi& WlanApi::GetInstance() {
 WlanApi::WlanApi() : initialized(false) {
   // Mitigate the issues caused by loading DLLs on a background thread
   // (http://crbug/973868).
-  base::ScopedThreadMayLoadLibraryOnBackgroundThread priority_boost(FROM_HERE);
+  SCOPED_MAY_LOAD_LIBRARY_AT_BACKGROUND_PRIORITY();
 
   HMODULE module =
       ::LoadLibraryEx(L"wlanapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -269,6 +268,12 @@ WifiPHYLayerProtocol GetWifiPHYLayerProtocol() {
       return WIFI_PHY_LAYER_PROTOCOL_G;
     case dot11_phy_type_ht:
       return WIFI_PHY_LAYER_PROTOCOL_N;
+    case dot11_phy_type_vht:
+      return WIFI_PHY_LAYER_PROTOCOL_AC;
+    case dot11_phy_type_dmg:
+      return WIFI_PHY_LAYER_PROTOCOL_AD;
+    case dot11_phy_type_he:
+      return WIFI_PHY_LAYER_PROTOCOL_AX;
     default:
       return WIFI_PHY_LAYER_PROTOCOL_UNKNOWN;
   }

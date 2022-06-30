@@ -8,15 +8,21 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
+#include "base/ios/ios_util.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/post_task.h"
 #include "base/values.h"
 #include "crypto/aead.h"
 #include "crypto/random.h"
+#import "ios/web/js_messaging/java_script_content_world.h"
+#import "ios/web/js_messaging/web_view_js_utils.h"
 #include "ios/web/public/thread/web_task_traits.h"
+#include "ios/web/public/thread/web_thread.h"
 #include "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -25,20 +31,42 @@
 
 namespace {
 const char kJavaScriptReplyCommandPrefix[] = "frameMessaging_";
+
+// Creates a JavaScript string for executing the function __gCrWeb.|name| with
+// |parameters|.
+NSString* CreateFunctionCallWithParamaters(
+    const std::string& name,
+    const std::vector<base::Value>& parameters) {
+  NSMutableArray* parameter_strings = [[NSMutableArray alloc] init];
+  for (const auto& value : parameters) {
+    std::string string_value;
+    base::JSONWriter::Write(value, &string_value);
+    [parameter_strings addObject:base::SysUTF8ToNSString(string_value)];
+  }
+
+  return [NSString
+      stringWithFormat:@"__gCrWeb.%s(%@)", name.c_str(),
+                       [parameter_strings componentsJoinedByString:@","]];
+}
 }
 
 namespace web {
 
-WebFrameImpl::WebFrameImpl(const std::string& frame_id,
+const double kJavaScriptFunctionCallDefaultTimeout = 100.0;
+
+WebFrameImpl::WebFrameImpl(WKFrameInfo* frame_info,
+                           const std::string& frame_id,
                            bool is_main_frame,
                            GURL security_origin,
                            web::WebState* web_state)
-    : frame_id_(frame_id),
+    : frame_info_(frame_info),
+      frame_id_(frame_id),
       is_main_frame_(is_main_frame),
       security_origin_(security_origin),
       web_state_(web_state),
       weak_ptr_factory_(this) {
-  DCHECK(web_state);
+  DCHECK(frame_info_);
+  DCHECK(web_state_);
   web_state->AddObserver(this);
 
   subscription_ = web_state->AddScriptCommandCallback(
@@ -50,6 +78,10 @@ WebFrameImpl::WebFrameImpl(const std::string& frame_id,
 WebFrameImpl::~WebFrameImpl() {
   CancelPendingRequests();
   DetachFromWebState();
+}
+
+WebFrameInternal* WebFrameImpl::GetWebFrameInternal() {
+  return this;
 }
 
 void WebFrameImpl::SetEncryptionKey(
@@ -85,52 +117,84 @@ bool WebFrameImpl::CanCallJavaScriptFunction() const {
   return is_main_frame_ || frame_key_;
 }
 
-bool WebFrameImpl::CallJavaScriptFunction(
+BrowserState* WebFrameImpl::GetBrowserState() {
+  return GetWebState()->GetBrowserState();
+}
+
+const std::string WebFrameImpl::EncryptPayload(
+    base::Value payload,
+    const std::string& additiona_data) {
+  crypto::Aead aead(crypto::Aead::AES_256_GCM);
+  aead.Init(&frame_key_->key());
+
+  std::string payload_json;
+  base::JSONWriter::Write(payload, &payload_json);
+  std::string payload_iv;
+  crypto::RandBytes(base::WriteInto(&payload_iv, aead.NonceLength() + 1),
+                    aead.NonceLength());
+  std::string payload_ciphertext;
+  if (!aead.Seal(payload_json, payload_iv, additiona_data,
+                 &payload_ciphertext)) {
+    LOG(ERROR) << "Error sealing message payload for WebFrame.";
+    return std::string();
+  }
+  std::string encoded_payload_iv;
+  base::Base64Encode(payload_iv, &encoded_payload_iv);
+  std::string encoded_payload;
+  base::Base64Encode(payload_ciphertext, &encoded_payload);
+
+  std::string payload_string;
+  base::Value payload_dict(base::Value::Type::DICTIONARY);
+  payload_dict.SetKey("payload", base::Value(encoded_payload));
+  payload_dict.SetKey("iv", base::Value(encoded_payload_iv));
+  base::JSONWriter::Write(payload_dict, &payload_string);
+  return payload_string;
+}
+
+bool WebFrameImpl::CallJavaScriptFunctionInContentWorld(
     const std::string& name,
     const std::vector<base::Value>& parameters,
+    JavaScriptContentWorld* content_world,
     bool reply_with_result) {
+  int message_id = next_message_id_;
+  next_message_id_++;
+
+  if (content_world && content_world->GetWKContentWorld()) {
+    return ExecuteJavaScriptFunction(content_world, name, parameters,
+                                     message_id, reply_with_result);
+  }
+
   if (!CanCallJavaScriptFunction()) {
     return false;
   }
-
-  int message_id = next_message_id_;
-  next_message_id_++;
 
   if (!frame_key_) {
     return ExecuteJavaScriptFunction(name, parameters, message_id,
                                      reply_with_result);
   }
 
-  base::DictionaryValue message;
-  message.SetKey("messageId", base::Value(message_id));
-  message.SetKey("replyWithResult", base::Value(reply_with_result));
-  message.SetKey("functionName", base::Value(name));
+  base::Value message_payload(base::Value::Type::DICTIONARY);
+  message_payload.SetKey("messageId", base::Value(message_id));
+  message_payload.SetKey("replyWithResult", base::Value(reply_with_result));
+  const std::string& encrypted_message_json =
+      EncryptPayload(std::move(message_payload), std::string());
+
+  base::Value function_payload(base::Value::Type::DICTIONARY);
+  function_payload.SetKey("functionName", base::Value(name));
   base::ListValue parameters_value(parameters);
-  message.SetKey("parameters", std::move(parameters_value));
+  function_payload.SetKey("parameters", std::move(parameters_value));
+  const std::string& encrypted_function_json = EncryptPayload(
+      std::move(function_payload), base::NumberToString(message_id));
 
-  std::string json;
-  base::JSONWriter::Write(message, &json);
-
-  crypto::Aead aead(crypto::Aead::AES_256_GCM);
-  aead.Init(&frame_key_->key());
-
-  std::string iv;
-  crypto::RandBytes(base::WriteInto(&iv, aead.NonceLength() + 1),
-                    aead.NonceLength());
-
-  std::string ciphertext;
-  if (!aead.Seal(json, iv, /*additional_data=*/nullptr, &ciphertext)) {
-    LOG(ERROR) << "Error sealing message for WebFrame.";
+  if (encrypted_message_json.empty() || encrypted_function_json.empty()) {
+    // Sealing the payload failed.
     return false;
   }
 
-  std::string encoded_iv;
-  base::Base64Encode(iv, &encoded_iv);
-  std::string encoded_message;
-  base::Base64Encode(ciphertext, &encoded_message);
-  std::string script = base::StringPrintf(
-      "__gCrWeb.message.routeMessage('%s', '%s', '%s')",
-      encoded_message.c_str(), encoded_iv.c_str(), frame_id_.c_str());
+  std::string script =
+      base::StringPrintf("__gCrWeb.message.routeMessage(%s, %s, '%s')",
+                         encrypted_message_json.c_str(),
+                         encrypted_function_json.c_str(), frame_id_.c_str());
   GetWebState()->ExecuteJavaScript(base::UTF8ToUTF16(script));
 
   return true;
@@ -139,12 +203,33 @@ bool WebFrameImpl::CallJavaScriptFunction(
 bool WebFrameImpl::CallJavaScriptFunction(
     const std::string& name,
     const std::vector<base::Value>& parameters) {
-  return CallJavaScriptFunction(name, parameters, /*reply_with_result=*/false);
+  return CallJavaScriptFunctionInContentWorld(name, parameters,
+                                              /*content_world=*/nullptr,
+                                              /*reply_with_result=*/false);
+}
+
+bool WebFrameImpl::CallJavaScriptFunctionInContentWorld(
+    const std::string& name,
+    const std::vector<base::Value>& parameters,
+    JavaScriptContentWorld* content_world) {
+  return CallJavaScriptFunctionInContentWorld(name, parameters, content_world,
+                                              /*reply_with_result=*/false);
 }
 
 bool WebFrameImpl::CallJavaScriptFunction(
     const std::string& name,
     const std::vector<base::Value>& parameters,
+    base::OnceCallback<void(const base::Value*)> callback,
+    base::TimeDelta timeout) {
+  return CallJavaScriptFunctionInContentWorld(name, parameters,
+                                              /*content_world=*/nullptr,
+                                              std::move(callback), timeout);
+}
+
+bool WebFrameImpl::CallJavaScriptFunctionInContentWorld(
+    const std::string& name,
+    const std::vector<base::Value>& parameters,
+    JavaScriptContentWorld* content_world,
     base::OnceCallback<void(const base::Value*)> callback,
     base::TimeDelta timeout) {
   int message_id = next_message_id_;
@@ -155,11 +240,12 @@ bool WebFrameImpl::CallJavaScriptFunction(
       std::move(callback), std::move(timeout_callback));
   pending_requests_[message_id] = std::move(callbacks);
 
-  base::PostDelayedTaskWithTraits(
-      FROM_HERE, {web::WebThread::UI},
-      pending_requests_[message_id]->timeout_callback->callback(), timeout);
+  web::GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE, pending_requests_[message_id]->timeout_callback->callback(),
+      timeout);
   bool called =
-      CallJavaScriptFunction(name, parameters, /*reply_with_result=*/true);
+      CallJavaScriptFunctionInContentWorld(name, parameters, content_world,
+                                           /*reply_with_result=*/true);
   if (!called) {
     // Remove callbacks if the call failed.
     auto request = pending_requests_.find(message_id);
@@ -168,6 +254,105 @@ bool WebFrameImpl::CallJavaScriptFunction(
     }
   }
   return called;
+}
+
+bool WebFrameImpl::ExecuteJavaScript(const std::u16string& script) {
+  return ExecuteJavaScript(script,
+                           base::DoNothingAs<void(const base::Value*)>());
+}
+
+bool WebFrameImpl::ExecuteJavaScript(
+    const std::u16string& script,
+    base::OnceCallback<void(const base::Value*)> callback) {
+  ExecuteJavaScriptCallbackWithError callback_with_error =
+      ExecuteJavaScriptCallbackAdapter(std::move(callback));
+
+  return ExecuteJavaScript(script, std::move(callback_with_error));
+}
+
+bool WebFrameImpl::ExecuteJavaScript(
+    const std::u16string& script,
+    ExecuteJavaScriptCallbackWithError callback) {
+  DCHECK(frame_info_);
+
+  if (!IsMainFrame()) {
+    return false;
+  }
+
+  NSString* ns_script = base::SysUTF16ToNSString(script);
+  __block auto internal_callback = std::move(callback);
+  void (^completion_handler)(id, NSError*) = ^void(id value, NSError* error) {
+    if (error) {
+      LogScriptWarning(ns_script, error);
+      std::move(internal_callback).Run(nullptr, true);
+    } else {
+      std::move(internal_callback)
+          .Run(ValueResultFromWKResult(value).get(), false);
+    }
+  };
+
+  web::ExecuteJavaScript(frame_info_.webView, WKContentWorld.pageWorld,
+                         frame_info_, ns_script, completion_handler);
+  return true;
+}
+
+WebFrame::ExecuteJavaScriptCallbackWithError
+WebFrameImpl::ExecuteJavaScriptCallbackAdapter(
+    base::OnceCallback<void(const base::Value*)> callback) {
+  // Because blocks treat scoped-variables
+  // as const, we have to redefine the callback with the
+  // __block keyword to be able to run the callback inside
+  // the completion handler.
+  __block auto internal_callback = std::move(callback);
+  return base::BindOnce(^(const base::Value* value, bool error) {
+    if (!error) {
+      std::move(internal_callback).Run(value);
+    }
+  });
+}
+
+void WebFrameImpl::LogScriptWarning(NSString* script, NSError* error) {
+  DLOG(WARNING) << "Script execution of:" << base::SysNSStringToUTF16(script)
+                << "\nfailed with error: "
+                << base::SysNSStringToUTF16(
+                       error.userInfo[NSLocalizedDescriptionKey]);
+}
+
+bool WebFrameImpl::ExecuteJavaScriptFunction(
+    JavaScriptContentWorld* content_world,
+    const std::string& name,
+    const std::vector<base::Value>& parameters,
+    int message_id,
+    bool reply_with_result) {
+  DCHECK(content_world);
+  DCHECK(frame_info_);
+
+  NSString* script = CreateFunctionCallWithParamaters(name, parameters);
+
+  void (^completion_handler)(id, NSError*) = nil;
+  if (reply_with_result) {
+    base::WeakPtr<WebFrameImpl> weak_frame = weak_ptr_factory_.GetWeakPtr();
+    completion_handler = ^void(id value, NSError* error) {
+      if (error) {
+        DLOG(WARNING) << "Script execution of:"
+                      << base::SysNSStringToUTF16(script)
+                      << "\nfailed with error: "
+                      << base::SysNSStringToUTF16(
+                             error.userInfo[NSLocalizedDescriptionKey]);
+      }
+      if (weak_frame) {
+        weak_frame->CompleteRequest(message_id,
+                                    ValueResultFromWKResult(value).get());
+      }
+    };
+  }
+
+  WKContentWorld* world = content_world->GetWKContentWorld();
+  DCHECK(world);
+
+  web::ExecuteJavaScript(frame_info_.webView, world, frame_info_, script,
+                         completion_handler);
+  return true;
 }
 
 bool WebFrameImpl::ExecuteJavaScriptFunction(
@@ -179,16 +364,12 @@ bool WebFrameImpl::ExecuteJavaScriptFunction(
     return false;
   }
 
-  NSMutableArray* parameter_strings = [[NSMutableArray alloc] init];
-  for (const auto& value : parameters) {
-    std::string string_value;
-    base::JSONWriter::Write(value, &string_value);
-    [parameter_strings addObject:base::SysUTF8ToNSString(string_value)];
+  NSString* script = CreateFunctionCallWithParamaters(name, parameters);
+  if (!reply_with_result) {
+    GetWebState()->ExecuteJavaScript(base::SysNSStringToUTF16(script));
+    return true;
   }
 
-  NSString* script = [NSString
-      stringWithFormat:@"__gCrWeb.%s(%@)", name.c_str(),
-                       [parameter_strings componentsJoinedByString:@","]];
   base::WeakPtr<WebFrameImpl> weak_frame = weak_ptr_factory_.GetWeakPtr();
   GetWebState()->ExecuteJavaScript(base::SysNSStringToUTF16(script),
                                    base::BindOnce(^(const base::Value* result) {
@@ -197,7 +378,6 @@ bool WebFrameImpl::ExecuteJavaScriptFunction(
                                                                    result);
                                      }
                                    }));
-
   return true;
 }
 
@@ -229,41 +409,23 @@ void WebFrameImpl::CancelPendingRequests() {
 }
 
 void WebFrameImpl::OnJavaScriptReply(web::WebState* web_state,
-                                     const base::DictionaryValue& command_json,
+                                     const base::Value& command_json,
                                      const GURL& page_url,
                                      bool interacting,
                                      WebFrame* sender_frame) {
-  auto* command = command_json.FindKey("command");
-  if (!command || !command->is_string() || !command_json.HasKey("messageId")) {
-    NOTREACHED();
+  const std::string* command_string = command_json.FindStringKey("command");
+  if (!command_string ||
+      *command_string != (GetScriptCommandPrefix() + ".reply")) {
     return;
   }
 
-  const std::string command_string = command->GetString();
-  if (command_string != (GetScriptCommandPrefix() + ".reply")) {
-    NOTREACHED();
+  absl::optional<double> message_id = command_json.FindDoubleKey("messageId");
+  if (!message_id) {
     return;
   }
 
-  auto* message_id_value = command_json.FindKey("messageId");
-  if (!message_id_value->is_double()) {
-    NOTREACHED();
-    return;
-  }
-
-  int message_id = static_cast<int>(message_id_value->GetDouble());
-
-  auto request = pending_requests_.find(message_id);
-  if (request == pending_requests_.end()) {
-    // Request may have already been processed due to timeout.
-    return;
-  }
-
-  auto callbacks = std::move(request->second);
-  pending_requests_.erase(request);
-  callbacks->timeout_callback->Cancel();
-  const base::Value* result = command_json.FindKey("result");
-  std::move(callbacks->completion).Run(result);
+  CompleteRequest(static_cast<int>(*message_id),
+                  command_json.FindKey("result"));
 }
 
 void WebFrameImpl::DetachFromWebState() {

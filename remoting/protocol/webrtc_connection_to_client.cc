@@ -8,7 +8,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "jingle/glue/thread_wrapper.h"
+#include "base/logging.h"
+#include "components/webrtc/thread_wrapper.h"
 #include "net/base/io_buffer.h"
 #include "remoting/codec/video_encoder.h"
 #include "remoting/codec/webrtc_video_encoder_vpx.h"
@@ -23,6 +24,7 @@
 #include "remoting/protocol/transport_context.h"
 #include "remoting/protocol/webrtc_audio_stream.h"
 #include "remoting/protocol/webrtc_transport.h"
+#include "remoting/protocol/webrtc_video_encoder_factory.h"
 #include "remoting/protocol/webrtc_video_stream.h"
 #include "third_party/webrtc/api/media_stream_interface.h"
 #include "third_party/webrtc/api/peer_connection_interface.h"
@@ -31,6 +33,12 @@
 namespace remoting {
 namespace protocol {
 
+namespace {
+
+const char kVideoStatsStreamLabel[] = "screen_stream";
+
+}  // namespace
+
 // Currently the network thread is also used as worker thread for webrtc.
 //
 // TODO(sergeyu): Figure out if we would benefit from using a separate
@@ -38,18 +46,17 @@ namespace protocol {
 WebrtcConnectionToClient::WebrtcConnectionToClient(
     std::unique_ptr<protocol::Session> session,
     scoped_refptr<protocol::TransportContext> transport_context,
-    scoped_refptr<base::SingleThreadTaskRunner> video_encode_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner)
-    : transport_(
-          new WebrtcTransport(jingle_glue::JingleThreadWrapper::current(),
-                              transport_context,
-                              this)),
-      session_(std::move(session)),
-      video_encode_task_runner_(video_encode_task_runner),
+    : session_(std::move(session)),
+      video_stats_dispatcher_(kVideoStatsStreamLabel),
       audio_task_runner_(audio_task_runner),
       control_dispatcher_(new HostControlDispatcher()),
-      event_dispatcher_(new HostEventDispatcher()),
-      weak_factory_(this) {
+      event_dispatcher_(new HostEventDispatcher()) {
+  auto video_encoder_factory = std::make_unique<WebrtcVideoEncoderFactory>();
+  video_encoder_factory_ = video_encoder_factory.get();
+  transport_ = std::make_unique<WebrtcTransport>(
+      webrtc::ThreadWrapper::current(), transport_context,
+      std::move(video_encoder_factory), this);
   session_->SetEventHandler(this);
   session_->SetTransport(transport_.get());
 }
@@ -78,14 +85,16 @@ void WebrtcConnectionToClient::Disconnect(ErrorCode error) {
 }
 
 std::unique_ptr<VideoStream> WebrtcConnectionToClient::StartVideoStream(
+    const std::string& stream_name,
     std::unique_ptr<webrtc::DesktopCapturer> desktop_capturer) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(transport_);
 
-  std::unique_ptr<WebrtcVideoStream> stream(
-      new WebrtcVideoStream(session_options_));
+  auto stream =
+      std::make_unique<WebrtcVideoStream>(stream_name, session_options_);
+  stream->set_video_stats_dispatcher(video_stats_dispatcher_.GetWeakPtr());
   stream->Start(std::move(desktop_capturer), transport_.get(),
-                video_encode_task_runner_);
+                video_encoder_factory_);
   stream->SetEventTimestampsSource(
       event_dispatcher_->event_timestamps_source());
   return std::move(stream);
@@ -128,6 +137,15 @@ void WebrtcConnectionToClient::ApplySessionOptions(
   session_options_ = options;
   DCHECK(transport_);
   transport_->ApplySessionOptions(options);
+  video_encoder_factory_->ApplySessionOptions(options);
+}
+
+PeerConnectionControls* WebrtcConnectionToClient::peer_connection_controls() {
+  return transport_.get();
+}
+
+WebrtcEventLogData* WebrtcConnectionToClient::rtc_event_log() {
+  return transport_->rtc_event_log();
 }
 
 void WebrtcConnectionToClient::OnSessionStateChange(Session::State state) {
@@ -176,6 +194,12 @@ void WebrtcConnectionToClient::OnWebrtcTransportConnecting() {
   control_dispatcher_->Init(
       transport_->CreateOutgoingChannel(control_dispatcher_->channel_name()),
       this);
+
+  // Create channel for sending per-frame statistics. The video-stream will
+  // only try to send any stats after this channel is connected.
+  video_stats_dispatcher_.Init(
+      transport_->CreateOutgoingChannel(video_stats_dispatcher_.channel_name()),
+      this);
 }
 
 void WebrtcConnectionToClient::OnWebrtcTransportConnected() {
@@ -195,6 +219,15 @@ void WebrtcConnectionToClient::OnWebrtcTransportError(ErrorCode error) {
   Disconnect(error);
 }
 
+void WebrtcConnectionToClient::OnWebrtcTransportProtocolChanged() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  // If not all channels are connected, this call will be deferred to
+  // OnChannelInitialized() when all channels are connected.
+  if (allChannelsConnected()) {
+    event_handler_->OnTransportProtocolChange(transport_->transport_protocol());
+  }
+}
+
 void WebrtcConnectionToClient::OnWebrtcTransportIncomingDataChannel(
     const std::string& name,
     std::unique_ptr<MessagePipe> pipe) {
@@ -211,23 +244,37 @@ void WebrtcConnectionToClient::OnWebrtcTransportIncomingDataChannel(
 }
 
 void WebrtcConnectionToClient::OnWebrtcTransportMediaStreamAdded(
-    scoped_refptr<webrtc::MediaStreamInterface> stream) {
+    rtc::scoped_refptr<webrtc::MediaStreamInterface> stream) {
   DCHECK(thread_checker_.CalledOnValidThread());
   LOG(WARNING) << "The client created an unexpected media stream.";
 }
 
 void WebrtcConnectionToClient::OnWebrtcTransportMediaStreamRemoved(
-    scoped_refptr<webrtc::MediaStreamInterface> stream) {
+    rtc::scoped_refptr<webrtc::MediaStreamInterface> stream) {
   DCHECK(thread_checker_.CalledOnValidThread());
+}
+
+void WebrtcConnectionToClient::OnWebrtcTransportRouteChanged(
+    const TransportRoute& route) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(event_handler_);
+
+  // WebRTC route-change events are triggered at the transport level, so the
+  // channel name is not meaningful here.
+  std::string channel_name;
+  event_handler_->OnRouteChange(channel_name, route);
 }
 
 void WebrtcConnectionToClient::OnChannelInitialized(
     ChannelDispatcherBase* channel_dispatcher) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (control_dispatcher_ && control_dispatcher_->is_connected() &&
-      event_dispatcher_ && event_dispatcher_->is_connected()) {
+  if (allChannelsConnected()) {
     event_handler_->OnConnectionChannelsConnected();
+    if (!transport_->transport_protocol().empty()) {
+      event_handler_->OnTransportProtocolChange(
+          transport_->transport_protocol());
+    }
   }
 }
 
@@ -235,9 +282,19 @@ void WebrtcConnectionToClient::OnChannelClosed(
     ChannelDispatcherBase* channel_dispatcher) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
+  if (channel_dispatcher == &video_stats_dispatcher_) {
+    LOG(WARNING) << "video_stats channel was closed.";
+    return;
+  }
+
   LOG(ERROR) << "Channel " << channel_dispatcher->channel_name()
              << " was closed unexpectedly.";
   Disconnect(INCOMPATIBLE_PROTOCOL);
+}
+
+bool WebrtcConnectionToClient::allChannelsConnected() {
+  return control_dispatcher_ && control_dispatcher_->is_connected() &&
+         event_dispatcher_ && event_dispatcher_->is_connected();
 }
 
 }  // namespace protocol

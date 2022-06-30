@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 #include "net/quic/mock_quic_data.h"
+#include "net/base/hex_utils.h"
 
-namespace net {
-namespace test {
+namespace net::test {
 
 MockQuicData::MockQuicData(quic::ParsedQuicVersion version)
-    : sequence_number_(0), printer_(version) {}
+    : printer_(version) {}
 
-MockQuicData::~MockQuicData() {}
+MockQuicData::~MockQuicData() = default;
 
 void MockQuicData::AddConnect(IoMode mode, int rv) {
-  connect_.reset(new MockConnect(mode, rv));
+  connect_ = std::make_unique<MockConnect>(mode, rv);
 }
 
 void MockQuicData::AddRead(IoMode mode,
@@ -61,7 +61,7 @@ void MockQuicData::Resume() {
 }
 
 SequencedSocketData* MockQuicData::InitializeAndGetSequencedSocketData() {
-  socket_data_.reset(new SequencedSocketData(reads_, writes_));
+  socket_data_ = std::make_unique<SequencedSocketData>(reads_, writes_);
   socket_data_->set_printer(&printer_);
   if (connect_ != nullptr)
     socket_data_->set_connect_data(*connect_);
@@ -73,5 +73,4 @@ SequencedSocketData* MockQuicData::GetSequencedSocketData() {
   return socket_data_.get();
 }
 
-}  // namespace test
-}  // namespace net
+}  // namespace net::test

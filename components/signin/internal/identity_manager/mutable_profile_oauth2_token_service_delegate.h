@@ -5,12 +5,14 @@
 #ifndef COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_MUTABLE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_
 #define COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_MUTABLE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_
 
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "components/signin/internal/identity_manager/account_tracker_service.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service.h"
@@ -21,7 +23,6 @@
 #include "net/base/backoff_entry.h"
 #include "services/network/public/cpp/network_connection_tracker.h"
 
-class PrefRegistrySimple;
 class SigninClient;
 class TokenWebData;
 
@@ -39,11 +40,14 @@ class MutableProfileOAuth2TokenServiceDelegate
       scoped_refptr<TokenWebData> token_web_data,
       signin::AccountConsistencyMethod account_consistency,
       bool revoke_all_tokens_on_load,
-      bool can_revoke_credentials,
       FixRequestErrorCallback fix_request_error_callback);
-  ~MutableProfileOAuth2TokenServiceDelegate() override;
 
-  static void RegisterProfilePrefs(PrefRegistrySimple* registry);
+  MutableProfileOAuth2TokenServiceDelegate(
+      const MutableProfileOAuth2TokenServiceDelegate&) = delete;
+  MutableProfileOAuth2TokenServiceDelegate& operator=(
+      const MutableProfileOAuth2TokenServiceDelegate&) = delete;
+
+  ~MutableProfileOAuth2TokenServiceDelegate() override;
 
   // Overridden from ProfileOAuth2TokenServiceDelegate.
   std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
@@ -64,7 +68,8 @@ class MutableProfileOAuth2TokenServiceDelegate
   std::vector<CoreAccountId> GetAccounts() const override;
   scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory()
       const override;
-  void LoadCredentials(const CoreAccountId& primary_account_id) override;
+  void LoadCredentials(const CoreAccountId& primary_account_id,
+                       bool is_syncing) override;
   void UpdateCredentials(const CoreAccountId& account_id,
                          const std::string& refresh_token) override;
   void RevokeAllCredentials() override;
@@ -105,11 +110,15 @@ class MutableProfileOAuth2TokenServiceDelegate
       MutableProfileOAuth2TokenServiceDelegateTest,
       LoadCredentialsClearsTokenDBWhenNoPrimaryAccount_DiceDisabled);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
+                           RevokeAllCredentialsDuringLoad);
+  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
                            PersistenceLoadCredentials);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
                            RevokeOnUpdate);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
                            DelayedRevoke);
+  FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
+                           DiceMigrationWithMissingHostedDomain);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
                            DiceMigrationHostedDomainPrimaryAccount);
   FRIEND_TEST_ALL_PREFIXES(MutableProfileOAuth2TokenServiceDelegateTest,
@@ -211,27 +220,20 @@ class MutableProfileOAuth2TokenServiceDelegate
   net::BackoffEntry backoff_entry_;
   GoogleServiceAuthError backoff_error_;
 
-  SigninClient* client_;
-  AccountTrackerService* account_tracker_service_;
-  network::NetworkConnectionTracker* network_connection_tracker_;
+  raw_ptr<SigninClient> client_;
+  raw_ptr<AccountTrackerService> account_tracker_service_;
+  raw_ptr<network::NetworkConnectionTracker> network_connection_tracker_;
   scoped_refptr<TokenWebData> token_web_data_;
   signin::AccountConsistencyMethod account_consistency_;
 
   // Revokes all the tokens after loading them. Secondary accounts will be
   // completely removed, and the primary account will be kept in authentication
   // error state.
-  const bool revoke_all_tokens_on_load_;
-
-  // Supervised users cannot revoke credentials.
-  // TODO(droger): remove this when supervised users are no longer supported on
-  // any platform.
-  const bool can_revoke_credentials_;
+  bool revoke_all_tokens_on_load_;
 
   // Callback function that attempts to correct request errors.  Best effort
   // only.  Returns true if the error was fixed and retry should be reattempted.
   FixRequestErrorCallback fix_request_error_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(MutableProfileOAuth2TokenServiceDelegate);
 };
 
 #endif  // COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_MUTABLE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_

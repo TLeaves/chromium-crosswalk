@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_UI_COCOA_HISTORY_MENU_COCOA_CONTROLLER_H_
 #define CHROME_BROWSER_UI_COCOA_HISTORY_MENU_COCOA_CONTROLLER_H_
 
+#include "base/memory/raw_ptr.h"
+
 #import <Cocoa/Cocoa.h>
 #import "chrome/browser/ui/cocoa/history_menu_bridge.h"
 
@@ -13,10 +15,10 @@
 // creation and maintenance of the menu happens in the Bridge.
 @interface HistoryMenuCocoaController : NSObject<NSMenuDelegate> {
  @private
-  HistoryMenuBridge* bridge_;  // weak; owns us
+  raw_ptr<HistoryMenuBridge> _bridge;  // weak; owns us
 }
 
-- (id)initWithBridge:(HistoryMenuBridge*)bridge;
+- (instancetype)initWithBridge:(HistoryMenuBridge*)bridge;
 
 // Called by any history menu item.
 - (IBAction)openHistoryMenuItem:(id)sender;

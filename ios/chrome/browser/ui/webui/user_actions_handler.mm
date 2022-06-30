@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/user_metrics.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "ios/web/public/webui/web_ui_ios.h"
 
@@ -25,8 +26,10 @@ UserActionsHandler::~UserActionsHandler() {
 
 void UserActionsHandler::RegisterMessages() {}
 
-void UserActionsHandler::OnUserAction(const std::string& action) {
+void UserActionsHandler::OnUserAction(const std::string& action,
+                                      base::TimeTicks action_time) {
+  base::Value event_name = base::Value("user-action");
   base::Value user_action_name(action);
-  std::vector<const base::Value*> args{&user_action_name};
-  web_ui()->CallJavascriptFunction("userActions.observeUserAction", args);
+  std::vector<const base::Value*> args{&event_name, &user_action_name};
+  web_ui()->CallJavascriptFunction("cr.webUIListenerCallback", args);
 }

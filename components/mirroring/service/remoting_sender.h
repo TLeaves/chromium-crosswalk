@@ -10,12 +10,13 @@
 #include "base/callback.h"
 #include "base/component_export.h"
 #include "base/containers/queue.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "media/cast/sender/frame_sender.h"
-#include "media/mojo/interfaces/remoting.mojom.h"
-#include "mojo/public/cpp/bindings/binding.h"
+#include "media/mojo/mojom/remoting.mojom.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 
 namespace base {
 class TickClock;
@@ -32,15 +33,20 @@ namespace mirroring {
 // a CastTransport.
 class COMPONENT_EXPORT(MIRRORING_SERVICE) RemotingSender final
     : public media::mojom::RemotingDataStreamSender,
-      public media::cast::FrameSender {
+      public media::cast::FrameSender::Client {
  public:
   // |transport| is expected to outlive this class.
   RemotingSender(scoped_refptr<media::cast::CastEnvironment> cast_environment,
                  media::cast::CastTransport* transport,
                  const media::cast::FrameSenderConfig& config,
                  mojo::ScopedDataPipeConsumerHandle pipe,
-                 media::mojom::RemotingDataStreamSenderRequest request,
+                 mojo::PendingReceiver<media::mojom::RemotingDataStreamSender>
+                     stream_sender,
                  base::OnceClosure error_callback);
+
+  RemotingSender(const RemotingSender&) = delete;
+  RemotingSender& operator=(const RemotingSender&) = delete;
+
   ~RemotingSender() override;
 
  private:
@@ -56,10 +62,10 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) RemotingSender final
   void SendFrame(uint32_t frame_size) override;
   void CancelInFlightData() override;
 
-  // FrameSender override.
+  // FrameSender::Client overrides.
   int GetNumberOfFramesInEncoder() const override;
-  base::TimeDelta GetInFlightMediaDuration() const override;
-  void OnCancelSendingFrames() override;
+  base::TimeDelta GetEncoderBacklogDuration() const override;
+  void OnFrameCanceled(media::cast::FrameId frame_id) override;
 
   // Attempt to run next pending input task, popping the head of the input queue
   // as each task succeeds.
@@ -79,19 +85,25 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) RemotingSender final
 
   void OnRemotingDataStreamError();
 
+  // Returns true if OnRemotingDataStreamError was called.
+  bool HadError() const;
+
   SEQUENCE_CHECKER(sequence_checker_);
 
-  const base::TickClock* clock_;
+  // The backing frame sender implementation.
+  std::unique_ptr<media::cast::FrameSender> frame_sender_;
+
+  raw_ptr<const base::TickClock> clock_;
 
   // Callback that is run to notify when a fatal error occurs.
   base::OnceClosure error_callback_;
 
   std::unique_ptr<media::MojoDataPipeReader> data_pipe_reader_;
 
-  // Mojo binding for this instance. Implementation at the other end of the
-  // message pipe uses the RemotingDataStreamSender interface to control when
+  // Mojo receiver for this instance. Implementation at the other end of the
+  // message pipe uses the RemotingDataStreamSender remote to control when
   // this RemotingSender consumes from |pipe_|.
-  mojo::Binding<media::mojom::RemotingDataStreamSender> binding_;
+  mojo::Receiver<media::mojom::RemotingDataStreamSender> stream_sender_;
 
   // The next frame's payload data. Populated by call to OnFrameRead() when
   // reading succeeded.
@@ -111,10 +123,12 @@ class COMPONENT_EXPORT(MIRRORING_SERVICE) RemotingSender final
   // to mark the next frame as the start of a new sequence.
   bool flow_restart_pending_;
 
+  // The next frame's ID. Before any frames are sent, this will be the ID of
+  // the first frame.
+  media::cast::FrameId next_frame_id_ = media::cast::FrameId::first();
+
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<RemotingSender> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(RemotingSender);
 };
 
 }  // namespace mirroring

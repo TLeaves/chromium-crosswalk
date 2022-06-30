@@ -31,16 +31,16 @@ void FakeDeviceTest::SetUp() {
 
   factory_->CreateDevice(
       std::move(i420_fake_device_info_.descriptor.device_id),
-      mojo::MakeRequest(&i420_fake_device_proxy_),
-      base::BindOnce([](mojom::DeviceAccessResultCode result_code) {
-        ASSERT_EQ(mojom::DeviceAccessResultCode::SUCCESS, result_code);
+      i420_fake_device_remote_.BindNewPipeAndPassReceiver(),
+      base::BindOnce([](media::VideoCaptureError result_code) {
+        ASSERT_EQ(media::VideoCaptureError::kNone, result_code);
       }));
 
   factory_->CreateDevice(
       std::move(mjpeg_fake_device_info_.descriptor.device_id),
-      mojo::MakeRequest(&mjpeg_fake_device_proxy_),
-      base::BindOnce([](mojom::DeviceAccessResultCode result_code) {
-        ASSERT_EQ(mojom::DeviceAccessResultCode::SUCCESS, result_code);
+      mjpeg_fake_device_remote_.BindNewPipeAndPassReceiver(),
+      base::BindOnce([](media::VideoCaptureError result_code) {
+        ASSERT_EQ(media::VideoCaptureError::kNone, result_code);
       }));
 }
 

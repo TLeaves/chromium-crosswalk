@@ -6,10 +6,10 @@
 
 #include <memory>
 
-#include "components/autofill/core/common/password_form.h"
+#include "base/containers/contains.h"
+#include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/statistics_table.h"
-
-using autofill::PasswordForm;
 
 namespace password_manager {
 
@@ -18,11 +18,15 @@ FakeFormFetcher::FakeFormFetcher() = default;
 FakeFormFetcher::~FakeFormFetcher() = default;
 
 void FakeFormFetcher::AddConsumer(Consumer* consumer) {
-  consumers_.insert(consumer);
+  consumers_.AddObserver(consumer);
 }
 
 void FakeFormFetcher::RemoveConsumer(Consumer* consumer) {
-  consumers_.erase(consumer);
+  consumers_.RemoveObserver(consumer);
+}
+
+void FakeFormFetcher::Fetch() {
+  state_ = State::WAITING;
 }
 
 FormFetcher::State FakeFormFetcher::GetState() const {
@@ -34,6 +38,11 @@ const std::vector<InteractionsStats>& FakeFormFetcher::GetInteractionsStats()
   return stats_;
 }
 
+const std::vector<const PasswordForm*>&
+FakeFormFetcher::GetInsecureCredentials() const {
+  return insecure_credentials_;
+}
+
 std::vector<const PasswordForm*> FakeFormFetcher::GetNonFederatedMatches()
     const {
   return non_federated_;
@@ -43,33 +52,69 @@ std::vector<const PasswordForm*> FakeFormFetcher::GetFederatedMatches() const {
   return federated_;
 }
 
-std::vector<const PasswordForm*> FakeFormFetcher::GetBlacklistedMatches()
+bool FakeFormFetcher::IsBlocklisted() const {
+  return is_blocklisted_;
+}
+
+bool FakeFormFetcher::IsMovingBlocked(const autofill::GaiaIdHash& destination,
+                                      const std::u16string& username) const {
+  // This is analogous to the implementation in
+  // MultiStoreFormFetcher::IsMovingBlocked().
+  for (const std::vector<const PasswordForm*>& matches_vector :
+       {federated_, non_federated_}) {
+    for (const PasswordForm* form : matches_vector) {
+      // Only local entries can be moved to the account store (though
+      // account store matches should never have |moving_blocked_for_list|
+      // entries anyway).
+      if (form->IsUsingAccountStore())
+        continue;
+      // Ignore non-exact matches for blocking moving.
+      if (password_manager_util::GetMatchType(*form) !=
+          password_manager_util::GetLoginMatchType::kExact) {
+        continue;
+      }
+      if (form->username_value != username)
+        continue;
+      if (base::Contains(form->moving_blocked_for_list, destination))
+        return true;
+    }
+  }
+  return false;
+}
+
+const std::vector<const PasswordForm*>& FakeFormFetcher::GetAllRelevantMatches()
     const {
-  return blacklisted_;
+  return non_federated_same_scheme_;
 }
 
-void FakeFormFetcher::SetNonFederated(
-    const std::vector<const PasswordForm*>& non_federated) {
-  non_federated_ = non_federated;
+const std::vector<const PasswordForm*>& FakeFormFetcher::GetBestMatches()
+    const {
+  return best_matches_;
 }
 
-void FakeFormFetcher::SetBlacklisted(
-    const std::vector<const PasswordForm*>& blacklisted) {
-  blacklisted_ = blacklisted;
-}
-
-void FakeFormFetcher::NotifyFetchCompleted() {
-  state_ = State::NOT_WAITING;
-  for (Consumer* consumer : consumers_)
-    consumer->OnFetchCompleted();
-}
-
-void FakeFormFetcher::Fetch() {
-  state_ = State::WAITING;
+const PasswordForm* FakeFormFetcher::GetPreferredMatch() const {
+  return preferred_match_;
 }
 
 std::unique_ptr<FormFetcher> FakeFormFetcher::Clone() {
   return std::make_unique<FakeFormFetcher>();
 }
 
+void FakeFormFetcher::SetNonFederated(
+    const std::vector<const PasswordForm*>& non_federated) {
+  non_federated_ = non_federated;
+  password_manager_util::FindBestMatches(non_federated_, scheme_,
+                                         &non_federated_same_scheme_,
+                                         &best_matches_, &preferred_match_);
+}
+
+void FakeFormFetcher::SetBlocklisted(bool is_blocklisted) {
+  is_blocklisted_ = is_blocklisted;
+}
+
+void FakeFormFetcher::NotifyFetchCompleted() {
+  state_ = State::NOT_WAITING;
+  for (Consumer& consumer : consumers_)
+    consumer.OnFetchCompleted();
+}
 }  // namespace password_manager

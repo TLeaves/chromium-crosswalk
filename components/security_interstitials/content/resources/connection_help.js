@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var HIDDEN_CLASS = 'hidden';
+import './strings.m.js';
+
+import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {$} from 'chrome://resources/js/util.m.js';
+
+const HIDDEN_CLASS = 'hidden';
 
 function setupEvents() {
   $('details-certerror-button').addEventListener('click', function(event) {
@@ -24,6 +29,7 @@ function setupEvents() {
     case '#' + loadTimeData.getInteger('certCommonNameInvalid'):
     case '#' + loadTimeData.getInteger('certAuthorityInvalid'):
     case '#' + loadTimeData.getInteger('certWeakSignatureAlgorithm'):
+    case '#' + loadTimeData.getInteger('certKnownInterceptionBlocked'):
       toggleHidden('details-certerror', 'details-certerror-button');
       break;
     case '#' + loadTimeData.getInteger('certExpired'):
@@ -33,7 +39,7 @@ function setupEvents() {
 }
 
 function toggleHidden(className, buttonName) {
-  var hiddenDetails = $(className).classList.toggle(HIDDEN_CLASS);
+  const hiddenDetails = $(className).classList.toggle(HIDDEN_CLASS);
   $(buttonName).innerText = hiddenDetails ?
       loadTimeData.getString('connectionHelpShowMore') :
       loadTimeData.getString('connectionHelpShowLess');

@@ -21,7 +21,7 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/browser_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -55,10 +55,11 @@ class BrowserSwitcherPrefsTest : public testing::Test {
  public:
   void SetUp() override {
     BrowserSwitcherPrefs::RegisterProfilePrefs(prefs_backend_.registry());
-    policy_provider_ =
-        std::make_unique<policy::MockConfigurationPolicyProvider>();
-    EXPECT_CALL(*policy_provider_, IsInitializationComplete(_))
-        .WillRepeatedly(Return(true));
+    policy_provider_ = std::make_unique<
+        testing::NiceMock<policy::MockConfigurationPolicyProvider>>();
+    policy_provider_->SetDefaultReturns(
+        /*is_initialization_complete_return=*/true,
+        /*is_first_policy_load_complete_return=*/true);
     std::vector<policy::ConfigurationPolicyProvider*> providers = {
         policy_provider_.get()};
     policy_service_ = std::make_unique<policy::PolicyServiceImpl>(providers);
@@ -77,7 +78,7 @@ class BrowserSwitcherPrefsTest : public testing::Test {
   BrowserSwitcherPrefs* prefs() { return prefs_.get(); }
 
  private:
-  content::TestBrowserThreadBundle thread_bundle_;
+  content::BrowserTaskEnvironment task_environment_;
 
   sync_preferences::TestingPrefServiceSyncable prefs_backend_;
 
@@ -93,7 +94,7 @@ TEST_F(BrowserSwitcherPrefsTest, ListensForPrefChanges) {
                                   std::make_unique<base::Value>("notepad.exe"));
   prefs_backend()->SetManagedPref(prefs::kAlternativeBrowserParameters,
                                   StringArrayToValue({"a", "b", "c"}));
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   prefs_backend()->SetManagedPref(prefs::kChromePath,
                                   std::make_unique<base::Value>("cmd.exe"));
   prefs_backend()->SetManagedPref(prefs::kChromeParameters,
@@ -113,8 +114,8 @@ TEST_F(BrowserSwitcherPrefsTest, ListensForPrefChanges) {
   EXPECT_EQ("b", prefs()->GetAlternativeBrowserParameters()[1]);
   EXPECT_EQ("c", prefs()->GetAlternativeBrowserParameters()[2]);
 
-#if defined(OS_WIN)
-  EXPECT_EQ("cmd.exe", prefs()->GetChromePath());
+#if BUILDFLAG(IS_WIN)
+  EXPECT_EQ("cmd.exe", prefs()->GetChromePath().MaybeAsASCII());
 
   EXPECT_EQ(3u, prefs()->GetChromeParameters().size());
   EXPECT_EQ("d", prefs()->GetChromeParameters()[0]);
@@ -123,18 +124,18 @@ TEST_F(BrowserSwitcherPrefsTest, ListensForPrefChanges) {
 #endif
 
   EXPECT_EQ(1u, prefs()->GetRules().sitelist.size());
-  EXPECT_EQ("example.com", prefs()->GetRules().sitelist[0]);
+  EXPECT_EQ("example.com", prefs()->GetRules().sitelist[0]->ToString());
 
   EXPECT_EQ(1u, prefs()->GetRules().greylist.size());
-  EXPECT_EQ("foo.example.com", prefs()->GetRules().greylist[0]);
+  EXPECT_EQ("foo.example.com", prefs()->GetRules().greylist[0]->ToString());
 }
 
 TEST_F(BrowserSwitcherPrefsTest, TriggersObserversOnPolicyChange) {
   policy::PolicyMap policy_map;
   policy_map.Set(policy::key::kAlternativeBrowserPath,
                  policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_MACHINE,
-                 policy::POLICY_SOURCE_PLATFORM,
-                 std::make_unique<base::Value>("notepad.exe"), nullptr);
+                 policy::POLICY_SOURCE_PLATFORM, base::Value("notepad.exe"),
+                 nullptr);
 
   base::RunLoop run_loop;
   auto subscription = prefs()->RegisterPrefsChangedCallback(base::BindRepeating(

@@ -6,8 +6,7 @@
 
 #include "android_webview/browser/aw_contents_io_thread_client.h"
 #include "android_webview/common/url_constants.h"
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/check_op.h"
 #include "net/base/load_flags.h"
 #include "url/gurl.h"
 

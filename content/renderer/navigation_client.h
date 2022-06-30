@@ -6,7 +6,10 @@
 #define CONTENT_RENDERER_NAVIGATION_CLIENT_H_
 
 #include "content/common/navigation_client.mojom.h"
-#include "mojo/public/cpp/bindings/associated_binding.h"
+#include "content/public/common/alternative_error_page_override_info.mojom.h"
+#include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/pending_associated_receiver.h"
+#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 
 namespace content {
 
@@ -19,31 +22,40 @@ class NavigationClient : mojom::NavigationClient {
 
   // mojom::NavigationClient implementation:
   void CommitNavigation(
-      const CommonNavigationParams& common_params,
-      const CommitNavigationParams& commit_params,
-      const network::ResourceResponseHead& response_head,
+      blink::mojom::CommonNavigationParamsPtr common_params,
+      blink::mojom::CommitNavigationParamsPtr commit_params,
+      network::mojom::URLResponseHeadPtr response_head,
       mojo::ScopedDataPipeConsumerHandle response_body,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-      std::unique_ptr<blink::URLLoaderFactoryBundleInfo> subresource_loaders,
-      base::Optional<std::vector<::content::mojom::TransferrableURLLoaderPtr>>
+      std::unique_ptr<blink::PendingURLLoaderFactoryBundle> subresource_loaders,
+      absl::optional<std::vector<blink::mojom::TransferrableURLLoaderPtr>>
           subresource_overrides,
       blink::mojom::ControllerServiceWorkerInfoPtr
           controller_service_worker_info,
-      blink::mojom::ServiceWorkerProviderInfoForClientPtr provider_info,
+      blink::mojom::ServiceWorkerContainerInfoForClientPtr container_info,
       mojo::PendingRemote<network::mojom::URLLoaderFactory>
           prefetch_loader_factory,
       const base::UnguessableToken& devtools_navigation_token,
+      const blink::ParsedPermissionsPolicy& permissions_policy,
+      blink::mojom::PolicyContainerPtr policy_container,
+      mojo::PendingRemote<blink::mojom::CodeCacheHost> code_cache_host,
+      mojom::CookieManagerInfoPtr cookie_manager_info,
+      mojom::StorageInfoPtr storage_info,
       CommitNavigationCallback callback) override;
   void CommitFailedNavigation(
-      const CommonNavigationParams& common_params,
-      const CommitNavigationParams& commit_params,
+      blink::mojom::CommonNavigationParamsPtr common_params,
+      blink::mojom::CommitNavigationParamsPtr commit_params,
       bool has_stale_copy_in_cache,
       int error_code,
-      const base::Optional<std::string>& error_page_content,
-      std::unique_ptr<blink::URLLoaderFactoryBundleInfo> subresource_loaders,
+      int extended_error_code,
+      const net::ResolveErrorInfo& resolve_error_info,
+      const absl::optional<std::string>& error_page_content,
+      std::unique_ptr<blink::PendingURLLoaderFactoryBundle> subresource_loaders,
+      blink::mojom::PolicyContainerPtr policy_container,
+      mojom::AlternativeErrorPageOverrideInfoPtr alternative_error_page_info,
       CommitFailedNavigationCallback callback) override;
 
-  void Bind(mojom::NavigationClientAssociatedRequest request);
+  void Bind(mojo::PendingAssociatedReceiver<mojom::NavigationClient> receiver);
 
   // See NavigationState::was_initiated_in_this_frame for details.
   void MarkWasInitiatedInThisFrame();
@@ -59,7 +71,8 @@ class NavigationClient : mojom::NavigationClient {
   void SetDisconnectionHandler();
   void ResetDisconnectionHandler();
 
-  mojo::AssociatedBinding<mojom::NavigationClient> navigation_client_binding_;
+  mojo::AssociatedReceiver<mojom::NavigationClient> navigation_client_receiver_{
+      this};
   RenderFrameImpl* render_frame_;
   bool was_initiated_in_this_frame_ = false;
 };

@@ -9,26 +9,25 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
-#include "chrome/browser/chromeos/login/enrollment/enrollment_screen_view.h"
-#include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_helper.h"
-#include "chrome/browser/chromeos/login/screens/error_screen.h"
-#include "chrome/browser/chromeos/policy/enrollment_config.h"
+#include "base/values.h"
+#include "chrome/browser/ash/login/enrollment/enrollment_screen_view.h"
+#include "chrome/browser/ash/login/enrollment/enterprise_enrollment_helper.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "chrome/browser/ash/login/error_screens_histogram_helper.h"
+// TODO(https://crbug.com/1164001): move to forward declaration.
+#include "chrome/browser/ash/login/help_app_launcher.h"
+#include "chrome/browser/ash/login/screens/error_screen.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_config.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
 #include "net/base/net_errors.h"
-
-namespace net {
-class CanonicalCookie;
-}
+#include "net/cookies/canonical_cookie.h"
 
 namespace chromeos {
-
-class ErrorScreensHistogramHelper;
-class HelpAppLauncher;
+class CookieWaiter;
 
 // Possible error states of the Active Directory screen. Must be in the same
-// order as ACTIVE_DIRECTORY_ERROR_STATE enum values.
+// order as ActiveDirectoryErrorState ( in enterprise_enrollment.js ) values.
 enum class ActiveDirectoryErrorState {
   NONE = 0,
   MACHINE_NAME_INVALID = 1,
@@ -61,67 +60,83 @@ class EnrollmentScreenHandler
   using TView = EnrollmentScreenView;
 
   EnrollmentScreenHandler(
-      JSCallsContainer* js_calls_container,
       const scoped_refptr<NetworkStateInformer>& network_state_informer,
       ErrorScreen* error_screen);
+
+  EnrollmentScreenHandler(const EnrollmentScreenHandler&) = delete;
+  EnrollmentScreenHandler& operator=(const EnrollmentScreenHandler&) = delete;
+
   ~EnrollmentScreenHandler() override;
 
   // Implements WebUIMessageHandler:
   void RegisterMessages() override;
 
   // Implements EnrollmentScreenView:
-  void SetEnrollmentConfig(Controller* controller,
-                           const policy::EnrollmentConfig& config) override;
+  void SetEnrollmentConfig(const policy::EnrollmentConfig& config) override;
+  void SetEnrollmentController(Controller* controller) override;
+
+  void SetEnterpriseDomainInfo(const std::string& manager,
+                               const std::u16string& device_type) override;
+  void SetFlowType(FlowType flow_type) override;
+  void SetGaiaButtonsType(GaiaButtonsType buttons_type) override;
   void Show() override;
   void Hide() override;
+  void Bind(ash::EnrollmentScreen* screen) override;
+  void Unbind() override;
   void ShowSigninScreen() override;
-  void ShowLicenseTypeSelectionScreen(
-      const base::DictionaryValue& license_types) override;
+  void ShowUserError(UserErrorType error_type,
+                     const std::string& email) override;
+  void ShowEnrollmentDuringTrialNotAllowedError() override;
   void ShowActiveDirectoryScreen(const std::string& domain_join_config,
                                  const std::string& machine_name,
                                  const std::string& username,
                                  authpolicy::ErrorType error) override;
   void ShowAttributePromptScreen(const std::string& asset_id,
                                  const std::string& location) override;
-  void ShowAttestationBasedEnrollmentSuccessScreen(
-      const std::string& enterprise_domain) override;
-  void ShowEnrollmentSpinnerScreen() override;
+  void ShowEnrollmentSuccessScreen() override;
+  void ShowEnrollmentWorkingScreen() override;
+  void ShowEnrollmentTPMCheckingScreen() override;
   void ShowAuthError(const GoogleServiceAuthError& error) override;
   void ShowEnrollmentStatus(policy::EnrollmentStatus status) override;
   void ShowOtherError(
       EnterpriseEnrollmentHelper::OtherError error_code) override;
+  void Shutdown() override;
 
   // Implements BaseScreenHandler:
-  void Initialize() override;
+  void InitializeDeprecated() override;
   void DeclareLocalizedValues(
       ::login::LocalizedValuesBuilder* builder) override;
-  void GetAdditionalParameters(base::DictionaryValue* parameters) override;
+  void GetAdditionalParameters(base::Value::Dict* parameters) override;
 
   // Implements NetworkStateInformer::NetworkStateInformerObserver
   void UpdateState(NetworkError::ErrorReason reason) override;
+
+  void ContinueAuthenticationWhenCookiesAvailable(const std::string& user,
+                                                  int license_type);
+  void OnCookieWaitTimeout();
 
  private:
   // Handlers for WebUI messages.
   void HandleToggleFakeEnrollment();
   void HandleClose(const std::string& reason);
-  void HandleCompleteLogin(const std::string& user);
+  void HandleCompleteLogin(const std::string& user, int license_type);
   void OnGetCookiesForCompleteLogin(
       const std::string& user,
-      const std::vector<net::CanonicalCookie>& cookies,
-      const net::CookieStatusList& excluded_cookies);
+      int license_type,
+      const net::CookieAccessResultList& cookies,
+      const net::CookieAccessResultList& excluded_cookies);
   void HandleAdCompleteLogin(const std::string& machine_name,
                              const std::string& distinguished_name,
                              const std::string& encryption_types,
                              const std::string& user_name,
                              const std::string& password);
   void HandleAdUnlockConfiguration(const std::string& password);
+  void HandleIdentifierEntered(const std::string& email);
   void HandleRetry();
   void HandleFrameLoadingCompleted();
   void HandleDeviceAttributesProvided(const std::string& asset_id,
                                       const std::string& location);
   void HandleOnLearnMore();
-  void HandleLicenseTypeSelected(const std::string& licenseType);
-
   void UpdateStateInternal(NetworkError::ErrorReason reason, bool force_update);
   void SetupAndShowOfflineMessage(NetworkStateInformer::State state,
                                   NetworkError::ErrorReason reason);
@@ -151,11 +166,11 @@ class EnrollmentScreenHandler
   void DoShowWithPartition(const std::string& partition_name);
 
   // Returns true if current visible screen is the enrollment sign-in page.
-  bool IsOnEnrollmentScreen() const;
+  bool IsOnEnrollmentScreen();
 
   // Returns true if current visible screen is the error screen over
   // enrollment sign-in page.
-  bool IsEnrollmentScreenHiddenByError() const;
+  bool IsEnrollmentScreenHiddenByError();
 
   // Called after configuration seed was unlocked.
   void OnAdConfigurationUnlocked(std::string unlocked_data);
@@ -167,6 +182,11 @@ class EnrollmentScreenHandler
 
   // The enrollment configuration.
   policy::EnrollmentConfig config_;
+
+  // GAIA flow type parameter that is set to authenticator.
+  FlowType flow_type_;
+
+  GaiaButtonsType gaia_buttons_type_;
 
   // Active Directory configuration in the form of encrypted binary data.
   std::string active_directory_domain_join_config_;
@@ -181,22 +201,37 @@ class EnrollmentScreenHandler
   // True when signin screen step is shown.
   bool observe_network_failure_ = false;
 
+  // Set true when chrome is being restarted to pick up enrollment changes. The
+  // renderer processes will be destroyed and can no longer be talked to.
+  bool shutdown_ = false;
+
   // Network state informer used to keep signin screen up.
   scoped_refptr<NetworkStateInformer> network_state_informer_;
 
   ErrorScreen* error_screen_ = nullptr;
+  ash::EnrollmentScreen* screen_ = nullptr;
+
+  std::string signin_partition_name_;
 
   std::unique_ptr<ErrorScreensHistogramHelper> histogram_helper_;
 
   // Help application used for help dialogs.
   scoped_refptr<HelpAppLauncher> help_app_;
 
+  std::unique_ptr<CookieWaiter> oauth_code_waiter_;
 
-  base::WeakPtrFactory<EnrollmentScreenHandler> weak_ptr_factory_;
+  bool use_fake_login_for_testing_ = false;
 
-  DISALLOW_COPY_AND_ASSIGN(EnrollmentScreenHandler);
+  base::WeakPtrFactory<EnrollmentScreenHandler> weak_ptr_factory_{this};
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::ActiveDirectoryErrorState;
+using ::chromeos::EnrollmentScreenHandler;
+}
 
 #endif  // CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_ENROLLMENT_SCREEN_HANDLER_H_

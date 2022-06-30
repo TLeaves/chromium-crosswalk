@@ -10,12 +10,29 @@
 struct wl_client;
 
 namespace exo {
-namespace wayland {
+class Display;
 
-void bind_xdg_shell_v6(wl_client* client,
-                       void* data,
-                       uint32_t version,
-                       uint32_t id);
+namespace wayland {
+class SerialTracker;
+
+struct WaylandZxdgShell {
+  WaylandZxdgShell(Display* display, SerialTracker* serial_tracker)
+      : display(display), serial_tracker(serial_tracker) {}
+
+  WaylandZxdgShell(const WaylandZxdgShell&) = delete;
+  WaylandZxdgShell& operator=(const WaylandZxdgShell&) = delete;
+
+  // Owned by WaylandServerController, which always outlives zxdg_shell.
+  Display* const display;
+
+  // Owned by Server, which always outlives zxdg_shell.
+  SerialTracker* const serial_tracker;
+};
+
+void bind_zxdg_shell_v6(wl_client* client,
+                        void* data,
+                        uint32_t version,
+                        uint32_t id);
 
 }  // namespace wayland
 }  // namespace exo

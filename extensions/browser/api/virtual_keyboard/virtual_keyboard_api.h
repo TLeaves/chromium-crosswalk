@@ -5,27 +5,27 @@
 #ifndef EXTENSIONS_BROWSER_API_VIRTUAL_KEYBOARD_VIRTUAL_KEYBOARD_API_H_
 #define EXTENSIONS_BROWSER_API_VIRTUAL_KEYBOARD_VIRTUAL_KEYBOARD_API_H_
 
-#include "base/macros.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/common/api/virtual_keyboard.h"
 
 namespace extensions {
 
-class VirtualKeyboardRestrictFeaturesFunction
-    : public UIThreadExtensionFunction {
+class VirtualKeyboardRestrictFeaturesFunction : public ExtensionFunction {
  public:
   VirtualKeyboardRestrictFeaturesFunction();
+
+  VirtualKeyboardRestrictFeaturesFunction(
+      const VirtualKeyboardRestrictFeaturesFunction&) = delete;
+  VirtualKeyboardRestrictFeaturesFunction& operator=(
+      const VirtualKeyboardRestrictFeaturesFunction&) = delete;
 
   DECLARE_EXTENSION_FUNCTION("virtualKeyboard.restrictFeatures",
                              VIRTUALKEYBOARD_RESTRICTFEATURES)
 
  protected:
   ~VirtualKeyboardRestrictFeaturesFunction() override = default;
-  // UIThreadExtensionFunction override:
+  // ExtensionFunction override:
   ResponseAction Run() override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardRestrictFeaturesFunction);
 };
 
 }  // namespace extensions

@@ -9,11 +9,12 @@
 #include "base/command_line.h"
 #include "build/build_config.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/win/hwnd_message_handler.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "ui/base/win/shell.h"
 #endif
 
@@ -42,14 +43,14 @@ void CalculateWindowStylesFromInitParams(
     *style |= WS_MINIMIZE;
   if (!params.accept_events)
     *ex_style |= WS_EX_TRANSPARENT;
-  DCHECK_NE(Widget::InitParams::ACTIVATABLE_DEFAULT, params.activatable);
-  if (params.activatable == Widget::InitParams::ACTIVATABLE_NO)
+  DCHECK_NE(Widget::InitParams::Activatable::kDefault, params.activatable);
+  if (params.activatable == Widget::InitParams::Activatable::kNo)
     *ex_style |= WS_EX_NOACTIVATE;
   if (params.EffectiveZOrderLevel() != ui::ZOrderLevel::kNormal)
     *ex_style |= WS_EX_TOPMOST;
   if (params.mirror_origin_in_rtl)
     *ex_style |= l10n_util::GetExtendedTooltipStyles();
-  if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_DROP)
+  if (params.shadow_type == Widget::InitParams::ShadowType::kDrop)
     *class_style |= CS_DROPSHADOW;
 
   // Set type-dependent style attributes.
@@ -92,9 +93,6 @@ void CalculateWindowStylesFromInitParams(
     case Widget::InitParams::TYPE_CONTROL:
       *style |= WS_VISIBLE;
       break;
-    case Widget::InitParams::TYPE_WINDOW_FRAMELESS:
-      *style |= WS_POPUP;
-      break;
     case Widget::InitParams::TYPE_BUBBLE:
       *style |= WS_POPUP;
       *style |= WS_CLIPCHILDREN;
@@ -108,8 +106,20 @@ void CalculateWindowStylesFromInitParams(
       break;
     case Widget::InitParams::TYPE_MENU:
       *style |= WS_POPUP;
+      if (params.remove_standard_frame) {
+        // If the platform doesn't support drop shadow, decorate the Window
+        // with just a border.
+        if (ui::win::IsAeroGlassEnabled())
+          *style |= WS_THICKFRAME;
+        else
+          *style |= WS_BORDER;
+      }
+      if (!params.force_show_in_taskbar)
+        *ex_style |= WS_EX_TOOLWINDOW;
       break;
+    case Widget::InitParams::TYPE_DRAG:
     case Widget::InitParams::TYPE_TOOLTIP:
+    case Widget::InitParams::TYPE_WINDOW_FRAMELESS:
       *style |= WS_POPUP;
       break;
     default:
@@ -156,7 +166,7 @@ void ConfigureWindowStyles(
   // This doesn't work when Aero is disabled, so disable it in that case.
   // Software composited windows can continue to use WS_EX_LAYERED.
   bool is_translucent =
-      (params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW &&
+      (params.opacity == Widget::InitParams::WindowOpacity::kTranslucent &&
        (ui::win::IsAeroGlassEnabled() || params.force_software_compositing));
 
   CalculateWindowStylesFromInitParams(params, widget_delegate,

@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/url_data_source.h"
@@ -23,15 +22,18 @@ namespace chromeos {
 class ImageSource : public content::URLDataSource {
  public:
   ImageSource();
+
+  ImageSource(const ImageSource&) = delete;
+  ImageSource& operator=(const ImageSource&) = delete;
+
   ~ImageSource() override;
 
   // content::URLDataSource implementation.
   std::string GetSource() override;
   void StartDataRequest(
-      const std::string& path,
-      const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
-      const content::URLDataSource::GotDataCallback& got_data_callback)
-      override;
+      const GURL& url,
+      const content::WebContents::Getter& wc_getter,
+      content::URLDataSource::GotDataCallback got_data_callback) override;
 
   std::string GetMimeType(const std::string& path) override;
 
@@ -39,18 +41,16 @@ class ImageSource : public content::URLDataSource {
   // Continuation from StartDataRequest().
   void StartDataRequestAfterPathExists(
       const base::FilePath& image_path,
-      const content::URLDataSource::GotDataCallback& got_data_callback,
+      content::URLDataSource::GotDataCallback got_data_callback,
       bool path_exists);
 
   // Checks whether we have allowed the image to be loaded.
-  bool IsWhitelisted(const std::string& path) const;
+  bool IsAllowlisted(const std::string& path) const;
 
   // The background task runner on which file I/O and image decoding are done.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
-  base::WeakPtrFactory<ImageSource> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageSource);
+  base::WeakPtrFactory<ImageSource> weak_factory_{this};
 };
 
 }  // namespace chromeos

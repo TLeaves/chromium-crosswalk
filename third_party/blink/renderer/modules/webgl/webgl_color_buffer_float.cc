@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webgl/webgl_color_buffer_float.h"
 
+#include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+
 namespace blink {
 
 WebGLColorBufferFloat::WebGLColorBufferFloat(WebGLRenderingContextBase* context)
@@ -36,11 +38,6 @@ WebGLColorBufferFloat::WebGLColorBufferFloat(WebGLRenderingContextBase* context)
 
 WebGLExtensionName WebGLColorBufferFloat::GetName() const {
   return kWebGLColorBufferFloatName;
-}
-
-WebGLColorBufferFloat* WebGLColorBufferFloat::Create(
-    WebGLRenderingContextBase* context) {
-  return MakeGarbageCollected<WebGLColorBufferFloat>(context);
 }
 
 bool WebGLColorBufferFloat::Supported(WebGLRenderingContextBase* context) {

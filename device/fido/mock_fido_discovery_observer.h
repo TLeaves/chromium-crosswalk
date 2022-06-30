@@ -6,9 +6,9 @@
 #define DEVICE_FIDO_MOCK_FIDO_DISCOVERY_OBSERVER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "device/fido/fido_device_discovery.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -19,9 +19,15 @@ class FidoAuthenticator;
 class MockFidoDiscoveryObserver : public FidoDiscoveryBase::Observer {
  public:
   MockFidoDiscoveryObserver();
+
+  MockFidoDiscoveryObserver(const MockFidoDiscoveryObserver&) = delete;
+  MockFidoDiscoveryObserver& operator=(const MockFidoDiscoveryObserver&) =
+      delete;
+
   ~MockFidoDiscoveryObserver() override;
 
-  MOCK_METHOD2(DiscoveryStarted, void(FidoDiscoveryBase*, bool));
+  MOCK_METHOD3(DiscoveryStarted,
+               void(FidoDiscoveryBase*, bool, std::vector<FidoAuthenticator*>));
   MOCK_METHOD2(DiscoveryStopped, void(FidoDiscoveryBase*, bool));
   MOCK_METHOD2(AuthenticatorAdded,
                void(FidoDiscoveryBase*, FidoAuthenticator*));
@@ -31,9 +37,6 @@ class MockFidoDiscoveryObserver : public FidoDiscoveryBase::Observer {
                void(FidoDiscoveryBase*, const std::string&, std::string));
   MOCK_METHOD3(AuthenticatorPairingModeChanged,
                void(FidoDiscoveryBase*, const std::string&, bool));
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockFidoDiscoveryObserver);
 };
 
 }  // namespace device

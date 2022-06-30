@@ -4,6 +4,7 @@
 
 #include "media/gpu/android/video_frame_factory_impl.h"
 
+#include "media/gpu/android/codec_image.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

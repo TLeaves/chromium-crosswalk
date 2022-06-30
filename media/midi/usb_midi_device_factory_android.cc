@@ -22,7 +22,8 @@ using Callback = UsbMidiDevice::Factory::Callback;
 
 }  // namespace
 
-UsbMidiDeviceFactoryAndroid::UsbMidiDeviceFactoryAndroid() : delegate_(NULL) {}
+UsbMidiDeviceFactoryAndroid::UsbMidiDeviceFactoryAndroid()
+    : delegate_(nullptr) {}
 
 UsbMidiDeviceFactoryAndroid::~UsbMidiDeviceFactoryAndroid() {
   JNIEnv* env = base::android::AttachCurrentThread();
@@ -53,7 +54,6 @@ void UsbMidiDeviceFactoryAndroid::EnumerateDevices(
 // Called from the Java world.
 void UsbMidiDeviceFactoryAndroid::OnUsbMidiDeviceRequestDone(
     JNIEnv* env,
-    const JavaParamRef<jobject>& caller,
     const JavaParamRef<jobjectArray>& devices) {
   UsbMidiDevice::Devices devices_to_pass;
   for (auto raw_device : devices.ReadElements<jobject>()) {
@@ -67,7 +67,6 @@ void UsbMidiDeviceFactoryAndroid::OnUsbMidiDeviceRequestDone(
 // Called from the Java world.
 void UsbMidiDeviceFactoryAndroid::OnUsbMidiDeviceAttached(
     JNIEnv* env,
-    const JavaParamRef<jobject>& caller,
     const JavaParamRef<jobject>& device) {
   delegate_->OnDeviceAttached(
       std::make_unique<UsbMidiDeviceAndroid>(device, delegate_));
@@ -76,7 +75,6 @@ void UsbMidiDeviceFactoryAndroid::OnUsbMidiDeviceAttached(
 // Called from the Java world.
 void UsbMidiDeviceFactoryAndroid::OnUsbMidiDeviceDetached(
     JNIEnv* env,
-    const JavaParamRef<jobject>& caller,
     jint index) {
   delegate_->OnDeviceDetached(index);
 }

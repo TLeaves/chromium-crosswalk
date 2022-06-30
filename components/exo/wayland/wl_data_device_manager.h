@@ -10,9 +10,27 @@
 struct wl_client;
 
 namespace exo {
+class Display;
+
 namespace wayland {
+class SerialTracker;
 
 constexpr uint32_t kWlDataDeviceManagerVersion = 3;
+
+struct WaylandDataDeviceManager {
+  WaylandDataDeviceManager(Display* display, SerialTracker* serial_tracker)
+      : display(display), serial_tracker(serial_tracker) {}
+
+  WaylandDataDeviceManager(const WaylandDataDeviceManager&) = delete;
+  WaylandDataDeviceManager& operator=(const WaylandDataDeviceManager&) = delete;
+
+  // Owned by WaylandServerController, which always outlives
+  // wl_data_device_manager.
+  Display* const display;
+
+  // Owned by Server, which always outlives wl_data_device_manager.
+  SerialTracker* const serial_tracker;
+};
 
 void bind_data_device_manager(wl_client* client,
                               void* data,

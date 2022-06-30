@@ -6,11 +6,14 @@
 
 #include <memory>
 
+#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "gin/public/isolate_holder.h"
 #include "gin/test/v8_test.h"
+#include "v8/include/v8-initialization.h"
 
 namespace gin {
 
@@ -61,6 +64,27 @@ TEST_F(V8MemoryDumpProviderTest, DumpStatistics) {
   ASSERT_TRUE(did_dump_isolate_stats);
   ASSERT_TRUE(did_dump_space_stats);
   ASSERT_TRUE(did_dump_objects_stats);
+}
+
+TEST_F(V8MemoryDumpProviderTest, DumpGlobalHandlesSize) {
+  base::trace_event::MemoryDumpArgs dump_args = {
+      base::trace_event::MemoryDumpLevelOfDetail::BACKGROUND};
+  std::unique_ptr<base::trace_event::ProcessMemoryDump> process_memory_dump(
+      new base::trace_event::ProcessMemoryDump(dump_args));
+  instance_->isolate_memory_dump_provider_for_testing()->OnMemoryDump(
+      dump_args, process_memory_dump.get());
+  const base::trace_event::ProcessMemoryDump::AllocatorDumpsMap&
+      allocator_dumps = process_memory_dump->allocator_dumps();
+
+  bool did_dump_global_handles = false;
+  for (const auto& name_dump : allocator_dumps) {
+    const std::string& name = name_dump.first;
+    if (name.find("v8/main/global_handles") != std::string::npos) {
+      did_dump_global_handles = true;
+    }
+  }
+
+  ASSERT_TRUE(did_dump_global_handles);
 }
 
 TEST_F(V8MemoryDumpProviderTest, DumpContextStatistics) {
@@ -136,6 +160,7 @@ TEST_F(V8MemoryDumpProviderTest, DumpCodeStatistics) {
   bool did_dump_bytecode_size = false;
   bool did_dump_code_size = false;
   bool did_dump_external_scripts_size = false;
+  bool did_dump_cpu_profiler_metadata_size = false;
 
   for (const auto& name_dump : allocator_dumps) {
     const std::string& name = name_dump.first;
@@ -148,6 +173,8 @@ TEST_F(V8MemoryDumpProviderTest, DumpCodeStatistics) {
           did_dump_code_size = true;
         } else if (entry.name == "external_script_source_size") {
           did_dump_external_scripts_size = true;
+        } else if (entry.name == "cpu_profiler_metadata_size") {
+          did_dump_cpu_profiler_metadata_size = true;
         }
       }
     }
@@ -157,6 +184,38 @@ TEST_F(V8MemoryDumpProviderTest, DumpCodeStatistics) {
   ASSERT_TRUE(did_dump_bytecode_size);
   ASSERT_TRUE(did_dump_code_size);
   ASSERT_TRUE(did_dump_external_scripts_size);
+  ASSERT_TRUE(did_dump_cpu_profiler_metadata_size);
+}
+
+// Tests that a deterministic memory dump request performs a GC.
+// TODO(crbug.com/1318974): Fix the flakiness on Linux.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_Deterministic DISABLED_Deterministic
+#else
+#define MAYBE_Deterministic Deterministic
+#endif
+TEST_F(V8MemoryDumpProviderTest, MAYBE_Deterministic) {
+  base::trace_event::MemoryDumpArgs dump_args = {
+      base::trace_event::MemoryDumpLevelOfDetail::LIGHT,
+      base::trace_event::MemoryDumpDeterminism::FORCE_GC};
+  std::unique_ptr<base::trace_event::ProcessMemoryDump> process_memory_dump(
+      new base::trace_event::ProcessMemoryDump(dump_args));
+
+  // Allocate an object that has only a weak reference.
+  v8::Global<v8::Object> weak_ref;
+  {
+    v8::HandleScope scope(instance_->isolate());
+    v8::Local<v8::Object> object = v8::Object::New(instance_->isolate());
+    weak_ref.Reset(instance_->isolate(), object);
+    weak_ref.SetWeak();
+  }
+
+  // Deterministic memory dump should trigger GC.
+  instance_->isolate_memory_dump_provider_for_testing()->OnMemoryDump(
+      dump_args, process_memory_dump.get());
+
+  // GC reclaimed the object.
+  ASSERT_TRUE(weak_ref.IsEmpty());
 }
 
 }  // namespace gin

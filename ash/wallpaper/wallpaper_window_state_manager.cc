@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/window.h"
@@ -23,7 +24,7 @@ void ActivateMruUnminimizedWindowOnActiveDesk() {
           DesksMruType::kActiveDesk));
   for (auto* window : mru_windows) {
     if (WindowState::Get(window)->GetStateType() !=
-        WindowStateType::kMinimized) {
+        chromeos::WindowStateType::kMinimized) {
       WindowState::Get(window)->Activate();
       return;
     }
@@ -69,8 +70,7 @@ void WallpaperWindowStateManager::RestoreMinimizedWindows(
   UserIDHashWindowListMap::iterator it =
       user_id_hash_window_list_map_.find(user_id_hash);
   if (it == user_id_hash_window_list_map_.end()) {
-    DCHECK(false) << "This should only be called after calling "
-                  << "MinimizeInactiveWindows.";
+    DVLOG(1) << "No minimized window state saved";
     return;
   }
 
@@ -84,7 +84,10 @@ void WallpaperWindowStateManager::RestoreMinimizedWindows(
     RemoveObserverIfUnreferenced(*iter);
   }
 
-  ActivateMruUnminimizedWindowOnActiveDesk();
+  // If the wallpaper app is closed while the desktop is in overview mode,
+  // do not activate any window, because doing so will disable overview mode.
+  if (!Shell::Get()->overview_controller()->InOverviewSession())
+    ActivateMruUnminimizedWindowOnActiveDesk();
 }
 
 void WallpaperWindowStateManager::RemoveObserverIfUnreferenced(

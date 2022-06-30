@@ -5,10 +5,11 @@
 #ifndef COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_FAKE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_
 #define COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_FAKE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_
 
+#include <list>
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "build/build_config.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_delegate.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
@@ -22,6 +23,12 @@ class FakeProfileOAuth2TokenServiceDelegate
     : public ProfileOAuth2TokenServiceDelegate {
  public:
   FakeProfileOAuth2TokenServiceDelegate();
+
+  FakeProfileOAuth2TokenServiceDelegate(
+      const FakeProfileOAuth2TokenServiceDelegate&) = delete;
+  FakeProfileOAuth2TokenServiceDelegate& operator=(
+      const FakeProfileOAuth2TokenServiceDelegate&) = delete;
+
   ~FakeProfileOAuth2TokenServiceDelegate() override;
 
   std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
@@ -38,7 +45,8 @@ class FakeProfileOAuth2TokenServiceDelegate
                        const GoogleServiceAuthError& error) override;
   std::vector<CoreAccountId> GetAccounts() const override;
   void RevokeAllCredentials() override;
-  void LoadCredentials(const CoreAccountId& primary_account_id) override;
+  void LoadCredentials(const CoreAccountId& primary_account_id,
+                       bool is_syncing) override;
   void UpdateCredentials(const CoreAccountId& account_id,
                          const std::string& refresh_token) override;
   void RevokeCredentials(const CoreAccountId& account_id) override;
@@ -73,6 +81,14 @@ class FakeProfileOAuth2TokenServiceDelegate
   void IssueRefreshTokenForUser(const CoreAccountId& account_id,
                                 const std::string& token);
 
+#if BUILDFLAG(IS_ANDROID)
+  base::android::ScopedJavaLocalRef<jobject> GetJavaObject() override;
+#endif
+
+  // The account IDs, in the order they were first added.
+  // A given account ID appears at most once in this list.
+  std::list<CoreAccountId> account_ids_;
+
   // Maps account ids to info.
   std::map<CoreAccountId, std::unique_ptr<AccountInfo>> refresh_tokens_;
 
@@ -81,7 +97,5 @@ class FakeProfileOAuth2TokenServiceDelegate
   bool fix_request_if_possible_ = false;
 
   net::BackoffEntry backoff_entry_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeProfileOAuth2TokenServiceDelegate);
 };
 #endif  // COMPONENTS_SIGNIN_INTERNAL_IDENTITY_MANAGER_FAKE_PROFILE_OAUTH2_TOKEN_SERVICE_DELEGATE_H_

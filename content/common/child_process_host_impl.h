@@ -12,19 +12,20 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
-#include "base/memory/shared_memory.h"
-#include "base/memory/singleton.h"
+#include "base/memory/raw_ptr.h"
 #include "base/process/process.h"
-#include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/child_process.mojom.h"
+#include "content/common/content_export.h"
 #include "content/public/common/child_process_host.h"
 #include "ipc/ipc_listener.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "mojo/public/cpp/system/invitation.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace IPC {
+class Channel;
 class MessageFilter;
 }
 
@@ -34,9 +35,14 @@ class ChildProcessHostDelegate;
 // Provides common functionality for hosting a child process and processing IPC
 // messages between the host and the child process. Users are responsible
 // for the actual launching and terminating of the child processes.
-class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
-                                            public IPC::Listener {
+class CONTENT_EXPORT ChildProcessHostImpl
+    : public ChildProcessHost,
+      public IPC::Listener,
+      public mojom::ChildProcessHost {
  public:
+  ChildProcessHostImpl(const ChildProcessHostImpl&) = delete;
+  ChildProcessHostImpl& operator=(const ChildProcessHostImpl&) = delete;
+
   ~ChildProcessHostImpl() override;
 
   // Returns a unique ID to identify a child process. On construction, this
@@ -67,22 +73,33 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   // ChildProcessHost implementation
   bool Send(IPC::Message* message) override;
   void ForceShutdown() override;
+  absl::optional<mojo::OutgoingInvitation>& GetMojoInvitation() override;
   void CreateChannelMojo() override;
   bool IsChannelOpening() override;
   void AddFilter(IPC::MessageFilter* filter) override;
-  void BindInterface(const std::string& interface_name,
-                     mojo::ScopedMessagePipeHandle interface_pipe) override;
-  void RunService(
-      const std::string& service_name,
-      mojo::PendingReceiver<service_manager::mojom::Service> receiver) override;
+  void BindReceiver(mojo::GenericPendingReceiver receiver) override;
 
-  base::Process& peer_process() { return peer_process_; }
+// TODO(crbug.com/1328879): Remove this method when fixing the bug.
+// TODO(crbug.com/1330636): Remove the Fuchsia `is_chromecast` condition once
+// such builds no longer reach this file.
+#if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID) || \
+    (BUILDFLAG(IS_FUCHSIA) && BUILDFLAG(IS_CHROMECAST))
+  void RunServiceDeprecated(
+      const std::string& service_name,
+      mojo::ScopedMessagePipeHandle service_pipe) override;
+#endif
+
+  base::Process& GetPeerProcess();
   mojom::ChildProcess* child_process() { return child_process_.get(); }
 
  private:
-  friend class ChildProcessHost;
+  friend class content::ChildProcessHost;
 
-  explicit ChildProcessHostImpl(ChildProcessHostDelegate* delegate);
+  ChildProcessHostImpl(ChildProcessHostDelegate* delegate, IpcMode ipc_mode);
+
+  // mojom::ChildProcessHost implementation:
+  void Ping(PingCallback callback) override;
+  void BindHostReceiver(mojo::GenericPendingReceiver receiver) override;
 
   // IPC::Listener methods:
   bool OnMessageReceived(const IPC::Message& msg) override;
@@ -94,18 +111,29 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   // non-null.
   bool InitChannel();
 
-  ChildProcessHostDelegate* delegate_;
+  void OnDisconnectedFromChildProcess();
+
+#if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
+  void DumpProfilingData(base::OnceClosure callback) override;
+  void SetProfilingFile(base::File file) override;
+#endif
+
+  // The outgoing Mojo invitation which must be consumed to bootstrap Mojo IPC
+  // to the child process.
+  absl::optional<mojo::OutgoingInvitation> mojo_invitation_{absl::in_place};
+
+  const IpcMode ipc_mode_;
+  raw_ptr<ChildProcessHostDelegate> delegate_;
   base::Process peer_process_;
   bool opening_channel_;  // True while we're waiting the channel to be opened.
   std::unique_ptr<IPC::Channel> channel_;
   mojo::Remote<mojom::ChildProcess> child_process_;
+  mojo::Receiver<mojom::ChildProcessHost> receiver_{this};
 
   // Holds all the IPC message filters.  Since this object lives on the IO
   // thread, we don't have a IPC::ChannelProxy and so we manage filters
   // manually.
   std::vector<scoped_refptr<IPC::MessageFilter> > filters_;
-
-  DISALLOW_COPY_AND_ASSIGN(ChildProcessHostImpl);
 };
 
 }  // namespace content

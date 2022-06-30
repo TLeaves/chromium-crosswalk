@@ -8,25 +8,23 @@ import static org.chromium.chrome.browser.payments.PaymentRequestTestRule.DECEMB
 import static org.chromium.chrome.browser.payments.PaymentRequestTestRule.FIRST_BILLING_ADDRESS;
 import static org.chromium.chrome.browser.payments.PaymentRequestTestRule.NEXT_YEAR;
 
-import android.support.test.filters.MediumTest;
+import androidx.test.filters.MediumTest;
 
 import org.junit.Assert;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.FlakyTest;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.autofill.AutofillTestHelper;
-import org.chromium.chrome.browser.autofill.CardType;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.AutofillProfile;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
+import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.payments.PaymentRequestTestRule.MainActivityStartCallback;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
-import org.chromium.chrome.test.ui.DisableAnimationsTestRule;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
 
 import java.util.concurrent.TimeoutException;
@@ -37,10 +35,6 @@ import java.util.concurrent.TimeoutException;
 @RunWith(ChromeJUnit4ClassRunner.class)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
 public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivityStartCallback {
-    // Disable animations to reduce flakiness.
-    @ClassRule
-    public static DisableAnimationsTestRule sNoAnimationsRule = new DisableAnimationsTestRule();
-
     @Rule
     public PaymentRequestTestRule mPaymentRequestTestRule =
             new PaymentRequestTestRule("payment_request_free_shipping_test.html", this);
@@ -55,17 +49,19 @@ public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivit
     private static final int BILLING_ADDRESS_DROPDOWN_INDEX = 2;
 
     @Override
-    public void onMainActivityStarted() throws InterruptedException, TimeoutException {
+    public void onMainActivityStarted() throws TimeoutException {
         AutofillTestHelper helper = new AutofillTestHelper();
-        String address_without_phone = helper.setProfile(new AutofillProfile("",
-                "https://example.com", true, "Jon NoPhone", "Google", "340 Main St", "CA",
-                "Los Angeles", "", "90291", "", "US", "", "jon.doe@gmail.com", "en-US"));
+        String address_without_phone =
+                helper.setProfile(new AutofillProfile("", "https://example.com", true,
+                        "" /* honorific prefix */, "Jon NoPhone", "Google", "340 Main St", "CA",
+                        "Los Angeles", "", "90291", "", "US", "", "jon.doe@gmail.com", "en-US"));
         helper.setCreditCard(new CreditCard("", "https://example.com", true, true, "Jon Doe",
-                "4111111111111111", "1111", "12", "2050", "visa", R.drawable.visa_card,
-                CardType.UNKNOWN, address_without_phone, "" /* serverId */));
-        String address_with_phone = helper.setProfile(new AutofillProfile("", "https://example.com",
-                true, "Rob Phone", "Google", "340 Main St", "CA", "Los Angeles", "", "90291", "",
-                "US", "310-310-6000", "jon.doe@gmail.com", "en-US"));
+                "4111111111111111", "1111", "12", "2050", "amex", R.drawable.amex_card,
+                address_without_phone, "" /* serverId */));
+        String address_with_phone = helper.setProfile(
+                new AutofillProfile("", "https://example.com", true, "" /* honorific prefix */,
+                        "Rob Phone", "Google", "340 Main St", "CA", "Los Angeles", "", "90291", "",
+                        "US", "310-310-6000", "jon.doe@gmail.com", "en-US"));
 
         // Assign use stats so that the address without a phone number has a higher frecency score.
         helper.setProfileUseStatsForTesting(address_without_phone, 10, 10);
@@ -74,8 +70,9 @@ public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivit
 
     @Test
     @MediumTest
+    @FlakyTest(message = "crbug.com/1182234")
     @Feature({"Payments"})
-    public void testCanPayWithBillingNoPhone() throws InterruptedException, TimeoutException {
+    public void testCanPayWithBillingNoPhone() throws TimeoutException {
         mPaymentRequestTestRule.triggerUIAndWait(mPaymentRequestTestRule.getReadyToPay());
         mPaymentRequestTestRule.clickAndWait(
                 R.id.button_primary, mPaymentRequestTestRule.getReadyForUnmaskInput());
@@ -88,9 +85,9 @@ public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivit
 
     @Test
     @MediumTest
+    @FlakyTest(message = "crbug.com/1182234")
     @Feature({"Payments"})
-    public void testCanSelectBillingAddressWithoutPhone()
-            throws InterruptedException, TimeoutException {
+    public void testCanSelectBillingAddressWithoutPhone() throws TimeoutException {
         mPaymentRequestTestRule.triggerUIAndWait(mPaymentRequestTestRule.getReadyToPay());
 
         // Go edit the credit card.
@@ -116,9 +113,9 @@ public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivit
 
     @Test
     @MediumTest
+    @FlakyTest(message = "crbug.com/1182234")
     @Feature({"Payments"})
-    public void testCantSelectShippingAddressWithoutPhone()
-            throws InterruptedException, TimeoutException {
+    public void testCantSelectShippingAddressWithoutPhone() throws TimeoutException {
         mPaymentRequestTestRule.triggerUIAndWait(mPaymentRequestTestRule.getReadyToPay());
         mPaymentRequestTestRule.clickInShippingAddressAndWait(
                 R.id.payments_section, mPaymentRequestTestRule.getReadyForInput());
@@ -139,9 +136,9 @@ public class PaymentRequestBillingAddressWithoutPhoneTest implements MainActivit
 
     @Test
     @MediumTest
+    @FlakyTest(message = "crbug.com/1182234")
     @Feature({"Payments"})
-    public void testCantAddNewBillingAddressWithoutPhone()
-            throws InterruptedException, TimeoutException {
+    public void testCantAddNewBillingAddressWithoutPhone() throws TimeoutException {
         mPaymentRequestTestRule.triggerUIAndWait(mPaymentRequestTestRule.getReadyToPay());
         mPaymentRequestTestRule.clickInPaymentMethodAndWait(
                 R.id.payments_section, mPaymentRequestTestRule.getReadyForInput());

@@ -9,6 +9,9 @@
 #include <algorithm>
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
+#include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chromeos/dbus/shill/shill_manager_client.h"
@@ -21,13 +24,14 @@ namespace chromeos {
 
 namespace {
 
-bool ConvertListValueToStringVector(const base::ListValue& string_list,
-                                    std::vector<std::string>* result) {
-  for (size_t i = 0; i < string_list.GetSize(); ++i) {
-    std::string str;
-    if (!string_list.GetString(i, &str))
+bool ConvertListValueToStringVector(
+    const base::Value::ConstListView string_list,
+    std::vector<std::string>* result) {
+  for (const base::Value& i : string_list) {
+    const std::string* str = i.GetIfString();
+    if (!str)
       return false;
-    result->push_back(str);
+    result->push_back(*str);
   }
   return true;
 }
@@ -37,6 +41,16 @@ void LogProfileRequestError(const std::string& profile_path,
                             const std::string& error_message) {
   LOG(ERROR) << "Error when requesting properties for profile "
              << profile_path << ": " << error_message;
+}
+
+void LogError(const std::string& name,
+              const std::string& profile_path,
+              const std::string& dbus_error_name,
+              const std::string& dbus_error_message) {
+  LOG(ERROR) << name << " failed:"
+             << " profile=" << profile_path
+             << " dbus-error-name=" << dbus_error_name
+             << " dbus-error-msg=" << dbus_error_message;
 }
 
 class ProfilePathEquals {
@@ -68,16 +82,18 @@ void NetworkProfileHandler::RemoveObserver(NetworkProfileObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+bool NetworkProfileHandler::HasObserver(NetworkProfileObserver* observer) {
+  return observers_.HasObserver(observer);
+}
+
 void NetworkProfileHandler::GetManagerPropertiesCallback(
-    DBusMethodCallStatus call_status,
-    const base::DictionaryValue& properties) {
-  if (DBUS_METHOD_CALL_FAILURE) {
+    absl::optional<base::Value> properties) {
+  if (!properties) {
     LOG(ERROR) << "Error when requesting manager properties.";
     return;
   }
 
-  const base::Value* profiles = NULL;
-  properties.GetWithoutPathExpansion(shill::kProfilesProperty, &profiles);
+  const base::Value* profiles = properties->FindKey(shill::kProfilesProperty);
   if (!profiles) {
     LOG(ERROR) << "Manager properties returned from Shill don't contain "
                << "the field " << shill::kProfilesProperty;
@@ -91,12 +107,10 @@ void NetworkProfileHandler::OnPropertyChanged(const std::string& name,
   if (name != shill::kProfilesProperty)
     return;
 
-  const base::ListValue* profiles_value = NULL;
-  value.GetAsList(&profiles_value);
-  DCHECK(profiles_value);
+  DCHECK(value.is_list());
 
   std::vector<std::string> new_profile_paths;
-  bool result = ConvertListValueToStringVector(*profiles_value,
+  bool result = ConvertListValueToStringVector(value.GetListDeprecated(),
                                                &new_profile_paths);
   DCHECK(result);
 
@@ -128,15 +142,15 @@ void NetworkProfileHandler::OnPropertyChanged(const std::string& name,
     VLOG(2) << "Requesting properties of profile path " << *it << ".";
     ShillProfileClient::Get()->GetProperties(
         dbus::ObjectPath(*it),
-        base::Bind(&NetworkProfileHandler::GetProfilePropertiesCallback,
-                   weak_ptr_factory_.GetWeakPtr(), *it),
-        base::Bind(&LogProfileRequestError, *it));
+        base::BindOnce(&NetworkProfileHandler::GetProfilePropertiesCallback,
+                       weak_ptr_factory_.GetWeakPtr(), *it),
+        base::BindOnce(&LogProfileRequestError, *it));
   }
 }
 
 void NetworkProfileHandler::GetProfilePropertiesCallback(
     const std::string& profile_path,
-    const base::DictionaryValue& properties) {
+    base::Value properties) {
   if (pending_profile_creations_.erase(profile_path) == 0) {
     VLOG(1) << "Ignore received properties, profile was removed.";
     return;
@@ -145,10 +159,10 @@ void NetworkProfileHandler::GetProfilePropertiesCallback(
     VLOG(1) << "Ignore received properties, profile is already created.";
     return;
   }
-  std::string userhash;
-  properties.GetStringWithoutPathExpansion(shill::kUserHashProperty, &userhash);
+  const std::string* userhash =
+      properties.FindStringKey(shill::kUserHashProperty);
 
-  AddProfile(NetworkProfile(profile_path, userhash));
+  AddProfile(NetworkProfile(profile_path, userhash ? *userhash : ""));
 }
 
 void NetworkProfileHandler::AddProfile(const NetworkProfile& profile) {
@@ -202,21 +216,70 @@ const NetworkProfile* NetworkProfileHandler::GetDefaultUserProfile() const {
   return NULL;
 }
 
-NetworkProfileHandler::NetworkProfileHandler()
-    : weak_ptr_factory_(this) {
+void NetworkProfileHandler::GetAlwaysOnVpnConfiguration(
+    const std::string& profile_path,
+    base::OnceCallback<void(std::string, std::string)> callback) {
+  ShillProfileClient::Get()->GetProperties(
+      dbus::ObjectPath(profile_path),
+      base::BindOnce(
+          &NetworkProfileHandler::GetAlwaysOnVpnConfigurationCallback,
+          weak_ptr_factory_.GetWeakPtr(), std::move(callback)),
+      base::BindOnce(&LogError, shill::kGetPropertiesFunction, profile_path));
 }
+
+void NetworkProfileHandler::GetAlwaysOnVpnConfigurationCallback(
+    base::OnceCallback<void(std::string, std::string)> callback,
+    base::Value properties) {
+  // A profile always contains the mode.
+  std::string* mode =
+      properties.FindStringKey(shill::kAlwaysOnVpnModeProperty);
+  DCHECK(mode);
+  std::string* service =
+      properties.FindStringKey(shill::kAlwaysOnVpnServiceProperty);
+  std::move(callback).Run(*mode, service ? *service : std::string());
+}
+
+void NetworkProfileHandler::SetAlwaysOnVpnMode(const std::string& profile_path,
+                                               const std::string& mode) {
+  ShillProfileClient::Get()->SetProperty(
+      dbus::ObjectPath(profile_path), shill::kAlwaysOnVpnModeProperty,
+      base::Value(mode), base::DoNothing(),
+      base::BindOnce(&LogError, shill::kSetPropertyFunction, profile_path));
+}
+
+void NetworkProfileHandler::SetAlwaysOnVpnService(
+    const std::string& profile_path,
+    const std::string& service_path) {
+  ShillProfileClient::Get()->SetObjectPathProperty(
+      dbus::ObjectPath(profile_path), shill::kAlwaysOnVpnServiceProperty,
+      dbus::ObjectPath(service_path), base::DoNothing(),
+      base::BindOnce(&LogError, shill::kSetPropertyFunction, profile_path));
+}
+
+NetworkProfileHandler::NetworkProfileHandler() {}
 
 void NetworkProfileHandler::Init() {
   ShillManagerClient::Get()->AddPropertyChangedObserver(this);
 
   // Request the initial profile list.
   ShillManagerClient::Get()->GetProperties(
-      base::Bind(&NetworkProfileHandler::GetManagerPropertiesCallback,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&NetworkProfileHandler::GetManagerPropertiesCallback,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 NetworkProfileHandler::~NetworkProfileHandler() {
+  if (!ShillManagerClient::Get())
+    return;
+
   ShillManagerClient::Get()->RemovePropertyChangedObserver(this);
+}
+
+// static
+std::unique_ptr<NetworkProfileHandler>
+NetworkProfileHandler::InitializeForTesting() {
+  auto* handler = new NetworkProfileHandler();
+  handler->Init();
+  return base::WrapUnique(handler);
 }
 
 }  // namespace chromeos

@@ -5,20 +5,19 @@
 #include "ui/base/ime/init/input_method_factory.h"
 
 #include "base/command_line.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "ui/base/ime/mock_input_method.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/switches.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
 #include "ui/base/ime/win/input_method_win_imm32.h"
 #include "ui/base/ime/win/input_method_win_tsf.h"
-#elif defined(OS_MACOSX)
+#elif BUILDFLAG(IS_APPLE)
 #include "ui/base/ime/mac/input_method_mac.h"
-#elif defined(USE_X11)
-#include "ui/base/ime/linux/input_method_auralinux.h"
 #elif defined(USE_OZONE)
 #include "ui/ozone/public/ozone_platform.h"
 #else
@@ -55,37 +54,42 @@ std::unique_ptr<InputMethod> CreateInputMethod(
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless))
     return base::WrapUnique(new MockInputMethod(delegate));
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   if (base::FeatureList::IsEnabled(features::kTSFImeSupport) &&
       base::win::GetVersion() > base::win::Version::WIN7) {
     return std::make_unique<InputMethodWinTSF>(delegate, widget);
   }
   return std::make_unique<InputMethodWinImm32>(delegate, widget);
-#elif defined(OS_MACOSX)
+#elif BUILDFLAG(IS_APPLE)
   return std::make_unique<InputMethodMac>(delegate);
-#elif defined(USE_X11)
-  return std::make_unique<InputMethodAuraLinux>(delegate);
 #elif defined(USE_OZONE)
-  return ui::OzonePlatform::GetInstance()->CreateInputMethod(delegate);
+  return ui::OzonePlatform::GetInstance()->CreateInputMethod(delegate, widget);
 #else
   return std::make_unique<InputMethodMinimal>(delegate);
 #endif
 }
 
-void SetUpInputMethodFactoryForTesting() {
-  if (g_input_method_set_for_testing)
-    return;
-
-  CHECK(!g_create_input_method_called)
-      << "ui::SetUpInputMethodFactoryForTesting was called after use of "
-      << "ui::CreateInputMethod.  You must call "
-      << "ui::SetUpInputMethodFactoryForTesting earlier.";
-
-  g_input_method_set_for_testing = true;
-}
-
 void SetUpInputMethodForTesting(InputMethod* input_method) {
   g_input_method_for_testing = input_method;
+}
+
+ScopedTestInputMethodFactory::ScopedTestInputMethodFactory() {
+  CHECK(!g_input_method_set_for_testing)
+      << "ScopedTestInputMethodFactory was created after calling "
+         "ui::SetUpInputMethodFactoryForTesting or inside another "
+         "ScopedTestInputMethodFactory lifetime.";
+
+  DLOG_IF(WARNING, g_create_input_method_called)
+      << "ui::CreateInputMethod was already called. That can happen when other "
+         "tests in the same process uses normal ui::InputMethod instance.";
+
+  g_input_method_set_for_testing = true;
+  g_create_input_method_called = false;
+}
+
+ScopedTestInputMethodFactory::~ScopedTestInputMethodFactory() {
+  g_input_method_set_for_testing = false;
+  g_create_input_method_called = false;
 }
 
 }  // namespace ui

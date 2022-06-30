@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <limits>
+
 #include "base/allocator/allocator_shim.h"
+#include "base/compiler_specific.h"
+#include "base/numerics/checked_math.h"
+#include "base/process/memory.h"
 
 #include <dlfcn.h>
 #include <malloc.h>
@@ -23,7 +28,26 @@ namespace {
 
 using base::allocator::AllocatorDispatch;
 
+// Strictly speaking, it would make more sense to not subtract amything, but
+// other shims limit to something lower than INT_MAX (which is 0x7FFFFFFF on
+// most platforms), and tests expect that.
+constexpr size_t kMaxAllowedSize = std::numeric_limits<int>::max() - (1 << 12);
+
 void* GlibcMalloc(const AllocatorDispatch*, size_t size, void* context) {
+  // Cannot force glibc's malloc() to crash when a large size is requested, do
+  // it in the shim instead.
+  if (UNLIKELY(size >= kMaxAllowedSize))
+    base::TerminateBecauseOutOfMemory(size);
+
+  return __libc_malloc(size);
+}
+
+void* GlibcUncheckedMalloc(const AllocatorDispatch*,
+                           size_t size,
+                           void* context) {
+  if (UNLIKELY(size >= kMaxAllowedSize))
+    return nullptr;
+
   return __libc_malloc(size);
 }
 
@@ -31,6 +55,10 @@ void* GlibcCalloc(const AllocatorDispatch*,
                   size_t n,
                   size_t size,
                   void* context) {
+  const auto total = base::CheckMul(n, size);
+  if (UNLIKELY(!total.IsValid() || total.ValueOrDie() >= kMaxAllowedSize))
+    base::TerminateBecauseOutOfMemory(size * n);
+
   return __libc_calloc(n, size);
 }
 
@@ -38,6 +66,9 @@ void* GlibcRealloc(const AllocatorDispatch*,
                    void* address,
                    size_t size,
                    void* context) {
+  if (UNLIKELY(size >= kMaxAllowedSize))
+    base::TerminateBecauseOutOfMemory(size);
+
   return __libc_realloc(address, size);
 }
 
@@ -45,6 +76,9 @@ void* GlibcMemalign(const AllocatorDispatch*,
                     size_t alignment,
                     size_t size,
                     void* context) {
+  if (UNLIKELY(size >= kMaxAllowedSize))
+    base::TerminateBecauseOutOfMemory(size);
+
   return __libc_memalign(alignment, size);
 }
 
@@ -52,6 +86,7 @@ void GlibcFree(const AllocatorDispatch*, void* address, void* context) {
   __libc_free(address);
 }
 
+NO_SANITIZE("cfi-icall")
 size_t GlibcGetSizeEstimate(const AllocatorDispatch*,
                             void* address,
                             void* context) {
@@ -71,6 +106,7 @@ size_t GlibcGetSizeEstimate(const AllocatorDispatch*,
 
 const AllocatorDispatch AllocatorDispatch::default_dispatch = {
     &GlibcMalloc,          /* alloc_function */
+    &GlibcUncheckedMalloc, /* alloc_unchecked_function */
     &GlibcCalloc,          /* alloc_zero_initialized_function */
     &GlibcMemalign,        /* alloc_aligned_function */
     &GlibcRealloc,         /* realloc_function */

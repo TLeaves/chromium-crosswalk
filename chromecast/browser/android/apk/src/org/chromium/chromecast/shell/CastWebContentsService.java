@@ -10,16 +10,14 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
-import android.support.v4.app.NotificationCompat;
-import android.widget.Toast;
 
+import androidx.core.app.NotificationCompat;
+
+import org.chromium.base.Function;
 import org.chromium.base.Log;
-import org.chromium.base.annotations.RemovableInRelease;
 import org.chromium.chromecast.base.Controller;
-import org.chromium.chromecast.base.Function;
 import org.chromium.chromecast.base.Observable;
 import org.chromium.chromecast.base.Observers;
 import org.chromium.content.browser.MediaSessionImpl;
@@ -32,7 +30,7 @@ import org.chromium.content_public.browser.WebContents;
  * service via CastWebContentsComponent.
  */
 public class CastWebContentsService extends Service {
-    private static final String TAG = "cr_CastWebService";
+    private static final String TAG = "CastWebService";
     private static final boolean DEBUG = true;
     private static final int CAST_NOTIFICATION_ID = 100;
     private static final String NOTIFICATION_CHANNEL_ID =
@@ -60,9 +58,6 @@ public class CastWebContentsService extends Service {
         });
         mWebContentsState.map(this::getMediaSessionImpl)
                 .subscribe(Observers.onEnter(MediaSessionImpl::requestSystemAudioFocus));
-        // Inform CastContentWindowAndroid we're detaching.
-        Observable<String> instanceIdState = mIntentState.map(Intent::getData).map(Uri::getPath);
-        instanceIdState.subscribe(Observers.onExit(CastWebContentsComponent::onComponentClosed));
 
         if (DEBUG) {
             mWebContentsState.subscribe(x -> {
@@ -76,11 +71,7 @@ public class CastWebContentsService extends Service {
     public void onCreate() {
         super.onCreate();
         if (DEBUG) Log.d(TAG, "onCreate");
-        if (!CastBrowserHelper.initializeBrowser(getApplicationContext())) {
-            Toast.makeText(this, R.string.browser_process_initialization_failed, Toast.LENGTH_SHORT)
-                    .show();
-            stopSelf();
-        }
+        CastBrowserHelper.initializeBrowser(getApplicationContext());
         createNotificationChannel();
     }
 
@@ -103,12 +94,10 @@ public class CastWebContentsService extends Service {
         return mMediaSessionGetter.apply(webContents);
     }
 
-    @RemovableInRelease
     Observable<WebContents> observeWebContentsStateForTesting() {
         return mWebContentsState;
     }
 
-    @RemovableInRelease
     void setMediaSessionImplGetterForTesting(Function<WebContents, MediaSessionImpl> getter) {
         mMediaSessionGetter = getter;
     }

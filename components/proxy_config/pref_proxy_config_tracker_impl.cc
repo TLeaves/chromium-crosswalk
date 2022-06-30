@@ -11,7 +11,9 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
+#include "base/logging.h"
+#include "base/observer_list.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/values.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -109,7 +111,7 @@ void ProxyConfigServiceImpl::UpdateProxyConfig(
   pref_config_state_ = config_state;
   pref_config_ = config;
 
-  if (!observers_.might_have_observers())
+  if (observers_.empty())
     return;
 
   // Evaluate the proxy configuration. If GetLatestProxyConfig returns
@@ -166,9 +168,10 @@ PrefProxyConfigTrackerImpl::PrefProxyConfigTrackerImpl(
   active_config_ = pref_config_;
 
   proxy_prefs_.Init(pref_service);
-  proxy_prefs_.Add(proxy_config::prefs::kProxy,
-                   base::Bind(&PrefProxyConfigTrackerImpl::OnProxyPrefChanged,
-                              base::Unretained(this)));
+  proxy_prefs_.Add(
+      proxy_config::prefs::kProxy,
+      base::BindRepeating(&PrefProxyConfigTrackerImpl::OnProxyPrefChanged,
+                          base::Unretained(this)));
 }
 
 PrefProxyConfigTrackerImpl::~PrefProxyConfigTrackerImpl() {
@@ -260,7 +263,7 @@ ProxyPrefs::ConfigState PrefProxyConfigTrackerImpl::ReadPrefConfig(
       pref_service->FindPreference(proxy_config::prefs::kProxy);
   DCHECK(pref);
 
-  const base::DictionaryValue* dict =
+  const base::Value* dict =
       pref_service->GetDictionary(proxy_config::prefs::kProxy);
   DCHECK(dict);
   ProxyConfigDictionary proxy_dict(dict->Clone());

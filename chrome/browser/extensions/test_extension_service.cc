@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/test_extension_service.h"
+
+#include "chrome/browser/extensions/crx_installer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using extensions::Extension;
@@ -16,24 +17,18 @@ TestExtensionService::pending_extension_manager() {
   return NULL;
 }
 
+extensions::CorruptedExtensionReinstaller*
+TestExtensionService::corrupted_extension_reinstaller() {
+  ADD_FAILURE();
+  return nullptr;
+}
+
 bool TestExtensionService::UpdateExtension(
     const extensions::CRXFileInfo& file,
     bool file_ownership_passed,
     extensions::CrxInstaller** out_crx_installer) {
   ADD_FAILURE();
   return false;
-}
-
-const Extension* TestExtensionService::GetExtensionById(
-    const std::string& id, bool include_disabled) const {
-  ADD_FAILURE();
-  return NULL;
-}
-
-const Extension* TestExtensionService::GetInstalledExtension(
-    const std::string& id) const {
-  ADD_FAILURE();
-  return NULL;
 }
 
 const Extension* TestExtensionService::GetPendingExtensionUpdate(
@@ -63,11 +58,6 @@ void TestExtensionService::CheckForUpdatesSoon() {
   ADD_FAILURE();
 }
 
-bool TestExtensionService::is_ready() {
-  ADD_FAILURE();
-  return false;
-}
-
 void TestExtensionService::AddExtension(const Extension* extension) {
   ADD_FAILURE();
 }
@@ -84,5 +74,15 @@ void TestExtensionService::UnloadExtension(
 
 void TestExtensionService::RemoveComponentExtension(
     const std::string& extension_id) {
+  ADD_FAILURE();
+}
+
+bool TestExtensionService::UserCanDisableInstalledExtension(
+    const std::string& extension_id) {
+  ADD_FAILURE();
+  return false;
+}
+
+void TestExtensionService::ReinstallProviderExtensions() {
   ADD_FAILURE();
 }

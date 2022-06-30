@@ -10,8 +10,9 @@ import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.support.test.InstrumentationRegistry;
-import android.support.test.filters.SmallTest;
 import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.filters.SmallTest;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -104,19 +105,6 @@ public class FakeCronetEngineTest {
             fail("newBidirectionalStreamBuilder API should not be available.");
         } catch (UnsupportedOperationException e) {
             assertEquals("The bidirectional stream API is not supported by the Fake implementation "
-                            + "of CronetEngine.",
-                    e.getMessage());
-        }
-    }
-
-    @Test
-    @SmallTest
-    public void testExceptionForNewUrlRequestBuilderApi() {
-        try {
-            mFakeCronetEngine.newUrlRequestBuilder("", mCallback, mExecutor).build();
-            fail("newUrlRequestBuilder API should not be available.");
-        } catch (UnsupportedOperationException e) {
-            assertEquals("The UrlRequest API is not supported by the Fake implementation "
                             + "of CronetEngine.",
                     e.getMessage());
         }

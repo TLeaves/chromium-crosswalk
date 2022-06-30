@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import <EarlGrey/EarlGrey.h>
 #import <XCTest/XCTest.h>
 
 #include <map>
@@ -11,22 +10,18 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
-#include "ios/chrome/browser/ui/util/ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#import "ios/chrome/test/app/chrome_test_util.h"
-#import "ios/chrome/test/app/tab_test_util.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey_ui.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
-#import "ios/chrome/test/earl_grey/chrome_test_case.h"
 #include "ios/chrome/test/earl_grey/scoped_block_popups_pref.h"
+#import "ios/chrome/test/earl_grey/web_http_server_chrome_test_case.h"
 #include "ios/net/url_test_util.h"
-#import "ios/web/public/test/earl_grey/web_view_actions.h"
-#import "ios/web/public/test/earl_grey/web_view_matchers.h"
+#import "ios/testing/earl_grey/earl_grey_test.h"
 #include "ios/web/public/test/http_server/data_response_provider.h"
 #import "ios/web/public/test/http_server/http_server.h"
 #include "ios/web/public/test/http_server/http_server_util.h"
 #include "net/http/http_response_headers.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
@@ -34,7 +29,6 @@
 #error "This file requires ARC support."
 #endif
 
-using chrome_test_util::GetOriginalBrowserState;
 using chrome_test_util::OmniboxText;
 using chrome_test_util::OmniboxContainingText;
 
@@ -78,17 +72,18 @@ class ReloadResponseProvider : public web::DataResponseProvider {
 }  // namespace
 
 // Tests web browsing scenarios.
-@interface BrowsingTestCase : ChromeTestCase
+@interface BrowsingTestCase : WebHttpServerChromeTestCase
 @end
 
 @implementation BrowsingTestCase
 
-// Matcher for the title of the current tab (on tablet only).
+// Matcher for the title of the current tab (on tablet only), which is
+// sufficiently visible.
 id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
   id<GREYMatcher> notPartOfOmnibox =
       grey_not(grey_ancestor(chrome_test_util::Omnibox()));
   return grey_allOf(grey_accessibilityLabel(base::SysUTF8ToNSString(tab_title)),
-                    notPartOfOmnibox, nil);
+                    notPartOfOmnibox, grey_sufficientlyVisible(), nil);
 }
 
 // Tests that page successfully reloads.
@@ -117,10 +112,8 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
     EARL_GREY_TEST_SKIPPED(@"Tab Title not displayed on handset.");
   }
 
-  web::test::SetUpFileBasedHttpServer();
-
-  const GURL destinationURL = web::test::HttpServer::MakeUrl(
-      "http://ios/testing/data/http_server_files/destination.html");
+  GREYAssertTrue(self.testServer->Start(), @"Server did not start.");
+  const GURL destinationURL = self.testServer->GetURL("/destination.html");
   [ChromeEarlGrey loadURL:destinationURL];
 
   // Add 3 for the "://" which is not considered part of the scheme
@@ -128,7 +121,7 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
       destinationURL.spec().substr(destinationURL.scheme().length() + 3);
 
   [[EarlGrey selectElementWithMatcher:TabWithTitle(URLWithoutScheme)]
-      assertWithMatcher:grey_sufficientlyVisible()];
+      assertWithMatcher:grey_notNil()];
 }
 
 // Tests that after a PDF is loaded, the title appears in the tab bar on iPad.
@@ -137,10 +130,8 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
     EARL_GREY_TEST_SKIPPED(@"Tab Title not displayed on handset.");
   }
 
-  web::test::SetUpFileBasedHttpServer();
-
-  const GURL destinationURL = web::test::HttpServer::MakeUrl(
-      "http://ios/testing/data/http_server_files/testpage.pdf");
+  GREYAssertTrue(self.testServer->Start(), @"Server did not start.");
+  const GURL destinationURL = self.testServer->GetURL("/testpage.pdf");
   [ChromeEarlGrey loadURL:destinationURL];
 
   // Add 3 for the "://" which is not considered part of the scheme
@@ -148,7 +139,7 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
       destinationURL.spec().substr(destinationURL.scheme().length() + 3);
 
   [[EarlGrey selectElementWithMatcher:TabWithTitle(URLWithoutScheme)]
-      assertWithMatcher:grey_sufficientlyVisible()];
+      assertWithMatcher:grey_notNil()];
 }
 
 // Tests that tab title is set to the specified title from a JavaScript.
@@ -165,7 +156,7 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
   [ChromeEarlGrey loadURL:URL];
 
   [[EarlGrey selectElementWithMatcher:TabWithTitle(kPageTitle)]
-      assertWithMatcher:grey_sufficientlyVisible()];
+      assertWithMatcher:grey_notNil()];
 }
 
 // Tests clicking a link with target="_blank" and "event.stopPropagation()"
@@ -331,20 +322,15 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
   [ChromeEarlGrey goBack];
   [ChromeEarlGrey waitForWebStateContainingText:"Link"];
 
-  if ([ChromeEarlGrey isSlimNavigationManagerEnabled]) {
-    // Using partial match for Omnibox text because the displayed URL is now
-    // "http://origin/#" due to the link click. This is consistent with all
-    // other browsers.
-    [[EarlGrey selectElementWithMatcher:chrome_test_util::Omnibox()]
-        assertWithMatcher:chrome_test_util::OmniboxContainingText(
-                              URL.GetContent())];
-    GREYAssertEqual(web::test::HttpServer::MakeUrl("http://origin/#"),
-                    chrome_test_util::GetCurrentWebState()->GetVisibleURL(),
-                    @"Unexpected URL after going back");
-  } else {
-    [[EarlGrey selectElementWithMatcher:OmniboxText(URL.GetContent())]
-        assertWithMatcher:grey_notNil()];
-  }
+  // Using partial match for Omnibox text because the displayed URL is now
+  // "http://origin/#" due to the link click. This is consistent with all
+  // other browsers.
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::Omnibox()]
+      assertWithMatcher:chrome_test_util::OmniboxContainingText(
+                            URL.GetContent())];
+  GREYAssertEqual(web::test::HttpServer::MakeUrl("http://origin/#"),
+                  [ChromeEarlGrey webStateVisibleURL],
+                  @"Unexpected URL after going back");
 }
 
 // Tests that a link with WebUI URL does not trigger a load. WebUI pages may
@@ -408,8 +394,15 @@ id<GREYMatcher> TabWithTitle(const std::string& tab_title) {
                                  targetURL.spec().c_str()];
 
   [ChromeEarlGreyUI focusOmniboxAndType:script];
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Go")]
-      performAction:grey_tap()];
+
+  if (@available(iOS 16, *)) {
+    // TODO(crbug.com/1331347): Move this logic into EG.
+    XCUIApplication* app = [[XCUIApplication alloc] init];
+    [[[app keyboards] buttons][@"go"] tap];
+  } else {
+    [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Go")]
+        performAction:grey_tap()];
+  }
 
   [ChromeEarlGrey waitForPageToFinishLoading];
 

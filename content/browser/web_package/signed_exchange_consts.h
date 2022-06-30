@@ -8,7 +8,7 @@
 namespace content {
 
 constexpr char kAcceptHeaderSignedExchangeSuffix[] =
-    ",application/signed-exchange;v=b3";
+    ",application/signed-exchange;v=b3;q=0.9";
 
 enum class SignedExchangeVersion { kUnknown, kB3 };
 
@@ -24,7 +24,7 @@ constexpr char kIntegrity[] = "integrity";
 constexpr char kSig[] = "sig";
 constexpr char kStatusKey[] = ":status";
 constexpr char kValidityUrlKey[] = "validity-url";
-constexpr char kCertChainCborMagic[] = u8"\U0001F4DC\u26D3";  // "📜⛓"
+constexpr char kCertChainCborMagic[] = "📜⛓";
 constexpr char kCertKey[] = "cert";
 constexpr char kOcspKey[] = "ocsp";
 constexpr char kSctKey[] = "sct";

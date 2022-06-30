@@ -7,8 +7,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
-
 namespace base {
 namespace mac {
 class ScopedObjCClassSwizzler;
@@ -24,16 +22,20 @@ namespace test {
 class ScopedFakeNSWindowFocus {
  public:
   ScopedFakeNSWindowFocus();
+
+  ScopedFakeNSWindowFocus(const ScopedFakeNSWindowFocus&) = delete;
+  ScopedFakeNSWindowFocus& operator=(const ScopedFakeNSWindowFocus&) = delete;
+
   ~ScopedFakeNSWindowFocus();
 
  private:
   std::unique_ptr<base::mac::ScopedObjCClassSwizzler> is_main_swizzler_;
   std::unique_ptr<base::mac::ScopedObjCClassSwizzler> make_main_swizzler_;
+  std::unique_ptr<base::mac::ScopedObjCClassSwizzler> resign_main_swizzler_;
   std::unique_ptr<base::mac::ScopedObjCClassSwizzler> is_key_swizzler_;
   std::unique_ptr<base::mac::ScopedObjCClassSwizzler> make_key_swizzler_;
+  std::unique_ptr<base::mac::ScopedObjCClassSwizzler> resign_key_swizzler_;
   std::unique_ptr<base::mac::ScopedObjCClassSwizzler> order_out_swizzler_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedFakeNSWindowFocus);
 };
 
 }  // namespace test

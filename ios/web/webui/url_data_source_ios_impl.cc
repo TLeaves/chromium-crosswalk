@@ -8,7 +8,6 @@
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
-#include "base/task/post_task.h"
 #include "ios/web/public/thread/web_task_traits.h"
 #include "ios/web/public/thread/web_thread.h"
 #include "ios/web/public/webui/url_data_source_ios.h"
@@ -42,10 +41,9 @@ void URLDataSourceIOSImpl::SendResponse(
     // when the object is deleted.
     return;
   }
-  base::PostTaskWithTraits(
-      FROM_HERE, {web::WebThread::IO},
-      base::BindOnce(&URLDataSourceIOSImpl::SendResponseOnIOThread, this,
-                     request_id, std::move(bytes)));
+  web::GetIOThreadTaskRunner({})->PostTask(
+      FROM_HERE, base::BindOnce(&URLDataSourceIOSImpl::SendResponseOnIOThread,
+                                this, request_id, std::move(bytes)));
 }
 
 void URLDataSourceIOSImpl::SendResponseOnIOThread(
@@ -58,6 +56,10 @@ void URLDataSourceIOSImpl::SendResponseOnIOThread(
 
 const ui::TemplateReplacements* URLDataSourceIOSImpl::GetReplacements() const {
   return nullptr;
+}
+
+bool URLDataSourceIOSImpl::ShouldReplaceI18nInJS() const {
+  return false;
 }
 
 }  // namespace web

@@ -5,9 +5,10 @@
 #include <stddef.h>
 
 #include "base/bind.h"
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
 #include "chrome/browser/extensions/extension_garbage_collector_chromeos.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/user_manager/user_manager.h"
 #include "extensions/browser/extension_file_task_runner.h"
 
@@ -64,7 +65,7 @@ bool ExtensionGarbageCollectorChromeOS::CanGarbageCollectSharedExtensions() {
     if (!active_users[i]->is_profile_created())
       return false;
     Profile* profile =
-        chromeos::ProfileHelper::Get()->GetProfileByUserUnsafe(active_users[i]);
+        ash::ProfileHelper::Get()->GetProfileByUser(active_users[i]);
     ExtensionGarbageCollectorChromeOS* gc =
         ExtensionGarbageCollectorChromeOS::Get(profile);
     if (gc && gc->crx_installs_in_progress_ > 0)

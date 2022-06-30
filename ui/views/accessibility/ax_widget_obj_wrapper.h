@@ -7,15 +7,19 @@
 
 #include <stdint.h>
 
-#include "base/macros.h"
+#include <string>
+#include <vector>
+
+#include "base/memory/raw_ptr.h"
+#include "base/scoped_observation.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
 #include "ui/views/accessibility/ax_aura_obj_wrapper.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/widget/widget_removals_observer.h"
 
 namespace views {
 class AXAuraObjCache;
-class Widget;
 
 // Describes a |Widget| for use with other AX classes.
 class AXWidgetObjWrapper : public AXAuraObjWrapper,
@@ -24,29 +28,36 @@ class AXWidgetObjWrapper : public AXAuraObjWrapper,
  public:
   // |aura_obj_cache| must outlive this object.
   AXWidgetObjWrapper(AXAuraObjCache* aura_obj_cache, Widget* widget);
+  AXWidgetObjWrapper(const AXWidgetObjWrapper&) = delete;
+  AXWidgetObjWrapper& operator=(const AXWidgetObjWrapper&) = delete;
   ~AXWidgetObjWrapper() override;
 
   // AXAuraObjWrapper overrides.
-  bool IsIgnored() override;
   AXAuraObjWrapper* GetParent() override;
   void GetChildren(std::vector<AXAuraObjWrapper*>* out_children) override;
   void Serialize(ui::AXNodeData* out_node_data) override;
-  int32_t GetUniqueId() const final;
+  ui::AXNodeID GetUniqueId() const final;
+  std::string ToString() const override;
 
   // WidgetObserver overrides.
   void OnWidgetDestroying(Widget* widget) override;
-  void OnWidgetClosing(Widget* widget) override;
+  void OnWidgetDestroyed(Widget* widget) override;
   void OnWidgetVisibilityChanged(Widget*, bool) override;
 
   // WidgetRemovalsObserver overrides.
   void OnWillRemoveView(Widget* widget, View* view) override;
 
  private:
-  Widget* widget_;
+  raw_ptr<Widget> widget_;
 
   const ui::AXUniqueId unique_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(AXWidgetObjWrapper);
+  base::ScopedObservation<Widget, WidgetObserver> widget_observation_{this};
+  base::ScopedObservation<Widget,
+                          WidgetRemovalsObserver,
+                          &Widget::AddRemovalsObserver,
+                          &Widget::RemoveRemovalsObserver>
+      widget_removals_observation_{this};
 };
 
 }  // namespace views

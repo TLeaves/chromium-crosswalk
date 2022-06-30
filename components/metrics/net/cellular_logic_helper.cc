@@ -4,6 +4,9 @@
 
 #include "components/metrics/net/cellular_logic_helper.h"
 
+#include "base/time/time.h"
+#include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "net/base/network_change_notifier.h"
 
 namespace metrics {
@@ -11,14 +14,14 @@ namespace metrics {
 namespace {
 
 // Standard interval between log uploads, in seconds.
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 const int kStandardUploadIntervalSeconds = 5 * 60;           // Five minutes.
 const int kStandardUploadIntervalCellularSeconds = 15 * 60;  // Fifteen minutes.
 #else
 const int kStandardUploadIntervalSeconds = 30 * 60;  // Thirty minutes.
 #endif
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 const bool kDefaultCellularLogicEnabled = true;
 #else
 const bool kDefaultCellularLogicEnabled = false;
@@ -26,17 +29,15 @@ const bool kDefaultCellularLogicEnabled = false;
 
 }  // namespace
 
-base::TimeDelta GetUploadInterval() {
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  if (IsCellularLogicEnabled())
-    return base::TimeDelta::FromSeconds(kStandardUploadIntervalCellularSeconds);
+base::TimeDelta GetUploadInterval(bool use_cellular_upload_interval) {
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  if (use_cellular_upload_interval)
+    return base::Seconds(kStandardUploadIntervalCellularSeconds);
 #endif
-  return base::TimeDelta::FromSeconds(kStandardUploadIntervalSeconds);
+  return base::Seconds(kStandardUploadIntervalSeconds);
 }
 
-// Returns true if current connection type is cellular and cellular logic is
-// enabled.
-bool IsCellularLogicEnabled() {
+bool ShouldUseCellularUploadInterval() {
   if (!kDefaultCellularLogicEnabled)
     return false;
 

@@ -29,9 +29,12 @@ struct Params;
 }  // namespace events
 }  // namespace api
 
-class RulesFunction : public UIThreadExtensionFunction {
+class RulesFunction : public ExtensionFunction {
  public:
   RulesFunction();
+
+  RulesFunction(const RulesFunction&) = delete;
+  RulesFunction& operator=(const RulesFunction&) = delete;
 
  protected:
   ~RulesFunction() override;
@@ -55,8 +58,6 @@ class RulesFunction : public UIThreadExtensionFunction {
 
  private:
   void SendResponse(ResponseValue response);
-
-  DISALLOW_COPY_AND_ASSIGN(RulesFunction);
 };
 
 class EventsEventAddRulesFunction : public RulesFunction {

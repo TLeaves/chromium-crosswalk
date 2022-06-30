@@ -10,9 +10,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "mojo/public/cpp/bindings/associated_interface_request.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "third_party/blink/public/common/common_export.h"
@@ -37,6 +35,9 @@ class BLINK_COMMON_EXPORT AssociatedInterfaceRegistry {
       base::RepeatingCallback<void(mojo::ScopedInterfaceEndpointHandle)>;
 
   AssociatedInterfaceRegistry();
+  AssociatedInterfaceRegistry(const AssociatedInterfaceRegistry&) = delete;
+  AssociatedInterfaceRegistry& operator=(const AssociatedInterfaceRegistry&) =
+      delete;
   ~AssociatedInterfaceRegistry();
 
   // Adds an interface binder to the registry.
@@ -52,21 +53,6 @@ class BLINK_COMMON_EXPORT AssociatedInterfaceRegistry {
   bool TryBindInterface(const std::string& name,
                         mojo::ScopedInterfaceEndpointHandle* handle);
 
-  // Remove this after done with migration from AssociatedInterfaceRequest to
-  // PendingAssociatedReceiver.
-  template <typename Interface>
-  using InterfaceBinder = base::RepeatingCallback<void(
-      mojo::AssociatedInterfaceRequest<Interface>)>;
-
-  // Remove this after done with migration from AssociatedInterfaceRequest to
-  // PendingAssociatedReceiver.
-  // Templated helper for AddInterface() above.
-  template <typename Interface>
-  void AddInterface(const InterfaceBinder<Interface>& binder) {
-    AddInterface(Interface::Name_,
-                 base::BindRepeating(&BindInterface<Interface>, binder));
-  }
-
   template <typename Interface>
   using ReceiverBinder =
       base::RepeatingCallback<void(mojo::PendingAssociatedReceiver<Interface>)>;
@@ -81,14 +67,6 @@ class BLINK_COMMON_EXPORT AssociatedInterfaceRegistry {
   base::WeakPtr<AssociatedInterfaceRegistry> GetWeakPtr();
 
  private:
-  // Remove this after done with migration from AssociatedInterfaceRequest to
-  // PendingAssociatedReceiver.
-  template <typename Interface>
-  static void BindInterface(const InterfaceBinder<Interface>& binder,
-                            mojo::ScopedInterfaceEndpointHandle handle) {
-    binder.Run(mojo::AssociatedInterfaceRequest<Interface>(std::move(handle)));
-  }
-
   template <typename Interface>
   static void BindInterfaceReceiver(
       const ReceiverBinder<Interface>& binder,
@@ -98,8 +76,6 @@ class BLINK_COMMON_EXPORT AssociatedInterfaceRegistry {
 
   std::map<std::string, Binder> interfaces_;
   base::WeakPtrFactory<AssociatedInterfaceRegistry> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(AssociatedInterfaceRegistry);
 };
 
 }  // namespace blink

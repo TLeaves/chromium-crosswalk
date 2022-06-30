@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/service/async_api_interface.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
@@ -84,7 +84,7 @@ class AsyncAPIMock : public AsyncAPIInterface {
                 const volatile void* _args);
 
  private:
-  CommandBufferServiceBase* command_buffer_service_;
+  raw_ptr<CommandBufferServiceBase> command_buffer_service_;
 };
 
 namespace gles2 {
@@ -152,7 +152,7 @@ class MockMemoryTracker : public MemoryTracker {
   MockMemoryTracker();
   ~MockMemoryTracker() override;
 
-  MOCK_METHOD1(TrackMemoryAllocatedChange, void(uint64_t delta));
+  MOCK_METHOD1(TrackMemoryAllocatedChange, void(int64_t delta));
   uint64_t GetSize() const override { return 0; }
   MOCK_CONST_METHOD0(ClientTracingId, uint64_t());
   MOCK_CONST_METHOD0(ClientId, int());

@@ -17,11 +17,18 @@ namespace net {
 class NET_EXPORT CertIssuerSourceStatic : public CertIssuerSource {
  public:
   CertIssuerSourceStatic();
+
+  CertIssuerSourceStatic(const CertIssuerSourceStatic&) = delete;
+  CertIssuerSourceStatic& operator=(const CertIssuerSourceStatic&) = delete;
+
   ~CertIssuerSourceStatic() override;
 
   // Adds |cert| to the set of certificates that this CertIssuerSource will
   // provide.
   void AddCert(scoped_refptr<ParsedCertificate> cert);
+
+  // Clears the set of certificates.
+  void Clear();
 
   // CertIssuerSource implementation:
   void SyncGetIssuersOf(const ParsedCertificate* cert,
@@ -36,8 +43,6 @@ class NET_EXPORT CertIssuerSourceStatic : public CertIssuerSource {
                           scoped_refptr<ParsedCertificate>,
                           base::StringPieceHash>
       intermediates_;
-
-  DISALLOW_COPY_AND_ASSIGN(CertIssuerSourceStatic);
 };
 
 }  // namespace net

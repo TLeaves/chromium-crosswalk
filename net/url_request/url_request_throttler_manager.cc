@@ -4,7 +4,7 @@
 
 #include "net/url_request/url_request_throttler_manager.h"
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/strings/string_util.h"
 #include "net/base/url_util.h"
 #include "net/log/net_log.h"
@@ -16,10 +16,7 @@ namespace net {
 const unsigned int URLRequestThrottlerManager::kMaximumNumberOfEntries = 1500;
 const unsigned int URLRequestThrottlerManager::kRequestsBetweenCollecting = 200;
 
-URLRequestThrottlerManager::URLRequestThrottlerManager()
-    : requests_since_last_gc_(0),
-      logged_for_localhost_disabled_(false),
-      registered_from_thread_(base::kInvalidThreadId) {
+URLRequestThrottlerManager::URLRequestThrottlerManager() {
   url_id_replacements_.ClearPassword();
   url_id_replacements_.ClearUsername();
   url_id_replacements_.ClearQuery();

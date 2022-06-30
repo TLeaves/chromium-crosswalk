@@ -8,12 +8,12 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
-#include "base/sequenced_task_runner_helpers.h"
+#include "base/task/sequenced_task_runner_helpers.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/common/extension_l10n_util.h"
 
 namespace content {
 class BrowserContext;
@@ -29,6 +29,10 @@ class CastExtensionMessageFilter : public content::BrowserMessageFilter {
  public:
   CastExtensionMessageFilter(int render_process_id,
                              content::BrowserContext* context);
+
+  CastExtensionMessageFilter(const CastExtensionMessageFilter&) = delete;
+  CastExtensionMessageFilter& operator=(const CastExtensionMessageFilter&) =
+      delete;
 
   // content::BrowserMessageFilter methods:
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -46,14 +50,13 @@ class CastExtensionMessageFilter : public content::BrowserMessageFilter {
       const std::vector<base::FilePath>& extension_paths,
       const std::string& main_extension_id,
       const std::string& default_locale,
+      extension_l10n_util::GzippedMessagesPermission gzip_permission,
       IPC::Message* reply_msg);
 
   const int render_process_id_;
   content::BrowserContext* context_;
 
   scoped_refptr<extensions::InfoMap> extension_info_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(CastExtensionMessageFilter);
 };
 
 #endif  // CHROMECAST_BROWSER_CAST_EXTENSION_MESSAGE_FILTER_H_

@@ -1,0 +1,24 @@
+From 9097a5d26389b27d88ddf256f7c0179da7e847c8 Mon Sep 17 00:00:00 2001
+From: Andrew Grieve <agrieve@chromium.org>
+Date: Mon, 13 Jun 2022 09:27:22 -0400
+Subject: [PATCH 1/4] Add disassemble command to keeps
+
+---
+ src/main/keep.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/main/keep.txt b/src/main/keep.txt
+index deb8e6d034..2e7a564430 100644
+--- a/src/main/keep.txt
++++ b/src/main/keep.txt
+@@ -9,6 +9,7 @@
+ # Keep all things that can be reached from the retrace api and keep the annotation
+ -keep @com.android.tools.r8.KeepForRetraceApi class * { public *; }
+ 
++-keep public class com.android.tools.r8.Disassemble { public static void main(java.lang.String[]); }
+ -keep public class com.android.tools.r8.D8 { public static void main(java.lang.String[]); }
+ -keep public class com.android.tools.r8.R8 { public static void main(java.lang.String[]); }
+ -keep public class com.android.tools.r8.ExtractMarker { public static void main(java.lang.String[]); }
+-- 
+2.36.1.476.g0c4daa206d-goog
+

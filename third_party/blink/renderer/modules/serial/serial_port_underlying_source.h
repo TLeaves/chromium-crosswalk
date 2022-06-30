@@ -24,30 +24,25 @@ class SerialPortUnderlyingSource : public UnderlyingSourceBase {
   // UnderlyingSourceBase
   ScriptPromise pull(ScriptState*) override;
   ScriptPromise Cancel(ScriptState*, ScriptValue reason) override;
-  void ContextDestroyed(ExecutionContext*) override;
+  void ContextDestroyed() override;
 
-  void SignalErrorImmediately(DOMException*);
   void SignalErrorOnClose(DOMException*);
-  void ExpectClose();
 
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
 
  private:
-  // Reads data from |data_pipe_|. Returns true if data was enqueued to
-  // |Controller()| or the pipe was closed, and false otherwise.
-  bool ReadData();
+  // Reads data from |data_pipe_|. Arms |watcher_| if it needs to wait.
+  void ReadDataOrArmWatcher();
 
-  ScriptPromise ArmWatcher(ScriptState*);
   void OnHandleReady(MojoResult, const mojo::HandleSignalsState&);
+  void OnFlush(ScriptPromiseResolver*);
   void PipeClosed();
   void Close();
 
   mojo::ScopedDataPipeConsumerHandle data_pipe_;
   mojo::SimpleWatcher watcher_;
   Member<SerialPort> serial_port_;
-  Member<ScriptPromiseResolver> pending_pull_;
   Member<DOMException> pending_exception_;
-  bool expect_close_ = false;
 };
 
 }  // namespace blink

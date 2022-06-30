@@ -6,10 +6,10 @@ package org.chromium.chrome.browser.browserservices.permissiondelegation;
 
 import android.os.Build;
 
-import org.chromium.chrome.browser.browserservices.Origin;
 import org.chromium.chrome.browser.notifications.NotificationChannelStatus;
-import org.chromium.chrome.browser.notifications.channels.ChannelDefinitions;
+import org.chromium.chrome.browser.notifications.channels.ChromeChannelDefinitions;
 import org.chromium.chrome.browser.notifications.channels.SiteChannelsManager;
+import org.chromium.components.embedder_support.util.Origin;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -17,9 +17,9 @@ import javax.inject.Singleton;
 import dagger.Lazy;
 
 /**
- * If an origin is associated with a TWA on Android O+, we want to remove its Android channel
- * because the TWA's notification status takes precedence and we don't want the confuse the user
- * with conflicting UI.
+ * If an origin is associated with an installed webapp (TWAs on Android O+, WebAPKs on Android T+)
+ * then we want to remove its Android channel because the APKs notification status takes precedence
+ * and we don't want the confuse the user with conflicting UI.
  *
  * It's recommended to hold a {@link Lazy} version of this class and pass this to static methods
  * such as {@link #restoreChannelIfNeeded} to not create instances of this class on Android versions
@@ -31,12 +31,12 @@ import dagger.Lazy;
  */
 @Singleton
 public class NotificationChannelPreserver {
-    private final TrustedWebActivityPermissionStore mStore;
+    private final InstalledWebappPermissionStore mStore;
     private final SiteChannelsManager mSiteChannelsManager;
 
     @Inject
-    NotificationChannelPreserver(TrustedWebActivityPermissionStore store,
-            SiteChannelsManager siteChannelsManager) {
+    NotificationChannelPreserver(
+            InstalledWebappPermissionStore store, SiteChannelsManager siteChannelsManager) {
         assert !beforeAndroidO()
                 : "This class should not be instantiated on Android versions before O";
 
@@ -48,7 +48,7 @@ public class NotificationChannelPreserver {
         if (beforeAndroidO()) return;
 
         String channelId = mSiteChannelsManager.getChannelIdForOrigin(origin.toString());
-        if (ChannelDefinitions.ChannelId.SITES.equals(channelId)) {
+        if (ChromeChannelDefinitions.ChannelId.SITES.equals(channelId)) {
             // If we were given the generic "sites" channel that meant no origin-specific channel
             // existed. We don't need to do anything.
             return;
@@ -63,14 +63,14 @@ public class NotificationChannelPreserver {
 
         assert status == NotificationChannelStatus.ENABLED ||
                 status == NotificationChannelStatus.BLOCKED;
-        mStore.setPreTwaNotificationState(origin, status == NotificationChannelStatus.ENABLED);
+        mStore.setPreInstallNotificationState(origin, status == NotificationChannelStatus.ENABLED);
         mSiteChannelsManager.deleteSiteChannel(channelId);
     }
 
     void restoreChannel(Origin origin) {
         if (beforeAndroidO()) return;
 
-        Boolean enabled = mStore.getPreTwaNotificationState(origin);
+        Boolean enabled = mStore.getPreInstallNotificationState(origin);
 
         if (enabled == null) {
             // If no previous channel status was stored, a channel didn't previously exist.

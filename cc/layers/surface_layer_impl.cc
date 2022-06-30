@@ -6,7 +6,11 @@
 
 #include <stdint.h>
 
-#include "base/stl_util.h"
+#include <algorithm>
+#include <utility>
+
+#include "base/memory/ptr_util.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/layers/append_quads_data.h"
@@ -16,6 +20,26 @@
 #include "components/viz/common/quads/surface_draw_quad.h"
 
 namespace cc {
+
+// static
+std::unique_ptr<SurfaceLayerImpl> SurfaceLayerImpl::Create(
+    LayerTreeImpl* tree_impl,
+    int id,
+    UpdateSubmissionStateCB update_submission_state_callback) {
+  return base::WrapUnique(new SurfaceLayerImpl(
+      tree_impl, id, std::move(update_submission_state_callback)));
+}
+
+// static
+std::unique_ptr<SurfaceLayerImpl> SurfaceLayerImpl::Create(
+    LayerTreeImpl* tree_impl,
+    int id) {
+  return base::WrapUnique(new SurfaceLayerImpl(
+      tree_impl, id, base::BindRepeating([](bool, base::WaitableEvent* event) {
+        if (event)
+          event->Signal();
+      })));
+}
 
 SurfaceLayerImpl::SurfaceLayerImpl(
     LayerTreeImpl* tree_impl,
@@ -27,17 +51,17 @@ SurfaceLayerImpl::SurfaceLayerImpl(
 
 SurfaceLayerImpl::~SurfaceLayerImpl() {
   if (update_submission_state_callback_)
-    update_submission_state_callback_.Run(false);
+    update_submission_state_callback_.Run(false, nullptr);
 }
 
 std::unique_ptr<LayerImpl> SurfaceLayerImpl::CreateLayerImpl(
-    LayerTreeImpl* tree_impl) {
+    LayerTreeImpl* tree_impl) const {
   return SurfaceLayerImpl::Create(tree_impl, id(),
                                   std::move(update_submission_state_callback_));
 }
 
 void SurfaceLayerImpl::SetRange(const viz::SurfaceRange& surface_range,
-                                base::Optional<uint32_t> deadline_in_frames) {
+                                absl::optional<uint32_t> deadline_in_frames) {
   if (surface_range_ == surface_range &&
       deadline_in_frames_ == deadline_in_frames) {
     return;
@@ -113,14 +137,25 @@ bool SurfaceLayerImpl::WillDraw(
   // compositor frames.
   if (will_draw_ != will_draw) {
     will_draw_ = will_draw;
-    if (update_submission_state_callback_)
-      update_submission_state_callback_.Run(will_draw);
+    if (update_submission_state_callback_) {
+      // If we're in synchronous composite mode, ensure that we finish running
+      // the update submission state callback. This is important to avoid race
+      // conditions in web_tests which results from a thread hop that happens in
+      // the callback.
+      if (layer_tree_impl()->IsInSynchronousComposite()) {
+        base::WaitableEvent event;
+        update_submission_state_callback_.Run(will_draw, &event);
+        event.Wait();
+      } else {
+        update_submission_state_callback_.Run(will_draw, nullptr);
+      }
+    }
   }
 
   return will_draw;
 }
 
-void SurfaceLayerImpl::AppendQuads(viz::RenderPass* render_pass,
+void SurfaceLayerImpl::AppendQuads(viz::CompositorRenderPass* render_pass,
                                    AppendQuadsData* append_quads_data) {
   AppendRainbowDebugBorder(render_pass);
 
@@ -147,9 +182,10 @@ void SurfaceLayerImpl::AppendQuads(viz::RenderPass* render_pass,
 
   if (surface_range_.IsValid()) {
     auto* quad = render_pass->CreateAndAppendDrawQuad<viz::SurfaceDrawQuad>();
+    // TODO(crbug/1308932): Remove toSkColor and make all SkColor4f.
     quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
-                 surface_range_, background_color(),
-                 stretch_content_to_fill_bounds_, has_pointer_events_none_);
+                 surface_range_, background_color().toSkColor(),
+                 stretch_content_to_fill_bounds_);
     quad->is_reflection = is_reflection_;
     // Add the primary surface ID as a dependency.
     append_quads_data->activation_dependencies.push_back(surface_range_.end());
@@ -164,8 +200,10 @@ void SurfaceLayerImpl::AppendQuads(viz::RenderPass* render_pass,
   } else {
     auto* quad =
         render_pass->CreateAndAppendDrawQuad<viz::SolidColorDrawQuad>();
+    // TODO(crbug/1308932): Remove toSkColor and make all SkColor4f.
     quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect,
-                 background_color(), false /* force_anti_aliasing_off */);
+                 background_color().toSkColor(),
+                 false /* force_anti_aliasing_off */);
   }
 
   // Unless the client explicitly specifies otherwise, don't block on
@@ -177,19 +215,20 @@ bool SurfaceLayerImpl::is_surface_layer() const {
   return true;
 }
 
-gfx::Rect SurfaceLayerImpl::GetEnclosingRectInTargetSpace() const {
-  return GetScaledEnclosingRectInTargetSpace(
+gfx::Rect SurfaceLayerImpl::GetEnclosingVisibleRectInTargetSpace() const {
+  return GetScaledEnclosingVisibleRectInTargetSpace(
       layer_tree_impl()->device_scale_factor());
 }
 
-void SurfaceLayerImpl::GetDebugBorderProperties(SkColor* color,
+void SurfaceLayerImpl::GetDebugBorderProperties(SkColor4f* color,
                                                 float* width) const {
   *color = DebugColors::SurfaceLayerBorderColor();
   *width = DebugColors::SurfaceLayerBorderWidth(
       layer_tree_impl() ? layer_tree_impl()->device_scale_factor() : 1);
 }
 
-void SurfaceLayerImpl::AppendRainbowDebugBorder(viz::RenderPass* render_pass) {
+void SurfaceLayerImpl::AppendRainbowDebugBorder(
+    viz::CompositorRenderPass* render_pass) {
   if (!ShowDebugBorders(DebugBorderType::SURFACE))
     return;
 
@@ -197,7 +236,7 @@ void SurfaceLayerImpl::AppendRainbowDebugBorder(viz::RenderPass* render_pass) {
       render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state, contents_opaque());
 
-  SkColor color;
+  SkColor4f color;
   float border_width;
   GetDebugBorderProperties(&color, &border_width);
 
@@ -209,7 +248,7 @@ void SurfaceLayerImpl::AppendRainbowDebugBorder(viz::RenderPass* render_pass) {
       0x800000ff,  // Blue.
       0x80ee82ee,  // Violet.
   };
-  const int kNumColors = base::size(colors);
+  const int kNumColors = std::size(colors);
 
   const int kStripeWidth = 300;
   const int kStripeHeight = 300;

@@ -15,6 +15,11 @@ namespace offline_pages {
 class LoadTerminationListenerImpl : public LoadTerminationListener {
  public:
   LoadTerminationListenerImpl();
+
+  LoadTerminationListenerImpl(const LoadTerminationListenerImpl&) = delete;
+  LoadTerminationListenerImpl& operator=(const LoadTerminationListenerImpl&) =
+      delete;
+
   ~LoadTerminationListenerImpl() override;
 
   // Callback
@@ -25,9 +30,7 @@ class LoadTerminationListenerImpl : public LoadTerminationListener {
   // An instance of Android AppListener.
   std::unique_ptr<base::android::ApplicationStatusListener> app_listener_;
 
-  base::WeakPtrFactory<LoadTerminationListenerImpl> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(LoadTerminationListenerImpl);
+  base::WeakPtrFactory<LoadTerminationListenerImpl> weak_ptr_factory_{this};
 };
 
 }  // namespace offline_pages

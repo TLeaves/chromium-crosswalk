@@ -8,10 +8,10 @@
 #include <stdint.h>
 
 #include "base/callback.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "remoting/protocol/connection_to_client.h"
 #include "remoting/protocol/video_feedback_stub.h"
 #include "remoting/protocol/video_stream.h"
@@ -23,6 +23,10 @@ namespace protocol {
 class FakeVideoStream : public protocol::VideoStream {
  public:
   FakeVideoStream();
+
+  FakeVideoStream(const FakeVideoStream&) = delete;
+  FakeVideoStream& operator=(const FakeVideoStream&) = delete;
+
   ~FakeVideoStream() override;
 
   // protocol::VideoStream interface.
@@ -32,28 +36,31 @@ class FakeVideoStream : public protocol::VideoStream {
   void SetLosslessEncode(bool want_lossless) override;
   void SetLosslessColor(bool want_lossless) override;
   void SetObserver(Observer* observer) override;
-  void SelectSource(int id) override;
+  void SelectSource(webrtc::ScreenId id) override;
 
   Observer* observer() { return observer_; }
 
   base::WeakPtr<FakeVideoStream> GetWeakPtr();
 
  private:
-  Observer* observer_ = nullptr;
+  raw_ptr<Observer> observer_ = nullptr;
 
-  base::WeakPtrFactory<FakeVideoStream> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeVideoStream);
+  base::WeakPtrFactory<FakeVideoStream> weak_factory_{this};
 };
 
 class FakeConnectionToClient : public ConnectionToClient {
  public:
-  FakeConnectionToClient(std::unique_ptr<Session> session);
+  explicit FakeConnectionToClient(std::unique_ptr<Session> session);
+
+  FakeConnectionToClient(const FakeConnectionToClient&) = delete;
+  FakeConnectionToClient& operator=(const FakeConnectionToClient&) = delete;
+
   ~FakeConnectionToClient() override;
 
   void SetEventHandler(EventHandler* event_handler) override;
 
   std::unique_ptr<VideoStream> StartVideoStream(
+      const std::string& stream_name,
       std::unique_ptr<webrtc::DesktopCapturer> desktop_capturer) override;
   std::unique_ptr<AudioStream> StartAudioStream(
       std::unique_ptr<AudioSource> audio_source) override;
@@ -66,6 +73,9 @@ class FakeConnectionToClient : public ConnectionToClient {
   void set_clipboard_stub(ClipboardStub* clipboard_stub) override;
   void set_host_stub(HostStub* host_stub) override;
   void set_input_stub(InputStub* input_stub) override;
+
+  PeerConnectionControls* peer_connection_controls() override;
+  WebrtcEventLogData* rtc_event_log() override;
 
   base::WeakPtr<FakeVideoStream> last_video_stream() {
     return last_video_stream_;
@@ -89,25 +99,27 @@ class FakeConnectionToClient : public ConnectionToClient {
   ErrorCode disconnect_error() { return disconnect_error_; }
 
  private:
+  // TODO(crbug.com/1043325): Remove the requirement that ConnectionToClient
+  // retains a pointer to the capturer if the relative pointer experiment is
+  // a success.
+  std::unique_ptr<webrtc::DesktopCapturer> desktop_capturer_;
   std::unique_ptr<Session> session_;
-  EventHandler* event_handler_ = nullptr;
+  raw_ptr<EventHandler> event_handler_ = nullptr;
 
   base::WeakPtr<FakeVideoStream> last_video_stream_;
 
-  ClientStub* client_stub_ = nullptr;
+  raw_ptr<ClientStub> client_stub_ = nullptr;
 
-  ClipboardStub* clipboard_stub_ = nullptr;
-  HostStub* host_stub_ = nullptr;
-  InputStub* input_stub_ = nullptr;
-  VideoStub* video_stub_ = nullptr;
-  VideoFeedbackStub* video_feedback_stub_ = nullptr;
+  raw_ptr<ClipboardStub> clipboard_stub_ = nullptr;
+  raw_ptr<HostStub> host_stub_ = nullptr;
+  raw_ptr<InputStub> input_stub_ = nullptr;
+  raw_ptr<VideoStub> video_stub_ = nullptr;
+  raw_ptr<VideoFeedbackStub> video_feedback_stub_ = nullptr;
 
   scoped_refptr<base::SingleThreadTaskRunner> video_encode_task_runner_;
 
   bool is_connected_ = true;
   ErrorCode disconnect_error_ = OK;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeConnectionToClient);
 };
 
 }  // namespace protocol

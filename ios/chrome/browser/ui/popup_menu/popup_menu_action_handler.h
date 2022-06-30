@@ -11,8 +11,12 @@
 
 @protocol ApplicationCommands;
 @protocol BrowserCommands;
+@protocol BrowserCoordinatorCommands;
+@protocol FindInPageCommands;
 @protocol LoadQueryCommands;
-@protocol PopupMenuActionHandlerCommands;
+@protocol PopupMenuActionHandlerDelegate;
+@protocol TextZoomCommands;
+class WebNavigationBrowserAgent;
 
 // Handles user interactions with the popup menu.
 @interface PopupMenuActionHandler
@@ -22,12 +26,25 @@
 @property(nonatomic, weak) UIViewController* baseViewController;
 
 // Command handler.
-@property(nonatomic, weak) id<PopupMenuActionHandlerCommands> commandHandler;
+@property(nonatomic, weak) id<PopupMenuActionHandlerDelegate> delegate;
 
 // Dispatcher.
-@property(nonatomic, weak)
-    id<ApplicationCommands, BrowserCommands, LoadQueryCommands>
-        dispatcher;
+// TODO(crbug.com/1323758): This uses PageInfoCommands via inclusion in
+// BrowserCommands, and should instead use a dedicated handler.
+// TODO(crbug.com/1323764): This uses PopupMenuCommands via inclusion in
+// BrowserCommands, and should instead use a dedicated handler.
+// TODO(crbug.com/1323775): This uses  QRScannerCommands via inclusion in
+// BrowserCommands, and should instead use a dedicated handler.
+
+@property(nonatomic, weak) id<ApplicationCommands,
+                              BrowserCommands,
+                              BrowserCoordinatorCommands,
+                              FindInPageCommands,
+                              LoadQueryCommands,
+                              TextZoomCommands>
+    dispatcher;
+
+@property(nonatomic, assign) WebNavigationBrowserAgent* navigationAgent;
 
 @end
 

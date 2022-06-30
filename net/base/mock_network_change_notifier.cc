@@ -11,8 +11,7 @@
 #include "net/dns/dns_config_service.h"
 #include "net/dns/system_dns_config_change_notifier.h"
 
-namespace net {
-namespace test {
+namespace net::test {
 
 // static
 std::unique_ptr<MockNetworkChangeNotifier> MockNetworkChangeNotifier::Create() {
@@ -61,7 +60,7 @@ void MockNetworkChangeNotifier::NotifyNetworkMadeDefault(
 void MockNetworkChangeNotifier::QueueNetworkMadeDefault(
     NetworkChangeNotifier::NetworkHandle network) {
   NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
-      NetworkChangeNotifier::MADE_DEFAULT, network);
+      NetworkChangeNotifier::NetworkChangeType::kMadeDefault, network);
 }
 
 void MockNetworkChangeNotifier::NotifyNetworkDisconnected(
@@ -74,23 +73,36 @@ void MockNetworkChangeNotifier::NotifyNetworkDisconnected(
 void MockNetworkChangeNotifier::QueueNetworkDisconnected(
     NetworkChangeNotifier::NetworkHandle network) {
   NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
-      NetworkChangeNotifier::DISCONNECTED, network);
+      NetworkChangeNotifier::NetworkChangeType::kDisconnected, network);
 }
 
 void MockNetworkChangeNotifier::NotifyNetworkConnected(
     NetworkChangeNotifier::NetworkHandle network) {
   NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChange(
-      NetworkChangeNotifier::CONNECTED, network);
+      NetworkChangeNotifier::NetworkChangeType::kConnected, network);
   // Spin the message loop so the notification is delivered.
   base::RunLoop().RunUntilIdle();
+}
+
+void MockNetworkChangeNotifier::SetConnectionTypeAndNotifyObservers(
+    ConnectionType connection_type) {
+  SetConnectionType(connection_type);
+  NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange();
+  // Spin the message loop so the notification is delivered.
+  base::RunLoop().RunUntilIdle();
+}
+
+MockNetworkChangeNotifier::ConnectionCost
+MockNetworkChangeNotifier::GetCurrentConnectionCost() {
+  if (use_default_connection_cost_implementation_)
+    return NetworkChangeNotifier::GetCurrentConnectionCost();
+  return connection_cost_;
 }
 
 MockNetworkChangeNotifier::MockNetworkChangeNotifier(
     std::unique_ptr<SystemDnsConfigChangeNotifier> dns_config_notifier)
     : NetworkChangeNotifier(NetworkChangeCalculatorParams(),
                             dns_config_notifier.get()),
-      force_network_handles_supported_(false),
-      connection_type_(CONNECTION_UNKNOWN),
       dns_config_notifier_(std::move(dns_config_notifier)) {}
 
 ScopedMockNetworkChangeNotifier::ScopedMockNetworkChangeNotifier()
@@ -105,5 +117,4 @@ ScopedMockNetworkChangeNotifier::mock_network_change_notifier() {
   return mock_network_change_notifier_.get();
 }
 
-}  // namespace test
-}  // namespace net
+}  // namespace net::test

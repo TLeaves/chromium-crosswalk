@@ -10,8 +10,8 @@
 
 #include "base/bits.h"
 #include "base/debug/stack_trace.h"
-#include "base/no_destructor.h"
-#include "base/process/process_metrics.h"
+#include "base/logging.h"
+#include "base/memory/page_size.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -21,7 +21,11 @@
 #include "components/gwp_asan/common/crash_key_name.h"
 #include "components/gwp_asan/common/pack_stack_trace.h"
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_ANDROID)
+#include "components/crash/core/app/crashpad.h"  // nogncheck
+#endif
+
+#if BUILDFLAG(IS_APPLE)
 #include <pthread.h>
 #endif
 
@@ -30,10 +34,26 @@ namespace internal {
 
 namespace {
 
+size_t GetStackTrace(void** trace, size_t count) {
+  // TODO(vtsyrklevich): Investigate using trace_event::CFIBacktraceAndroid
+  // on 32-bit Android for canary/dev (where we can dynamically load unwind
+  // data.)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(CAN_UNWIND_WITH_FRAME_POINTERS)
+  // Android release builds ship without unwind tables so the normal method of
+  // stack trace collection for base::debug::StackTrace doesn't work; however,
+  // AArch64 builds ship with frame pointers so we can still collect stack
+  // traces in that case.
+  return base::debug::TraceStackFramePointers(const_cast<const void**>(trace),
+                                              count, 0);
+#else
+  return base::debug::CollectStackTrace(trace, count);
+#endif
+}
+
 // Report a tid that matches what crashpad collects which may differ from what
 // base::PlatformThread::CurrentId() returns.
 uint64_t ReportTid() {
-#if !defined(OS_MACOSX)
+#if !BUILDFLAG(IS_APPLE)
   return base::PlatformThread::CurrentId();
 #else
   uint64_t tid = base::kInvalidThreadId;
@@ -166,6 +186,27 @@ void GuardedPageAllocator::Init(size_t max_alloced_pages,
   metadata_ =
       std::make_unique<AllocatorState::SlotMetadata[]>(state_.num_metadata);
   state_.metadata_addr = reinterpret_cast<uintptr_t>(metadata_.get());
+
+#if BUILDFLAG(IS_ANDROID)
+  // Explicitly allow memory ranges the crash_handler needs to read. This is
+  // required for WebView because it has a stricter set of privacy constraints
+  // on what it reads from the crashing process.
+  for (auto& memory_region : GetInternalMemoryRegions())
+    crash_reporter::AllowMemoryRange(memory_region.first, memory_region.second);
+#endif
+}
+
+std::vector<std::pair<void*, size_t>>
+GuardedPageAllocator::GetInternalMemoryRegions() {
+  std::vector<std::pair<void*, size_t>> regions;
+  regions.push_back(std::make_pair(&state_, sizeof(state_)));
+  regions.push_back(std::make_pair(
+      metadata_.get(),
+      sizeof(AllocatorState::SlotMetadata) * state_.num_metadata));
+  regions.push_back(
+      std::make_pair(slot_to_metadata_idx_.data(),
+                     sizeof(AllocatorState::MetadataIdx) * state_.total_pages));
+  return regions;
 }
 
 GuardedPageAllocator::~GuardedPageAllocator() {
@@ -218,7 +259,7 @@ void* GuardedPageAllocator::Allocate(size_t size,
   size_t offset;
   if (free_slot & 1)
     // Return right-aligned allocation to detect overflows.
-    offset = state_.page_size - base::bits::Align(size, align);
+    offset = state_.page_size - base::bits::AlignUp(size, align);
   else
     // Return left-aligned allocation to detect underflows.
     offset = 0;
@@ -278,7 +319,7 @@ size_t GuardedPageAllocator::GetRequestedSize(const void* ptr) const {
   const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
   AllocatorState::SlotIdx slot = state_.AddrToSlot(state_.GetPageAddr(addr));
   AllocatorState::MetadataIdx metadata_idx = slot_to_metadata_idx_[slot];
-#if !defined(OS_MACOSX)
+#if !BUILDFLAG(IS_APPLE)
   CHECK_LT(metadata_idx, state_.num_metadata);
   CHECK_EQ(addr, metadata_[metadata_idx].alloc_ptr);
 #else
@@ -306,8 +347,9 @@ bool GuardedPageAllocator::ReserveSlotAndMetadata(
     if (!oom_hit_) {
       if (++consecutive_failed_allocations_ == kOutOfMemoryCount) {
         oom_hit_ = true;
+        size_t allocations = total_allocations_ - kOutOfMemoryCount;
         base::AutoUnlock unlock(lock_);
-        std::move(oom_callback_).Run(total_allocations_ - kOutOfMemoryCount);
+        std::move(oom_callback_).Run(allocations);
       }
     }
     return false;
@@ -351,8 +393,7 @@ void GuardedPageAllocator::RecordAllocationMetadata(
   metadata_[metadata_idx].alloc_ptr = reinterpret_cast<uintptr_t>(ptr);
 
   void* trace[AllocatorState::kMaxStackFrames];
-  size_t len =
-      base::debug::CollectStackTrace(trace, AllocatorState::kMaxStackFrames);
+  size_t len = GetStackTrace(trace, AllocatorState::kMaxStackFrames);
   metadata_[metadata_idx].alloc.trace_len =
       Pack(reinterpret_cast<uintptr_t*>(trace), len,
            metadata_[metadata_idx].stack_trace_pool,
@@ -369,8 +410,7 @@ void GuardedPageAllocator::RecordAllocationMetadata(
 void GuardedPageAllocator::RecordDeallocationMetadata(
     AllocatorState::MetadataIdx metadata_idx) {
   void* trace[AllocatorState::kMaxStackFrames];
-  size_t len =
-      base::debug::CollectStackTrace(trace, AllocatorState::kMaxStackFrames);
+  size_t len = GetStackTrace(trace, AllocatorState::kMaxStackFrames);
   metadata_[metadata_idx].dealloc.trace_len =
       Pack(reinterpret_cast<uintptr_t*>(trace), len,
            metadata_[metadata_idx].stack_trace_pool +

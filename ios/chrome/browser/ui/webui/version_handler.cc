@@ -5,8 +5,7 @@
 #include "ios/chrome/browser/ui/webui/version_handler.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/values.h"
+#include "base/callback_helpers.h"
 #include "components/version_ui/version_handler_helper.h"
 #include "components/version_ui/version_ui_constants.h"
 #include "ios/web/public/webui/web_ui_ios.h"
@@ -18,14 +17,18 @@ VersionHandler::~VersionHandler() {}
 
 void VersionHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
-      version_ui::kRequestVersionInfo,
-      base::BindRepeating(&VersionHandler::HandleRequestVersionInfo,
+      version_ui::kRequestVariationInfo,
+      base::BindRepeating(&VersionHandler::HandleRequestVariationInfo,
                           base::Unretained(this)));
 }
 
-void VersionHandler::HandleRequestVersionInfo(const base::ListValue* args) {
+void VersionHandler::HandleRequestVariationInfo(const base::Value::List& args) {
   // Respond with the variations info immediately.
-  base::Value variations_list = version_ui::GetVariationsList()->Clone();
-  std::vector<const base::Value*> params{&variations_list};
-  web_ui()->CallJavascriptFunction(version_ui::kReturnVariationInfo, params);
+  CHECK_EQ(2U, args.size());
+  std::string callback_id = args[0].GetString();
+
+  base::Value response(base::Value::Type::DICTIONARY);
+  response.SetKey(version_ui::kKeyVariationsList,
+                  version_ui::GetVariationsList());
+  web_ui()->ResolveJavascriptCallback(base::Value(callback_id), response);
 }

@@ -9,7 +9,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,9 +19,11 @@ namespace chromeos {
 class NativeTimerTest : public testing::Test {
  public:
   NativeTimerTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::IO,
-            base::test::ScopedTaskEnvironment::TimeSource::MOCK_TIME) {}
+      : task_environment_(base::test::TaskEnvironment::MainThreadType::IO,
+                          base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
+
+  NativeTimerTest(const NativeTimerTest&) = delete;
+  NativeTimerTest& operator=(const NativeTimerTest&) = delete;
 
   ~NativeTimerTest() override = default;
 
@@ -29,7 +31,7 @@ class NativeTimerTest : public testing::Test {
   void SetUp() override {
     PowerManagerClient::InitializeFake();
     FakePowerManagerClient::Get()->set_tick_clock(
-        scoped_task_environment_.GetMockTickClock());
+        task_environment_.GetMockTickClock());
   }
 
   void TearDown() override { PowerManagerClient::Shutdown(); }
@@ -42,25 +44,21 @@ class NativeTimerTest : public testing::Test {
     base::RunLoop expiration_loop;
     bool start_timer_result = false;
     bool expiration_result = false;
-    timer->Start(
-        scoped_task_environment_.GetMockTickClock()->NowTicks() + delay,
-        base::BindOnce([](bool* result_out) { *result_out = true; },
-                       &expiration_result),
-        base::BindOnce(
-            [](bool* result_out, bool result) { *result_out = result; },
-            &start_timer_result));
+    timer->Start(task_environment_.GetMockTickClock()->NowTicks() + delay,
+                 base::BindOnce([](bool* result_out) { *result_out = true; },
+                                &expiration_result),
+                 base::BindOnce([](bool* result_out,
+                                   bool result) { *result_out = result; },
+                                &start_timer_result));
 
     // Both starting the timer and timer firing should succeed.
-    scoped_task_environment_.FastForwardBy(delay);
+    task_environment_.FastForwardBy(delay);
     if (!start_timer_result)
       return false;
     return expiration_result;
   }
 
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NativeTimerTest);
+  base::test::TaskEnvironment task_environment_;
 };
 
 TEST_F(NativeTimerTest, CheckCreateFailure) {
@@ -71,8 +69,7 @@ TEST_F(NativeTimerTest, CheckCreateFailure) {
   create_timer_loop.RunUntilIdle();
 
   // Starting the timer should fail as timer creation failed.
-  EXPECT_FALSE(CheckStartTimerAndExpiration(
-      &timer, base::TimeDelta::FromMilliseconds(1000)));
+  EXPECT_FALSE(CheckStartTimerAndExpiration(&timer, base::Milliseconds(1000)));
 }
 
 TEST_F(NativeTimerTest, CheckCreateAndStartTimer) {
@@ -82,13 +79,11 @@ TEST_F(NativeTimerTest, CheckCreateAndStartTimer) {
   create_timer_loop.RunUntilIdle();
 
   // Start timer and check if starting the timer and its expiration succeeded.
-  EXPECT_TRUE(CheckStartTimerAndExpiration(
-      &timer, base::TimeDelta::FromMilliseconds(1000)));
+  EXPECT_TRUE(CheckStartTimerAndExpiration(&timer, base::Milliseconds(1000)));
 
   // Start another timer and check if starting the timer and its expiration
   // succeeded.
-  EXPECT_TRUE(CheckStartTimerAndExpiration(
-      &timer, base::TimeDelta::FromMilliseconds(1000)));
+  EXPECT_TRUE(CheckStartTimerAndExpiration(&timer, base::Milliseconds(1000)));
 }
 
 }  // namespace chromeos

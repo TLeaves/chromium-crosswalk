@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
-#include "base/task_runner_util.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/task/task_runner_util.h"
 #include "remoting/codec/audio_decoder.h"
 #include "remoting/proto/audio.pb.h"
 #include "remoting/protocol/audio_stub.h"
@@ -21,8 +21,7 @@ AudioDecodeScheduler::AudioDecodeScheduler(
     scoped_refptr<base::SingleThreadTaskRunner> audio_decode_task_runner,
     base::WeakPtr<protocol::AudioStub> audio_consumer)
     : audio_decode_task_runner_(audio_decode_task_runner),
-      audio_consumer_(audio_consumer),
-      weak_factory_(this) {}
+      audio_consumer_(audio_consumer) {}
 
 AudioDecodeScheduler::~AudioDecodeScheduler() {
   DCHECK(thread_checker_.CalledOnValidThread());

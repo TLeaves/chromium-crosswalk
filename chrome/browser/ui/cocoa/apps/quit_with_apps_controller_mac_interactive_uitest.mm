@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #import "base/mac/foundation_util.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/apps/platform_apps/app_browsertest_util.h"
@@ -25,6 +25,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/test/extension_test_message_listener.h"
@@ -35,18 +36,21 @@ namespace {
 // will use NativeAppWindowCocoa.
 class QuitWithAppsControllerInteractiveTest
     : public extensions::PlatformAppBrowserTest {
+ public:
+  QuitWithAppsControllerInteractiveTest(
+      const QuitWithAppsControllerInteractiveTest&) = delete;
+  QuitWithAppsControllerInteractiveTest& operator=(
+      const QuitWithAppsControllerInteractiveTest&) = delete;
+
  protected:
-  QuitWithAppsControllerInteractiveTest() : app_(NULL) {}
+  QuitWithAppsControllerInteractiveTest() : app_(nullptr) {}
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     PlatformAppBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kAppsKeepChromeAliveInTests);
   }
 
-  const extensions::Extension* app_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(QuitWithAppsControllerInteractiveTest);
+  raw_ptr<const extensions::Extension> app_;
 };
 
 }  // namespace
@@ -69,7 +73,7 @@ IN_PROC_BROWSER_TEST_F(QuitWithAppsControllerInteractiveTest, QuitBehavior) {
       QuitWithAppsController::kQuitWithAppsNotificationID));
 
   // Open an app window.
-  ExtensionTestMessageListener listener("Launched", false);
+  ExtensionTestMessageListener listener("Launched");
   app_ = InstallAndLaunchPlatformApp("minimal_id");
   ASSERT_TRUE(listener.WaitUntilSatisfied());
 
@@ -86,8 +90,8 @@ IN_PROC_BROWSER_TEST_F(QuitWithAppsControllerInteractiveTest, QuitBehavior) {
   // If notification was dismissed by click, show again on next quit.
   display_service.SimulateClick(
       NotificationHandler::Type::TRANSIENT,
-      QuitWithAppsController::kQuitWithAppsNotificationID, base::nullopt,
-      base::nullopt);
+      QuitWithAppsController::kQuitWithAppsNotificationID, absl::nullopt,
+      absl::nullopt);
   EXPECT_FALSE(display_service.GetNotification(
       QuitWithAppsController::kQuitWithAppsNotificationID));
   EXPECT_FALSE(controller->ShouldQuit());
@@ -137,7 +141,7 @@ IN_PROC_BROWSER_TEST_F(QuitWithAppsControllerInteractiveTest, QuitBehavior) {
   display_service.SimulateClick(
       NotificationHandler::Type::TRANSIENT,
       QuitWithAppsController::kQuitWithAppsNotificationID,
-      0 /* kQuitAllAppsButtonIndex */, base::nullopt);
+      0 /* kQuitAllAppsButtonIndex */, absl::nullopt);
   destroyed_watcher.Wait();
   EXPECT_FALSE(AppWindowRegistryUtil::IsAppWindowVisibleInAnyProfile(0));
   quit_observer.Wait();

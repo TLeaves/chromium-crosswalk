@@ -12,18 +12,13 @@
 
 #include "base/hash/hash.h"
 #include "base/logging.h"
-#include "net/disk_cache/blockfile/trace.h"
+#include "base/notreached.h"
 
 namespace disk_cache {
 
 template <typename T>
 StorageBlock<T>::StorageBlock(MappedFile* file, Addr address)
-    : data_(nullptr),
-      file_(file),
-      address_(address),
-      modified_(false),
-      own_data_(false),
-      extended_(false) {
+    : file_(file), address_(address) {
   if (address.num_blocks() > 1)
     extended_ = true;
   DCHECK(!address.is_initialized() || sizeof(*data_) == address.BlockSize())
@@ -145,7 +140,6 @@ template<typename T> bool StorageBlock<T>::Load() {
     }
   }
   LOG(WARNING) << "Failed data load.";
-  Trace("Failed data load.");
   return false;
 }
 
@@ -158,7 +152,6 @@ template<typename T> bool StorageBlock<T>::Store() {
     }
   }
   LOG(ERROR) << "Failed data store.";
-  Trace("Failed data store.");
   return false;
 }
 
@@ -174,7 +167,6 @@ template<typename T> bool StorageBlock<T>::Load(FileIOCallback* callback,
     }
   }
   LOG(WARNING) << "Failed data load.";
-  Trace("Failed data load.");
   return false;
 }
 
@@ -188,7 +180,6 @@ template<typename T> bool StorageBlock<T>::Store(FileIOCallback* callback,
     }
   }
   LOG(ERROR) << "Failed data store.";
-  Trace("Failed data store.");
   return false;
 }
 
@@ -209,7 +200,7 @@ template<typename T> void StorageBlock<T>::DeleteData() {
       delete data_;
     } else {
       data_->~T();
-      delete[] reinterpret_cast<char*>(data_);
+      delete[] reinterpret_cast<char*>(data_.get());
     }
     own_data_ = false;
   }
@@ -217,7 +208,7 @@ template<typename T> void StorageBlock<T>::DeleteData() {
 
 template <typename T>
 uint32_t StorageBlock<T>::CalculateHash() const {
-  return base::Hash(data_, offsetof(T, self_hash));
+  return base::PersistentHash(data_, offsetof(T, self_hash));
 }
 
 }  // namespace disk_cache

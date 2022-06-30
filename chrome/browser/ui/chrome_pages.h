@@ -9,13 +9,30 @@
 
 #include <string>
 
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#include "components/services/app_service/public/mojom/types.mojom-forward.h"
+#include "components/signin/public/base/signin_buildflags.h"
 #include "url/gurl.h"
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/signin/signin_promo.h"
 #endif
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ui/webui/settings/ash/app_management/app_management_uma.h"
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_FUCHSIA)
+#include "chrome/browser/web_applications/web_app_utils.h"
+#endif
+
+namespace signin {
+enum class ConsentLevel;
+}  // namespace signin
 
 class Browser;
 class Profile;
@@ -33,7 +50,7 @@ enum HelpSource {
   // WebUI (the "About" page).
   HELP_SOURCE_WEBUI,
 
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   // WebUI (the OS "About" page).
   HELP_SOURCE_WEBUI_CHROME_OS,
 #endif
@@ -54,6 +71,22 @@ enum FeedbackSource {
   kFeedbackSourceSadTabPage,
   kFeedbackSourceSupervisedUserInterstitial,
   kFeedbackSourceAssistant,
+  kFeedbackSourceDesktopTabGroups,
+  kFeedbackSourceMediaApp,
+  kFeedbackSourceHelpApp,
+  kFeedbackSourceKaleidoscope,
+  kFeedbackSourceNetworkHealthPage,
+  kFeedbackSourceTabSearch,
+  kFeedbackSourceCameraApp,
+  kFeedbackSourceCaptureMode,
+  kFeedbackSourceChromeLabs,
+  kFeedbackSourceBentoBar,
+  kFeedbackSourceQuickAnswers,
+  kFeedbackSourceWhatsNew,
+  kFeedbackSourceConnectivityDiagnostics,
+  kFeedbackSourceProjectorApp,
+  kFeedbackSourceDesksTemplates,
+  kFeedbackSourceFilesApp,
 
   // Must be last.
   kFeedbackSourceCount,
@@ -61,6 +94,7 @@ enum FeedbackSource {
 
 void ShowBookmarkManager(Browser* browser);
 void ShowBookmarkManagerForNode(Browser* browser, int64_t node_id);
+void ShowHistory(Browser* browser, const std::string& host_name);
 void ShowHistory(Browser* browser);
 void ShowDownloads(Browser* browser);
 void ShowExtensions(Browser* browser,
@@ -68,7 +102,16 @@ void ShowExtensions(Browser* browser,
 
 // ShowFeedbackPage() uses |browser| to determine the URL of the current tab.
 // |browser| should be NULL if there are no currently open browser windows.
-void ShowFeedbackPage(Browser* browser,
+void ShowFeedbackPage(const Browser* browser,
+                      FeedbackSource source,
+                      const std::string& description_template,
+                      const std::string& description_placeholder_text,
+                      const std::string& category_tag,
+                      const std::string& extra_diagnostics);
+
+// Displays the Feedback ui.
+void ShowFeedbackPage(const GURL& page_url,
+                      Profile* profile,
                       FeedbackSource source,
                       const std::string& description_template,
                       const std::string& description_placeholder_text,
@@ -77,7 +120,11 @@ void ShowFeedbackPage(Browser* browser,
 
 void ShowHelp(Browser* browser, HelpSource source);
 void ShowHelpForProfile(Profile* profile, HelpSource source);
-void LaunchReleaseNotes(Profile* profile);
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+void ShowChromeTips(Browser* browser);
+void ShowChromeWhatsNew(Browser* browser);
+#endif
+void LaunchReleaseNotes(Profile* profile, apps::mojom::LaunchSource source);
 void ShowBetaForum(Browser* browser);
 void ShowPolicy(Browser* browser);
 void ShowSlow(Browser* browser);
@@ -105,34 +152,63 @@ void ShowContentSettingsExceptionsForProfile(
 void ShowSiteSettings(Profile* profile, const GURL& url);
 void ShowSiteSettings(Browser* browser, const GURL& url);
 
-void ShowAppManagementPage(Profile* profile, const std::string& app_id);
-
 void ShowContentSettings(Browser* browser,
                          ContentSettingsType content_settings_type);
 void ShowSettingsSubPageInTabbedBrowser(Browser* browser,
                                         const std::string& sub_page);
 void ShowClearBrowsingDataDialog(Browser* browser);
 void ShowPasswordManager(Browser* browser);
+void ShowPasswordCheck(Browser* browser);
+void ShowSafeBrowsingEnhancedProtection(Browser* browser);
 void ShowImportDialog(Browser* browser);
 void ShowAboutChrome(Browser* browser);
 void ShowSearchEngineSettings(Browser* browser);
+void ShowWebStore(Browser* browser);
+void ShowPrivacySandboxSettings(Browser* browser);
+void ShowPrivacySandboxAdPersonalization(Browser* browser);
+void ShowPrivacySandboxLearnMore(Browser* browser);
 
-#if defined(OS_CHROMEOS)
-void ShowManagementPageForProfile(Profile* profile);
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+// Shows the enterprise management info page in a browser tab.
+void ShowEnterpriseManagementPageInTabbedBrowser(Browser* browser);
 
 // Constructs an OS settings GURL for the specified |sub_page|.
 GURL GetOSSettingsUrl(const std::string& sub_page);
+
+void ShowAppManagementPage(Profile* profile,
+                           const std::string& app_id,
+                           ash::settings::AppManagementEntryPoint entry_point);
+
+void ShowPrintManagementApp(Profile* profile);
+
+void ShowConnectivityDiagnosticsApp(Profile* profile);
+
+void ShowScanningApp(Profile* profile);
+
+void ShowDiagnosticsApp(Profile* profile);
+
+void ShowFirmwareUpdatesApp(Profile* profile);
+
 #endif
 
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
 // Initiates signin in a new browser tab.
 void ShowBrowserSignin(Browser* browser,
-                       signin_metrics::AccessPoint access_point);
+                       signin_metrics::AccessPoint access_point,
+                       signin::ConsentLevel consent_level);
 
 // If the user is already signed in, shows the "Signin" portion of Settings,
 // otherwise initiates signin in a new browser tab.
 void ShowBrowserSigninOrSettings(Browser* browser,
                                  signin_metrics::AccessPoint access_point);
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_FUCHSIA)
+// Show chrome://app-settings/<app-id> page.
+void ShowWebAppSettings(Browser* browser,
+                        const std::string& app_id,
+                        web_app::AppSettingsPageEntryPoint entry_point);
 #endif
 
 }  // namespace chrome

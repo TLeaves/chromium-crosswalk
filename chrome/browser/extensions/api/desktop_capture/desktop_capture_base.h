@@ -7,23 +7,20 @@
 
 #include <array>
 #include <map>
+#include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/media/webrtc/desktop_media_list.h"
-#include "chrome/browser/media/webrtc/desktop_media_picker.h"
+#include "chrome/browser/media/webrtc/desktop_media_picker_controller.h"
 #include "chrome/browser/media/webrtc/desktop_media_picker_factory.h"
 #include "chrome/common/extensions/api/desktop_capture.h"
-#include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_function.h"
 #include "url/gurl.h"
 
 namespace extensions {
 
-class DesktopCaptureChooseDesktopMediaFunctionBase
-    : public ChromeAsyncExtensionFunction,
-      public content::WebContentsObserver {
+class DesktopCaptureChooseDesktopMediaFunctionBase : public ExtensionFunction {
  public:
   // Used to set PickerFactory used to create mock DesktopMediaPicker instances
   // for tests. Calling tests keep ownership of the factory. Can be called with
@@ -37,16 +34,23 @@ class DesktopCaptureChooseDesktopMediaFunctionBase
  protected:
   ~DesktopCaptureChooseDesktopMediaFunctionBase() override;
 
-  // |web_contents| is the WebContents for which the stream is created, and will
-  // also be used to determine where to show the picker's UI.
+  static const char kTargetNotFoundError[];
+
+  // |exclude_system_audio| is piped from the original call. It is a constraint
+  // that needs to be applied before the picker is shown to the user, as it
+  // affects the picker. It is therefore provided to the extension function
+  // rather than to getUserMedia(), as is the case for other constraints.
+  //
   // |origin| is the origin for which the stream is created.
+  //
   // |target_name| is the display name of the stream target.
-  bool Execute(
+  ResponseAction Execute(
       const std::vector<api::desktop_capture::DesktopCaptureSourceType>&
           sources,
-      content::WebContents* web_contents,
+      bool exclude_system_audio,
+      content::RenderFrameHost* render_frame_host,
       const GURL& origin,
-      const base::string16 target_name);
+      const std::u16string target_name);
 
   // Returns the calling application name to show in the picker.
   std::string GetCallerDisplayName() const;
@@ -54,20 +58,17 @@ class DesktopCaptureChooseDesktopMediaFunctionBase
   int request_id_;
 
  private:
-  // content::WebContentsObserver overrides.
-  void WebContentsDestroyed() override;
+  void OnPickerDialogResults(
+      const GURL& origin,
+      const content::GlobalRenderFrameHostId& render_frame_host_id,
+      const std::string& err,
+      content::DesktopMediaID source);
 
-  void OnPickerDialogResults(content::DesktopMediaID source);
-
-  // URL of page that desktop capture was requested for.
-  GURL origin_;
-
-  std::unique_ptr<DesktopMediaPickerFactory> picker_factory_;
-  std::unique_ptr<DesktopMediaPicker> picker_;
+  std::unique_ptr<DesktopMediaPickerController> picker_controller_;
 };
 
 class DesktopCaptureCancelChooseDesktopMediaFunctionBase
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DesktopCaptureCancelChooseDesktopMediaFunctionBase();
 
@@ -82,6 +83,12 @@ class DesktopCaptureCancelChooseDesktopMediaFunctionBase
 class DesktopCaptureRequestsRegistry {
  public:
   DesktopCaptureRequestsRegistry();
+
+  DesktopCaptureRequestsRegistry(const DesktopCaptureRequestsRegistry&) =
+      delete;
+  DesktopCaptureRequestsRegistry& operator=(
+      const DesktopCaptureRequestsRegistry&) = delete;
+
   ~DesktopCaptureRequestsRegistry();
 
   static DesktopCaptureRequestsRegistry* GetInstance();
@@ -109,8 +116,6 @@ class DesktopCaptureRequestsRegistry {
       std::map<RequestId, DesktopCaptureChooseDesktopMediaFunctionBase*>;
 
   RequestsMap requests_;
-
-  DISALLOW_COPY_AND_ASSIGN(DesktopCaptureRequestsRegistry);
 };
 
 }  // namespace extensions

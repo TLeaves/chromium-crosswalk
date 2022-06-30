@@ -24,15 +24,13 @@
 // Could be nil if no full name has been fetched for this account yet.
 @property(strong, nonatomic, readonly) NSString* userFullName;
 
+// Returns the primary given name of the identity, usually the user's first
+// name. Could be nil if no name has been fetched for this account yet.
+@property(strong, nonatomic, readonly) NSString* userGivenName;
+
 // Cached Hashed Gaia ID. This is used to pass the currently signed in account
 // between apps.
 @property(strong, nonatomic, readonly) NSString* hashedGaiaID;
-
-// Returns the cached hosted domain for the identity (fetched asynchronously).
-// If the value has not been fetched, this property will be nil. Otherwise it
-// will be the hosted domain or an empty string if the account is a consumer
-// account (e.g. gmail.com).
-@property(strong, nonatomic, readonly) NSString* hostedDomain;
 
 @end
 

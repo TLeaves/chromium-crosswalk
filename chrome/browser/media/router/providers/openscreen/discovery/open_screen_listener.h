@@ -16,10 +16,13 @@
 
 namespace media_router {
 class OpenScreenListener
-    : public openscreen::ServiceListener,
+    : public openscreen::osp::ServiceListener,
       local_discovery::ServiceDiscoveryDeviceLister::Delegate {
  public:
   explicit OpenScreenListener(std::string service_type);
+
+  OpenScreenListener(const OpenScreenListener&) = delete;
+  OpenScreenListener& operator=(const OpenScreenListener&) = delete;
 
   // ServiceListener overrides
   ~OpenScreenListener() override;
@@ -31,11 +34,10 @@ class OpenScreenListener
   bool Resume() override;
   bool SearchNow() override;
 
-  const std::vector<openscreen::ServiceInfo>& GetReceivers() const override;
+  const std::vector<openscreen::osp::ServiceInfo>& GetReceivers()
+      const override;
   void AddObserver(ServiceListener::Observer* observer) override;
   void RemoveObserver(ServiceListener::Observer* observer) override;
-
-  void RunTasks() override;
 
   // ServiceDiscoveryDeviceLister::Delegate
   void OnDeviceChanged(
@@ -50,9 +52,7 @@ class OpenScreenListener
  private:
   bool is_running_ = false;
   const std::string service_type_;
-  std::vector<openscreen::ServiceInfo> receivers_;
-
-  DISALLOW_COPY_AND_ASSIGN(OpenScreenListener);
+  std::vector<openscreen::osp::ServiceInfo> receivers_;
 };
 
 }  // namespace media_router

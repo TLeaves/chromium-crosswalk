@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "build/build_config.h"
 #include "net/base/io_buffer.h"
 #include "remoting/codec/audio_encoder.h"
 #include "remoting/codec/audio_encoder_opus.h"
@@ -32,9 +33,9 @@ namespace {
 
 std::unique_ptr<AudioEncoder> CreateAudioEncoder(
     const protocol::SessionConfig& config) {
-#if defined(OS_IOS)
+#if BUILDFLAG(IS_IOS)
   // TODO(nicholss): iOS should not use Opus. This is to prevent us from
-  // depending on //media. In the future we will use webrtc for conneciton
+  // depending on //media. In the future we will use webrtc for connection
   // and this will be a non-issue.
   return nullptr;
 #else
@@ -91,6 +92,7 @@ void IceConnectionToClient::Disconnect(ErrorCode error) {
 }
 
 std::unique_ptr<VideoStream> IceConnectionToClient::StartVideoStream(
+    const std::string& stream_name,
     std::unique_ptr<webrtc::DesktopCapturer> desktop_capturer) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -141,6 +143,14 @@ void IceConnectionToClient::set_host_stub(protocol::HostStub* host_stub) {
 void IceConnectionToClient::set_input_stub(protocol::InputStub* input_stub) {
   DCHECK(thread_checker_.CalledOnValidThread());
   event_dispatcher_->set_input_stub(input_stub);
+}
+
+PeerConnectionControls* IceConnectionToClient::peer_connection_controls() {
+  return nullptr;
+}
+
+WebrtcEventLogData* IceConnectionToClient::rtc_event_log() {
+  return nullptr;
 }
 
 void IceConnectionToClient::OnSessionStateChange(Session::State state) {

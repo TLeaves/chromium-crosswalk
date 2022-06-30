@@ -1,0 +1,32 @@
+<style>
+  a[href] {
+    color: var(--cros-text-color-primary);
+    text-decoration: none;
+  }
+
+  .help-item {
+    display: flex;
+    margin:  12px 0 0;
+  }
+
+  iron-icon {
+    padding-inline-end: 12px;
+  }
+
+  #helpContentLabel {
+    margin: 24px 0 0;
+  }
+</style>
+<div id="helpContentContainer">
+  <h2 id="helpContentLabel">[[getLabel_(searchResult)]]</h2>
+  <dom-repeat items="[[searchResult.contentList]]">
+    <template>
+      <div class="help-item">
+        <a href="[[getUrl_(item)]]" target="_blank">
+          <iron-icon icon="[[getIcon_(item.contentType)]]"></iron-icon>
+          <span>[[getTitle_(item)]]</span>
+        </a>
+      </div>
+    </template>
+  </dom-repeat>
+</div>

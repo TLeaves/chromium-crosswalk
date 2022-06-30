@@ -10,9 +10,9 @@
 #include <map>
 
 #include "base/files/file_util.h"
-#include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 
 #include <windows.h>
 
@@ -28,7 +28,7 @@ base::File CreateTempFile() {
 
   int flags = base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ |
               base::File::FLAG_WRITE | base::File::FLAG_DELETE_ON_CLOSE |
-              base::File::FLAG_TEMPORARY;
+              base::File::FLAG_WIN_TEMPORARY;
   return base::File(path, flags);
 }
 
@@ -137,4 +137,4 @@ TempMapping* TempMapping::GetMappingFromPtr(void* mem) {
 
 }  // namespace courgette
 
-#endif  // OS_WIN
+#endif  // BUILDFLAG(IS_WIN)

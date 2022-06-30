@@ -3,8 +3,12 @@
 // found in the LICENSE file.
 
 #include "content/browser/speech/tts_utterance_impl.h"
+
+#include <memory>
+
 #include "base/values.h"
-#include "third_party/blink/public/platform/web_speech_synthesis_constants.h"
+#include "content/public/browser/web_contents.h"
+#include "third_party/blink/public/mojom/speech/speech_synthesis.mojom.h"
 
 namespace content {
 
@@ -24,9 +28,9 @@ bool IsFinalTtsEventType(TtsEventType event_type) {
 //
 
 UtteranceContinuousParameters::UtteranceContinuousParameters()
-    : rate(blink::kWebSpeechSynthesisDoublePrefNotSet),
-      pitch(blink::kWebSpeechSynthesisDoublePrefNotSet),
-      volume(blink::kWebSpeechSynthesisDoublePrefNotSet) {}
+    : rate(blink::mojom::kSpeechSynthesisDoublePrefNotSet),
+      pitch(blink::mojom::kSpeechSynthesisDoublePrefNotSet),
+      volume(blink::mojom::kSpeechSynthesisDoublePrefNotSet) {}
 
 //
 // Utterance
@@ -35,18 +39,37 @@ UtteranceContinuousParameters::UtteranceContinuousParameters()
 // static
 int TtsUtteranceImpl::next_utterance_id_ = 0;
 
-TtsUtterance* TtsUtterance::Create(BrowserContext* browser_context) {
-  return new TtsUtteranceImpl(browser_context);
+// static
+std::unique_ptr<TtsUtterance> TtsUtterance::Create(WebContents* web_contents) {
+  DCHECK(web_contents);
+  return std::make_unique<TtsUtteranceImpl>(web_contents->GetBrowserContext(),
+                                            web_contents);
 }
 
-TtsUtteranceImpl::TtsUtteranceImpl(BrowserContext* browser_context)
+// static
+std::unique_ptr<TtsUtterance> TtsUtterance::Create(
+    BrowserContext* browser_context) {
+  DCHECK(browser_context);
+  return std::make_unique<TtsUtteranceImpl>(browser_context, nullptr);
+}
+
+// static
+std::unique_ptr<TtsUtterance> TtsUtterance::Create() {
+  return std::make_unique<TtsUtteranceImpl>(nullptr, nullptr);
+}
+
+TtsUtteranceImpl::TtsUtteranceImpl(BrowserContext* browser_context,
+                                   WebContents* web_contents)
     : browser_context_(browser_context),
+      was_created_with_web_contents_(web_contents != nullptr),
       id_(next_utterance_id_++),
       src_id_(-1),
-      can_enqueue_(false),
+      should_clear_queue_(true),
       char_index_(0),
       finished_(false) {
-  options_.reset(new base::DictionaryValue());
+  if (web_contents) {
+    web_contents_ = web_contents->GetWeakPtr();
+  }
 }
 
 TtsUtteranceImpl::~TtsUtteranceImpl() {
@@ -83,12 +106,12 @@ const std::string& TtsUtteranceImpl::GetText() {
   return text_;
 }
 
-void TtsUtteranceImpl::SetOptions(const base::Value* options) {
-  options_.reset(options->DeepCopy());
+void TtsUtteranceImpl::SetOptions(base::Value::Dict options) {
+  options_ = std::move(options);
 }
 
-const base::Value* TtsUtteranceImpl::GetOptions() {
-  return options_.get();
+const base::Value::Dict* TtsUtteranceImpl::GetOptions() {
+  return &options_;
 }
 
 void TtsUtteranceImpl::SetSrcId(int src_id) {
@@ -135,12 +158,12 @@ TtsUtteranceImpl::GetContinuousParameters() {
   return continuous_parameters_;
 }
 
-void TtsUtteranceImpl::SetCanEnqueue(bool can_enqueue) {
-  can_enqueue_ = can_enqueue;
+void TtsUtteranceImpl::SetShouldClearQueue(bool value) {
+  should_clear_queue_ = value;
 }
 
-bool TtsUtteranceImpl::GetCanEnqueue() {
-  return can_enqueue_;
+bool TtsUtteranceImpl::GetShouldClearQueue() {
+  return should_clear_queue_;
 }
 
 void TtsUtteranceImpl::SetRequiredEventTypes(
@@ -181,12 +204,20 @@ BrowserContext* TtsUtteranceImpl::GetBrowserContext() {
   return browser_context_;
 }
 
+void TtsUtteranceImpl::ClearBrowserContext() {
+  browser_context_ = nullptr;
+}
+
 int TtsUtteranceImpl::GetId() {
   return id_;
 }
 
 bool TtsUtteranceImpl::IsFinished() {
   return finished_;
+}
+
+WebContents* TtsUtteranceImpl::GetWebContents() {
+  return web_contents_.get();
 }
 
 }  // namespace content

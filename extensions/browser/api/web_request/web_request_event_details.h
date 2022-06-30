@@ -8,13 +8,11 @@
 #include <memory>
 #include <string>
 
-#include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
-#include "base/optional.h"
 #include "base/values.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
 #include "extensions/common/extension_id.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/origin.h"
 
 namespace net {
@@ -42,9 +40,6 @@ struct WebRequestInfo;
 // other threads, as long as there is no concurrent access.
 class WebRequestEventDetails {
  public:
-  using DeterminedFrameDataCallback =
-      base::Callback<void(std::unique_ptr<WebRequestEventDetails>)>;
-
   // Create a WebRequestEventDetails with the following keys:
   // - method
   // - requestId
@@ -53,6 +48,10 @@ class WebRequestEventDetails {
   // - type
   // - url
   WebRequestEventDetails(const WebRequestInfo& request, int extra_info_spec);
+
+  WebRequestEventDetails(const WebRequestEventDetails&) = delete;
+  WebRequestEventDetails& operator=(const WebRequestEventDetails&) = delete;
+
   ~WebRequestEventDetails();
 
   // Sets the following key:
@@ -84,29 +83,16 @@ class WebRequestEventDetails {
   void SetResponseSource(const WebRequestInfo& request);
 
   void SetBoolean(const std::string& key, bool value) {
-    dict_.SetBoolean(key, value);
+    dict_.SetBoolPath(key, value);
   }
 
   void SetInteger(const std::string& key, int value) {
-    dict_.SetInteger(key, value);
+    dict_.SetIntPath(key, value);
   }
 
   void SetString(const std::string& key, const std::string& value) {
-    dict_.SetString(key, value);
+    dict_.SetStringPath(key, value);
   }
-
-  // Sets the following keys using the value provided.
-  // - tabId
-  // - frameId
-  // - parentFrameId
-  void SetFrameData(const ExtensionApiFrameIdMap::FrameData& frame_data);
-
-  // Sets the following keys using information from constructor.
-  // - tabId
-  // - frameId
-  // - parentFrameId
-  // This must be called from the UI thread.
-  void DetermineFrameDataOnUI();
 
   // Create an event dictionary that contains all required keys, and also the
   // extra keys as specified by the |extra_info_spec| filter. If the listener
@@ -123,12 +109,12 @@ class WebRequestEventDetails {
   // dictionary is empty.
   std::unique_ptr<base::DictionaryValue> GetAndClearDict();
 
-  // Returns a filtered copy with only whitelisted data for public session.
+  // Returns a filtered copy with only allowlisted data for public session.
   std::unique_ptr<WebRequestEventDetails> CreatePublicSessionCopy();
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(
-      WebRequestEventDetailsTest, WhitelistedCopyForPublicSession);
+  FRIEND_TEST_ALL_PREFIXES(WebRequestEventDetailsTest,
+                           AllowlistedCopyForPublicSession);
 
   // Empty constructor used in unittests.
   WebRequestEventDetails();
@@ -140,15 +126,11 @@ class WebRequestEventDetails {
   std::unique_ptr<base::DictionaryValue> request_body_;
   std::unique_ptr<base::ListValue> request_headers_;
   std::unique_ptr<base::ListValue> response_headers_;
-  base::Optional<url::Origin> initiator_;
+  absl::optional<url::Origin> initiator_;
 
   int extra_info_spec_;
 
-  // Used to determine the tabId, frameId and parentFrameId.
   int render_process_id_;
-  int render_frame_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebRequestEventDetails);
 };
 
 }  // namespace extensions

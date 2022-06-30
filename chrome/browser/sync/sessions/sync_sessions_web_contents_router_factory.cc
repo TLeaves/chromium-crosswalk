@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 #include "chrome/browser/sync/sessions/sync_sessions_web_contents_router_factory.h"
 
-#include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/sessions/sync_sessions_web_contents_router.h"
@@ -30,7 +29,8 @@ SyncSessionsWebContentsRouterFactory::SyncSessionsWebContentsRouterFactory()
           "SyncSessionsWebContentsRouter",
           BrowserContextDependencyManager::GetInstance()) {}
 
-SyncSessionsWebContentsRouterFactory::~SyncSessionsWebContentsRouterFactory() {}
+SyncSessionsWebContentsRouterFactory::~SyncSessionsWebContentsRouterFactory() =
+    default;
 
 KeyedService* SyncSessionsWebContentsRouterFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {

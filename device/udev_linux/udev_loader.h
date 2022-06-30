@@ -31,17 +31,28 @@ class UdevLoader {
  public:
   static UdevLoader* Get();
 
+  // Allows to set a particular implementation of the loader.
+  // Given the shape of the existing API bad things will happen if one gets
+  // a udev_device instance, switches to a new loader, and tries to use that
+  // udev_instance again. The expectation is that when running unit tests,
+  // before we switch to fake udev, all attempts to interact with real udev
+  // will fail.
+  static void SetForTesting(UdevLoader* loader, bool delete_previous = true);
+
   virtual ~UdevLoader();
 
   virtual bool Init() = 0;
 
   virtual const char* udev_device_get_action(udev_device* udev_device) = 0;
   virtual const char* udev_device_get_devnode(udev_device* udev_device) = 0;
+  virtual const char* udev_device_get_devtype(udev_device* udev_device) = 0;
   virtual udev_device* udev_device_get_parent(udev_device* udev_device) = 0;
   virtual udev_device* udev_device_get_parent_with_subsystem_devtype(
       udev_device* udev_device,
       const char* subsystem,
       const char* devtype) = 0;
+  virtual udev_list_entry* udev_device_get_properties_list_entry(
+      struct udev_device* udev_device) = 0;
   virtual const char* udev_device_get_property_value(udev_device* udev_device,
                                                      const char* key) = 0;
   virtual const char* udev_device_get_subsystem(udev_device* udev_device) = 0;

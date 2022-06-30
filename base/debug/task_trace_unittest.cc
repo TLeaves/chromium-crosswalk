@@ -6,9 +6,10 @@
 
 #include <ostream>
 
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
-#include "base/test/bind_test_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/bind.h"
+#include "base/test/task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -61,12 +62,12 @@ class ThreeTasksTest {
   }
 
  private:
-  base::test::ScopedTaskEnvironment task_environment;
+  base::test::TaskEnvironment task_environment;
   base::SingleThreadTaskRunner& task_runner =
       *task_environment.GetMainThreadTaskRunner();
 
-  const void* task_a_address = nullptr;
-  const void* task_b_address = nullptr;
+  raw_ptr<const void> task_a_address = nullptr;
+  raw_ptr<const void> task_b_address = nullptr;
 };
 
 TEST(TaskTraceTest, ThreeTasks) {

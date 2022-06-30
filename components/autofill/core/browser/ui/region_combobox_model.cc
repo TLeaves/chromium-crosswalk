@@ -7,7 +7,8 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
+#include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/geo/region_data_loader.h"
 #include "components/strings/grit/components_strings.h"
@@ -26,16 +27,14 @@ RegionComboboxModel::~RegionComboboxModel() {
 }
 
 void RegionComboboxModel::LoadRegionData(const std::string& country_code,
-                                         RegionDataLoader* region_data_loader,
-                                         int64_t timeout_ms) {
+                                         RegionDataLoader* region_data_loader) {
   DCHECK(region_data_loader);
   DCHECK(!region_data_loader_);
   region_data_loader_ = region_data_loader;
   region_data_loader_->LoadRegionData(
       country_code,
       base::BindRepeating(&RegionComboboxModel::OnRegionDataLoaded,
-                          base::Unretained(this)),
-      timeout_ms);
+                          weak_factory_.GetWeakPtr()));
 }
 
 int RegionComboboxModel::GetItemCount() const {
@@ -46,9 +45,9 @@ int RegionComboboxModel::GetItemCount() const {
   return regions_.size();
 }
 
-base::string16 RegionComboboxModel::GetItemAt(int index) {
+std::u16string RegionComboboxModel::GetItemAt(int index) const {
   DCHECK_GE(index, 0);
-  // This might happen because of the asynchonous nature of the data.
+  // This might happen because of the asynchronous nature of the data.
   if (static_cast<size_t>(index) >= regions_.size())
     return l10n_util::GetStringUTF16(IDS_AUTOFILL_LOADING_REGIONS);
 
@@ -57,23 +56,15 @@ base::string16 RegionComboboxModel::GetItemAt(int index) {
 
   // The separator item. Implemented for platforms that don't yet support
   // IsItemSeparatorAt().
-  return base::ASCIIToUTF16("---");
+  return u"---";
 }
 
-bool RegionComboboxModel::IsItemSeparatorAt(int index) {
-  // This might happen because of the asynchonous nature of the data.
+bool RegionComboboxModel::IsItemSeparatorAt(int index) const {
+  // This might happen because of the asynchronous nature of the data.
   DCHECK_GE(index, 0);
   if (static_cast<size_t>(index) >= regions_.size())
     return false;
   return regions_[index].first.empty();
-}
-
-void RegionComboboxModel::AddObserver(ui::ComboboxModelObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void RegionComboboxModel::RemoveObserver(ui::ComboboxModelObserver* observer) {
-  observers_.RemoveObserver(observer);
 }
 
 void RegionComboboxModel::OnRegionDataLoaded(
@@ -96,7 +87,7 @@ void RegionComboboxModel::OnRegionDataLoaded(
     failed_to_load_data_ = true;
   }
 
-  for (auto& observer : observers_) {
+  for (auto& observer : observers()) {
     observer.OnComboboxModelChanged(this);
   }
 }

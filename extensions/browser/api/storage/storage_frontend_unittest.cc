@@ -9,7 +9,10 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "components/value_store/value_store.h"
+#include "components/value_store/value_store_factory_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_utils.h"
@@ -17,9 +20,9 @@
 #include "extensions/browser/api/storage/settings_namespace.h"
 #include "extensions/browser/api/storage/settings_test_util.h"
 #include "extensions/browser/extensions_test.h"
-#include "extensions/browser/value_store/value_store.h"
-#include "extensions/browser/value_store/value_store_factory_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using value_store::ValueStore;
 
 namespace extensions {
 
@@ -40,7 +43,8 @@ class ExtensionSettingsFrontendTest : public ExtensionsTest {
   void SetUp() override {
     ExtensionsTest::SetUp();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    storage_factory_ = new ValueStoreFactoryImpl(temp_dir_.GetPath());
+    storage_factory_ =
+        new value_store::ValueStoreFactoryImpl(temp_dir_.GetPath());
     ResetFrontend();
   }
 
@@ -59,7 +63,7 @@ class ExtensionSettingsFrontendTest : public ExtensionsTest {
 
   base::ScopedTempDir temp_dir_;
   std::unique_ptr<StorageFrontend> frontend_;
-  scoped_refptr<ValueStoreFactoryImpl> storage_factory_;
+  scoped_refptr<value_store::ValueStoreFactoryImpl> storage_factory_;
 
  private:
   ExtensionsAPIClient extensions_api_client_;
@@ -100,7 +104,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsPreservedAcrossReconstruction) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_TRUE(result.status().ok());
-    EXPECT_FALSE(result.settings().empty());
+    EXPECT_FALSE(result.settings().DictEmpty());
   }
 
   ResetFrontend();
@@ -110,7 +114,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsPreservedAcrossReconstruction) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_TRUE(result.status().ok());
-    EXPECT_FALSE(result.settings().empty());
+    EXPECT_FALSE(result.settings().DictEmpty());
   }
 }
 
@@ -130,8 +134,9 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsClearedOnUninstall) {
   }
 
   // This would be triggered by extension uninstall via a DataDeleter.
-  frontend_->DeleteStorageSoon(id);
-  content::RunAllTasksUntilIdle();
+  base::RunLoop run_loop;
+  frontend_->DeleteStorageSoon(id, run_loop.QuitClosure());
+  run_loop.Run();
 
   // The storage area may no longer be valid post-uninstall, so re-request.
   storage = settings_test_util::GetStorage(extension, settings::LOCAL,
@@ -139,7 +144,7 @@ TEST_F(ExtensionSettingsFrontendTest, SettingsClearedOnUninstall) {
   {
     ValueStore::ReadResult result = storage->Get();
     ASSERT_TRUE(result.status().ok());
-    EXPECT_TRUE(result.settings().empty());
+    EXPECT_TRUE(result.settings().DictEmpty());
   }
 }
 
@@ -189,30 +194,30 @@ TEST_F(ExtensionSettingsFrontendTest,
       extension, settings::LOCAL, frontend_.get());
 
   // Sync storage should run out after ~100K.
-  std::unique_ptr<base::Value> kilobyte = settings_test_util::CreateKilobyte();
+  base::Value kilobyte = settings_test_util::CreateKilobyte();
   for (int i = 0; i < 100; ++i) {
-    sync_storage->Set(DEFAULTS, base::NumberToString(i), *kilobyte);
+    sync_storage->Set(DEFAULTS, base::NumberToString(i), kilobyte);
   }
 
   EXPECT_FALSE(
-      sync_storage->Set(DEFAULTS, "WillError", *kilobyte).status().ok());
+      sync_storage->Set(DEFAULTS, "WillError", kilobyte).status().ok());
 
   // Local storage shouldn't run out after ~100K.
   for (int i = 0; i < 100; ++i) {
-    local_storage->Set(DEFAULTS, base::NumberToString(i), *kilobyte);
+    local_storage->Set(DEFAULTS, base::NumberToString(i), kilobyte);
   }
 
   EXPECT_TRUE(
-      local_storage->Set(DEFAULTS, "WontError", *kilobyte).status().ok());
+      local_storage->Set(DEFAULTS, "WontError", kilobyte).status().ok());
 
   // Local storage should run out after ~5MB.
-  std::unique_ptr<base::Value> megabyte = settings_test_util::CreateMegabyte();
+  base::Value megabyte = settings_test_util::CreateMegabyte();
   for (int i = 0; i < 5; ++i) {
-    local_storage->Set(DEFAULTS, base::NumberToString(i), *megabyte);
+    local_storage->Set(DEFAULTS, base::NumberToString(i), megabyte);
   }
 
   EXPECT_FALSE(
-      local_storage->Set(DEFAULTS, "WillError", *megabyte).status().ok());
+      local_storage->Set(DEFAULTS, "WillError", megabyte).status().ok());
 }
 
 }  // namespace extensions

@@ -4,8 +4,10 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/macros.h"
+#include <memory>
+
 #include "services/device/time_zone_monitor/time_zone_monitor.h"
+#include "third_party/icu/source/i18n/unicode/timezone.h"
 
 namespace device {
 
@@ -18,9 +20,12 @@ class TimeZoneMonitorMac : public TimeZoneMonitor {
                         object:nil
                          queue:nil
                     usingBlock:^(NSNotification* notification) {
-                      NotifyClients();
+                      UpdateIcuAndNotifyClients(DetectHostTimeZoneFromIcu());
                     }];
   }
+
+  TimeZoneMonitorMac(const TimeZoneMonitorMac&) = delete;
+  TimeZoneMonitorMac& operator=(const TimeZoneMonitorMac&) = delete;
 
   ~TimeZoneMonitorMac() override {
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
@@ -29,8 +34,6 @@ class TimeZoneMonitorMac : public TimeZoneMonitor {
 
  private:
   id notification_observer_;
-
-  DISALLOW_COPY_AND_ASSIGN(TimeZoneMonitorMac);
 };
 
 // static

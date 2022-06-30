@@ -4,11 +4,9 @@
 
 #include "net/tools/huffman_trie/bit_writer.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 
-namespace net {
-
-namespace huffman_trie {
+namespace net::huffman_trie {
 
 BitWriter::BitWriter() = default;
 
@@ -40,6 +38,4 @@ void BitWriter::Flush() {
   current_byte_ = 0;
 }
 
-}  // namespace huffman_trie
-
-}  // namespace net
+}  // namespace net::huffman_trie

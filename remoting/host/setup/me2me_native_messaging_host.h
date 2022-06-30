@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
@@ -45,6 +45,10 @@ class Me2MeNativeMessagingHost : public extensions::NativeMessageHost {
       scoped_refptr<DaemonController> daemon_controller,
       scoped_refptr<protocol::PairingRegistry> pairing_registry,
       std::unique_ptr<OAuthClient> oauth_client);
+
+  Me2MeNativeMessagingHost(const Me2MeNativeMessagingHost&) = delete;
+  Me2MeNativeMessagingHost& operator=(const Me2MeNativeMessagingHost&) = delete;
+
   ~Me2MeNativeMessagingHost() override;
 
   // extensions::NativeMessageHost implementation.
@@ -98,6 +102,9 @@ class Me2MeNativeMessagingHost : public extensions::NativeMessageHost {
       std::unique_ptr<base::DictionaryValue> message,
       std::unique_ptr<base::DictionaryValue> response,
       bool need_user_email);
+  void ProcessIt2mePermissionCheck(
+      std::unique_ptr<base::DictionaryValue> message,
+      std::unique_ptr<base::DictionaryValue> response);
 
   // These Send... methods get called on the DaemonController's internal thread,
   // or on the calling thread if called by the PairingRegistry.
@@ -128,15 +135,15 @@ class Me2MeNativeMessagingHost : public extensions::NativeMessageHost {
 
   bool needs_elevation_;
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // Controls the lifetime of the elevated native messaging host process.
   std::unique_ptr<ElevatedNativeMessagingHost> elevated_host_;
 
   // Handle of the parent window.
   intptr_t parent_window_handle_;
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
-  extensions::NativeMessageHost::Client* client_;
+  raw_ptr<extensions::NativeMessageHost::Client> client_;
   std::unique_ptr<ChromotingHostContext> host_context_;
 
   std::unique_ptr<LogMessageHandler> log_message_handler_;
@@ -150,9 +157,7 @@ class Me2MeNativeMessagingHost : public extensions::NativeMessageHost {
   std::unique_ptr<OAuthClient> oauth_client_;
 
   base::WeakPtr<Me2MeNativeMessagingHost> weak_ptr_;
-  base::WeakPtrFactory<Me2MeNativeMessagingHost> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(Me2MeNativeMessagingHost);
+  base::WeakPtrFactory<Me2MeNativeMessagingHost> weak_factory_{this};
 };
 
 }  // namespace remoting

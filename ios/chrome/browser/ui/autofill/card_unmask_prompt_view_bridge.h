@@ -5,8 +5,9 @@
 #ifndef IOS_CHROME_BROWSER_UI_AUTOFILL_CARD_UNMASK_PROMPT_VIEW_BRIDGE_H_
 #define IOS_CHROME_BROWSER_UI_AUTOFILL_CARD_UNMASK_PROMPT_VIEW_BRIDGE_H_
 
+#include <string>
+
 #include "base/memory/weak_ptr.h"
-#include "base/strings/string16.h"
 #include "components/autofill/core/browser/ui/payments/card_unmask_prompt_view.h"
 #import "ios/chrome/browser/ui/collection_view/collection_view_controller.h"
 
@@ -22,17 +23,22 @@ class CardUnmaskPromptController;
 // iOS implementation of the unmask prompt UI.
 class CardUnmaskPromptViewBridge : public CardUnmaskPromptView {
  public:
-  // |base_view_controller| is a weak reference to the view controller used to
+  // `base_view_controller` is a weak reference to the view controller used to
   // present UI.
   CardUnmaskPromptViewBridge(CardUnmaskPromptController* controller,
                              UIViewController* base_view_controller);
+
+  CardUnmaskPromptViewBridge(const CardUnmaskPromptViewBridge&) = delete;
+  CardUnmaskPromptViewBridge& operator=(const CardUnmaskPromptViewBridge&) =
+      delete;
+
   ~CardUnmaskPromptViewBridge() override;
 
   // CardUnmaskPromptView:
   void Show() override;
   void ControllerGone() override;
   void DisableAndWaitForVerification() override;
-  void GotVerificationResult(const base::string16& error_message,
+  void GotVerificationResult(const std::u16string& error_message,
                              bool allow_retry) override;
 
   CardUnmaskPromptController* GetController();
@@ -48,22 +54,20 @@ class CardUnmaskPromptViewBridge : public CardUnmaskPromptView {
   CardUnmaskPromptViewController* view_controller_;
 
  private:
-  // The controller |this| queries for logic and state.
+  // The controller `this` queries for logic and state.
   CardUnmaskPromptController* controller_;  // weak
 
   // Weak reference to the view controller used to present UI.
   __weak UIViewController* base_view_controller_;
 
   base::WeakPtrFactory<CardUnmaskPromptViewBridge> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(CardUnmaskPromptViewBridge);
 };
 
 }  // namespace autofill
 
 @interface CardUnmaskPromptViewController : CollectionViewController
 
-// Designated initializer. |bridge| must not be null.
+// Designated initializer. `bridge` must not be null.
 - (instancetype)initWithBridge:(autofill::CardUnmaskPromptViewBridge*)bridge
     NS_DESIGNATED_INITIALIZER;
 - (instancetype)initWithLayout:(UICollectionViewLayout*)layout

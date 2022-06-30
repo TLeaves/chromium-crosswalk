@@ -7,11 +7,15 @@
 
 #include "gpu/gpu_gles2_export.h"
 
+#include "base/memory/scoped_refptr.h"
+
 namespace gpu {
 
 class CommandBufferServiceBase;
 class DecoderClient;
+struct GpuPreferences;
 class MemoryTracker;
+class SharedContextState;
 class SharedImageManager;
 
 namespace gles2 {
@@ -27,7 +31,9 @@ GPU_GLES2_EXPORT WebGPUDecoder* CreateWebGPUDecoderImpl(
     CommandBufferServiceBase* command_buffer_service,
     SharedImageManager* shared_image_manager,
     MemoryTracker* memory_tracker,
-    gles2::Outputter* outputter);
+    gles2::Outputter* outputter,
+    const GpuPreferences& gpu_preferences,
+    scoped_refptr<SharedContextState> shared_context_state);
 
 }  // namespace webgpu
 }  // namespace gpu

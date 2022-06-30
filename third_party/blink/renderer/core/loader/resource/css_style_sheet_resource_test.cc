@@ -21,10 +21,10 @@
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/heap/heap.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_type_names.h"
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
@@ -55,7 +55,7 @@ class CSSStyleSheetResourceTest : public PageTestBase {
   }
 
   void SetUp() override {
-    PageTestBase::SetUp(IntSize());
+    PageTestBase::SetUp(gfx::Size());
     GetDocument().SetURL(KURL("https://localhost/"));
   }
 
@@ -151,7 +151,8 @@ TEST_F(CSSStyleSheetResourceTest,
   contents->CheckLoaded();
   EXPECT_TRUE(contents->IsCacheableForResource());
 
-  contents->EnsureRuleSet(MediaQueryEvaluator(), kRuleHasNoSpecialState);
+  contents->EnsureRuleSet(MediaQueryEvaluator(GetDocument().GetFrame()),
+                          kRuleHasNoSpecialState);
   EXPECT_TRUE(contents->HasRuleSet());
 
   css_resource->SaveParsedStyleSheet(contents);

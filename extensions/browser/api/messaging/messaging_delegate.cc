@@ -5,7 +5,7 @@
 #include "extensions/browser/api/messaging/messaging_delegate.h"
 
 #include "base/callback.h"
-#include "base/logging.h"
+#include "base/notreached.h"
 
 namespace extensions {
 
@@ -35,7 +35,8 @@ std::unique_ptr<MessagePort> MessagingDelegate::CreateReceiverForTab(
     const std::string& extension_id,
     const PortId& receiver_port_id,
     content::WebContents* receiver_contents,
-    int receiver_frame_id) {
+    int receiver_frame_id,
+    const std::string& receiver_document_id) {
   NOTIMPLEMENTED();
   return nullptr;
 }
@@ -58,9 +59,9 @@ void MessagingDelegate::QueryIncognitoConnectability(
     const Extension* target_extension,
     content::WebContents* source_contents,
     const GURL& source_url,
-    const base::Callback<void(bool)>& callback) {
+    base::OnceCallback<void(bool)> callback) {
   NOTIMPLEMENTED();
-  callback.Run(false);
+  std::move(callback).Run(false);
 }
 
 }  // namespace extensions

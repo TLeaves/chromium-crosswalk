@@ -5,7 +5,6 @@
 #ifndef CHROMECAST_BROWSER_EXTENSIONS_CAST_EXTENSION_HOST_DELEGATE_H_
 #define CHROMECAST_BROWSER_EXTENSIONS_CAST_EXTENSION_HOST_DELEGATE_H_
 
-#include "base/macros.h"
 #include "extensions/browser/extension_host_delegate.h"
 
 namespace extensions {
@@ -14,11 +13,16 @@ namespace extensions {
 class CastExtensionHostDelegate : public ExtensionHostDelegate {
  public:
   CastExtensionHostDelegate();
+
+  CastExtensionHostDelegate(const CastExtensionHostDelegate&) = delete;
+  CastExtensionHostDelegate& operator=(const CastExtensionHostDelegate&) =
+      delete;
+
   ~CastExtensionHostDelegate() override;
 
   // ExtensionHostDelegate implementation.
   void OnExtensionHostCreated(content::WebContents* web_contents) override;
-  void OnRenderViewCreatedForBackgroundPage(ExtensionHost* host) override;
+  void OnMainFrameCreatedForBackgroundPage(ExtensionHost* host) override;
   content::JavaScriptDialogManager* GetJavaScriptDialogManager() override;
   void CreateTab(std::unique_ptr<content::WebContents> web_contents,
                  const std::string& extension_id,
@@ -33,15 +37,9 @@ class CastExtensionHostDelegate : public ExtensionHostDelegate {
                                   const GURL& security_origin,
                                   blink::mojom::MediaStreamType type,
                                   const Extension* extension) override;
-  ExtensionHostQueue* GetExtensionHostQueue() const override;
   content::PictureInPictureResult EnterPictureInPicture(
-      content::WebContents* web_contents,
-      const viz::SurfaceId& surface_id,
-      const gfx::Size& natural_size) override;
+      content::WebContents* web_contents) override;
   void ExitPictureInPicture() override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CastExtensionHostDelegate);
 };
 
 }  // namespace extensions

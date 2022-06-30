@@ -5,8 +5,6 @@
 #ifndef MEDIA_FORMATS_MP4_DOLBY_VISION_H_
 #define MEDIA_FORMATS_MP4_DOLBY_VISION_H_
 
-#include <vector>
-
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
 #include "media/formats/mp4/box_definitions.h"
@@ -15,7 +13,7 @@ namespace media {
 
 namespace mp4 {
 
-struct DOVIDecoderConfigurationRecord {
+struct MEDIA_EXPORT DOVIDecoderConfigurationRecord {
   uint8_t dv_version_major = 0;
   uint8_t dv_version_minor = 0;
   uint8_t dv_profile = 0;

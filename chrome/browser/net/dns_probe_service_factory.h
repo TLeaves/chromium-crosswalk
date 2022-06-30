@@ -7,11 +7,11 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/time/tick_clock.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
-#include "services/network/public/mojom/host_resolver.mojom.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "services/network/public/mojom/host_resolver.mojom-forward.h"
 
 class KeyedService;
 
@@ -33,8 +33,8 @@ class DnsProbeServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   using NetworkContextGetter =
       base::RepeatingCallback<network::mojom::NetworkContext*(void)>;
-  using DnsConfigChangeManagerGetter =
-      base::RepeatingCallback<network::mojom::DnsConfigChangeManagerPtr(void)>;
+  using DnsConfigChangeManagerGetter = base::RepeatingCallback<
+      mojo::Remote<network::mojom::DnsConfigChangeManager>(void)>;
 
   // Returns the DnsProbeService that supports NetworkContexts for
   // |browser_context|.
@@ -43,6 +43,9 @@ class DnsProbeServiceFactory : public BrowserContextKeyedServiceFactory {
 
   // Returns the NetworkContextServiceFactory singleton.
   static DnsProbeServiceFactory* GetInstance();
+
+  DnsProbeServiceFactory(const DnsProbeServiceFactory&) = delete;
+  DnsProbeServiceFactory& operator=(const DnsProbeServiceFactory&) = delete;
 
   // Creates a DnsProbeService which will use the supplied
   // |network_context_getter| and |dns_config_change_manager_getter| instead of
@@ -64,8 +67,6 @@ class DnsProbeServiceFactory : public BrowserContextKeyedServiceFactory {
       content::BrowserContext* context) const override;
   content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const override;
-
-  DISALLOW_COPY_AND_ASSIGN(DnsProbeServiceFactory);
 };
 
 }  // namespace chrome_browser_net

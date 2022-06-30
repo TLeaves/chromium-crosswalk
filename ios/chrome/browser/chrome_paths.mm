@@ -7,9 +7,10 @@
 #include "base/base_paths.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
+#include "build/branding_buildflags.h"
 #include "components/gcm_driver/gcm_driver_constants.h"
 #include "ios/chrome/browser/chrome_paths_internal.h"
 
@@ -20,7 +21,7 @@
 namespace ios {
 namespace {
 
-#if defined(GOOGLE_CHROME_BUILD)
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
 const base::FilePath::CharType kProductDirName[] =
     FILE_PATH_LITERAL("Google/Chrome");
 #else
@@ -79,9 +80,19 @@ bool PathProvider(int key, base::FilePath* result) {
       break;
 
     case FILE_RESOURCES_PACK:
-      if (!base::PathService::Get(base::DIR_MODULE, &cur))
+      // Catalyst builds are packaged like macOS, with the binary and resource
+      // directories separate. On iOS they are all together in a single dir.
+      // base::DIR_ASSETS does the right thing on each platform.
+      if (!base::PathService::Get(base::DIR_ASSETS, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("resources.pak"));
+      break;
+
+    case DIR_OPTIMIZATION_GUIDE_PREDICTION_MODELS:
+      if (!base::PathService::Get(DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("OptimizationGuidePredictionModels"));
+      create_dir = true;
       break;
 
     default:

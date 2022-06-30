@@ -9,7 +9,6 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "chrome/browser/android/webapk/webapk_info.h"
 
 // Delegate for retrieving installed WebAPKs for display in WebUI.
@@ -18,6 +17,10 @@ class WebApkHandlerDelegate {
   using WebApkInfoCallback = base::RepeatingCallback<void(const WebApkInfo&)>;
 
   explicit WebApkHandlerDelegate(const WebApkInfoCallback& callback);
+
+  WebApkHandlerDelegate(const WebApkHandlerDelegate&) = delete;
+  WebApkHandlerDelegate& operator=(const WebApkHandlerDelegate&) = delete;
+
   ~WebApkHandlerDelegate();
 
   // Fetches information about each WebAPK.
@@ -26,7 +29,6 @@ class WebApkHandlerDelegate {
   // Called once for each installed WebAPK when RetrieveWebApks() is called.
   void OnWebApkInfoRetrieved(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& caller,
       const base::android::JavaParamRef<jstring>& jname,
       const base::android::JavaParamRef<jstring>& jshort_name,
       const base::android::JavaParamRef<jstring>& jpackage_name,
@@ -52,8 +54,6 @@ class WebApkHandlerDelegate {
   WebApkInfoCallback callback_;
 
   base::android::ScopedJavaGlobalRef<jobject> j_obj_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebApkHandlerDelegate);
 };
 
 #endif  // CHROME_BROWSER_ANDROID_WEBAPK_WEBAPK_HANDLER_DELEGATE_H_

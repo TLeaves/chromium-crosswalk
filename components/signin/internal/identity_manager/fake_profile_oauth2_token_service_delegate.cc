@@ -4,9 +4,14 @@
 
 #include "components/signin/internal/identity_manager/fake_profile_oauth2_token_service_delegate.h"
 
+#include <memory>
+
+#include "base/containers/cxx20_erase.h"
+#include "base/ranges/algorithm.h"
+#include "build/build_config.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service.h"
+#include "google_apis/gaia/gaia_access_token_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/oauth2_access_token_fetcher_impl.h"
 
 namespace {
 // Values used from |MutableProfileOAuth2TokenServiceDelegate|.
@@ -47,8 +52,9 @@ FakeProfileOAuth2TokenServiceDelegate::CreateAccessTokenFetcher(
     OAuth2AccessTokenConsumer* consumer) {
   auto it = refresh_tokens_.find(account_id);
   DCHECK(it != refresh_tokens_.end());
-  return std::make_unique<OAuth2AccessTokenFetcherImpl>(
-      consumer, url_loader_factory, it->second->refresh_token);
+  return GaiaAccessTokenFetcher::
+      CreateExchangeRefreshTokenForAccessTokenInstance(
+          consumer, url_loader_factory, it->second->refresh_token);
 }
 
 bool FakeProfileOAuth2TokenServiceDelegate::RefreshTokenIsAvailable(
@@ -79,19 +85,26 @@ const net::BackoffEntry* FakeProfileOAuth2TokenServiceDelegate::BackoffEntry()
 std::vector<CoreAccountId> FakeProfileOAuth2TokenServiceDelegate::GetAccounts()
     const {
   std::vector<CoreAccountId> account_ids;
-  for (const auto& token : refresh_tokens_)
-    account_ids.push_back(token.first);
+  for (const auto& account_id : account_ids_)
+    account_ids.push_back(account_id);
   return account_ids;
 }
 
 void FakeProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
   std::vector<CoreAccountId> account_ids = GetAccounts();
+  if (account_ids.empty())
+    return;
+
+  // Use `ScopedBatchChange` so that `OnEndBatchOfRefreshTokenStateChanges()` is
+  // fired only once, like in production.
+  ScopedBatchChange batch(this);
   for (const auto& account : account_ids)
     RevokeCredentials(account);
 }
 
 void FakeProfileOAuth2TokenServiceDelegate::LoadCredentials(
-    const CoreAccountId& primary_account_id) {
+    const CoreAccountId& primary_account_id,
+    bool is_syncing) {
   set_load_credentials_state(
       signin::LoadCredentialsState::LOAD_CREDENTIALS_FINISHED_WITH_SUCCESS);
   FireRefreshTokensLoaded();
@@ -108,10 +121,15 @@ void FakeProfileOAuth2TokenServiceDelegate::IssueRefreshTokenForUser(
     const std::string& token) {
   ScopedBatchChange batch(this);
   if (token.empty()) {
+    base::Erase(account_ids_, account_id);
     refresh_tokens_.erase(account_id);
     FireRefreshTokenRevoked(account_id);
   } else {
-    refresh_tokens_[account_id].reset(new AccountInfo(token));
+    // Look for the account ID in the list, and if it is not present append it.
+    if (base::ranges::find(account_ids_, account_id) == account_ids_.end()) {
+      account_ids_.push_back(account_id);
+    }
+    refresh_tokens_[account_id] = std::make_unique<AccountInfo>(token);
     // If the token is a special "invalid" value, then that means the token was
     // rejected by the client and is thus not valid. So set the appropriate
     // error in that case. This logic is essentially duplicated from
@@ -154,9 +172,9 @@ void FakeProfileOAuth2TokenServiceDelegate::UpdateAuthError(
     const CoreAccountId& account_id,
     const GoogleServiceAuthError& error) {
   backoff_entry_.InformOfRequest(!error.IsTransientError());
-  // Drop transient errors to match OAuth2TokenService's stated contract for
-  // GetAuthError() and to allow clients to test proper behavior in the case of
-  // transient errors.
+  // Drop transient errors to match ProfileOAuth2TokenService's stated contract
+  // for GetAuthError() and to allow clients to test proper behavior in the case
+  // of transient errors.
   if (error.IsTransientError())
     return;
 
@@ -168,3 +186,10 @@ void FakeProfileOAuth2TokenServiceDelegate::UpdateAuthError(
   it->second->error = error;
   FireAuthErrorChanged(account_id, error);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+base::android::ScopedJavaLocalRef<jobject>
+FakeProfileOAuth2TokenServiceDelegate::GetJavaObject() {
+  return base::android::ScopedJavaLocalRef<jobject>();
+}
+#endif

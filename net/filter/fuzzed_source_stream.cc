@@ -4,6 +4,8 @@
 
 #include "net/filter/fuzzed_source_stream.h"
 
+#include <fuzzer/FuzzedDataProvider.h>
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -12,7 +14,6 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "third_party/libFuzzer/src/utils/FuzzedDataProvider.h"
 
 namespace net {
 
@@ -24,10 +25,7 @@ const Error kReadErrors[] = {OK, ERR_FAILED, ERR_CONTENT_DECODING_FAILED};
 }  // namespace
 
 FuzzedSourceStream::FuzzedSourceStream(FuzzedDataProvider* data_provider)
-    : SourceStream(SourceStream::TYPE_NONE),
-      data_provider_(data_provider),
-      read_pending_(false),
-      end_returned_(false) {}
+    : SourceStream(SourceStream::TYPE_NONE), data_provider_(data_provider) {}
 
 FuzzedSourceStream::~FuzzedSourceStream() {
   DCHECK(!read_pending_);
@@ -70,6 +68,10 @@ int FuzzedSourceStream::Read(IOBuffer* buf,
 
 std::string FuzzedSourceStream::Description() const {
   return "";
+}
+
+bool FuzzedSourceStream::MayHaveMoreBytes() const {
+  return !end_returned_;
 }
 
 void FuzzedSourceStream::OnReadComplete(CompletionOnceCallback callback,

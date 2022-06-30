@@ -5,7 +5,7 @@
 #ifndef UI_BASE_BASE_WINDOW_H_
 #define UI_BASE_BASE_WINDOW_H_
 
-#include "base/compiler_specific.h"
+#include "base/component_export.h"
 #include "build/build_config.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/native_widget_types.h"
@@ -18,7 +18,7 @@ namespace ui {
 
 // Provides an interface to perform actions on windows, and query window
 // state.
-class UI_BASE_EXPORT BaseWindow {
+class COMPONENT_EXPORT(UI_BASE) BaseWindow {
  public:
   // Returns true if the window is currently the active/focused window.
   virtual bool IsActive() const = 0;
@@ -35,6 +35,12 @@ class UI_BASE_EXPORT BaseWindow {
   // Returns true if the window is fully restored (not Fullscreen, Maximized,
   // Minimized).
   static bool IsRestored(const BaseWindow& window);
+
+  // IsFullscreenFakedForTesting is set by tests that are not written robustly
+  // to asynchronous transitions to fullscreen (e.g, by using
+  // ScopedFakeNSWindowFullscreen on macOS).
+  static void SetFullscreenFakedForTesting(bool);
+  static bool IsFullscreenFakedForTesting();
 
   // Return a platform dependent identifier for this window.
   virtual gfx::NativeWindow GetNativeWindow() const = 0;

@@ -11,18 +11,20 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
-#include "mojo/public/cpp/system/platform_handle.h"
 
 namespace media {
 
 // static
 scoped_refptr<MojoSharedBufferVideoFrame>
-MojoSharedBufferVideoFrame::CreateDefaultI420ForTesting(
+MojoSharedBufferVideoFrame::CreateDefaultForTesting(
+    const VideoPixelFormat format,
     const gfx::Size& dimensions,
     base::TimeDelta timestamp) {
-  const VideoPixelFormat format = PIXEL_FORMAT_I420;
+  DCHECK(format == PIXEL_FORMAT_I420 || format == PIXEL_FORMAT_NV12);
   const gfx::Rect visible_rect(dimensions);
 
   // Since we're allocating memory for the new frame, pad the requested
@@ -39,52 +41,74 @@ MojoSharedBufferVideoFrame::CreateDefaultI420ForTesting(
 
   // Allocate a shared memory buffer big enough to hold the desired frame.
   const size_t allocation_size = VideoFrame::AllocationSize(format, coded_size);
-  mojo::ScopedSharedBufferHandle handle =
-      mojo::SharedBufferHandle::Create(allocation_size);
-  if (!handle.is_valid()) {
+  auto region = base::UnsafeSharedMemoryRegion::Create(allocation_size);
+  if (!region.IsValid()) {
     DLOG(ERROR) << __func__ << " Unable to allocate memory.";
     return nullptr;
   }
 
-  // Create and initialize the frame. As this is I420 format, the U and V
-  // planes have samples for each 2x2 block. The memory is laid out as follows:
-  //  - Yplane, full size (each element represents a 1x1 block)
-  //  - Uplane, quarter size (each element represents a 2x2 block)
-  //  - Vplane, quarter size (each element represents a 2x2 block)
+  // As both formats are 4:2:0, the U and V (or UV plane) have samples for each
+  // 2x2 block.
   DCHECK((coded_size.width() % 2 == 0) && (coded_size.height() % 2 == 0));
-  return Create(format, coded_size, visible_rect, dimensions, std::move(handle),
-                allocation_size, 0 /* y_offset */, coded_size.GetArea(),
-                coded_size.GetArea() * 5 / 4, coded_size.width(),
-                coded_size.width() / 2, coded_size.width() / 2, timestamp);
+
+  if (format == PIXEL_FORMAT_I420) {
+    // Create and initialize the frame. As this is I420 format, the U and V
+    // planes have samples for each 2x2 block. The memory is laid out as
+    // follows:
+    //  - Yplane, full size (each element represents a 1x1 block)
+    //  - Uplane, quarter size (each element represents a 2x2 block)
+    //  - Vplane, quarter size (each element represents a 2x2 block)
+    const uint32_t offsets[] = {
+        0 /* y_offset */, static_cast<uint32_t>(coded_size.GetArea()),
+        static_cast<uint32_t>(coded_size.GetArea() * 5 / 4)};
+    const int32_t strides[] = {coded_size.width(), coded_size.width() / 2,
+                               coded_size.width() / 2};
+    return Create(format, coded_size, visible_rect, dimensions,
+                  std::move(region), offsets, strides, timestamp);
+  } else {
+    // |format| is PIXEL_FORMAT_NV12.
+    // Create and initialize the frame. As this is NV12 format, the UV plane
+    // has interleaved U & V samples for each 2x2 block. The memory is laid out
+    // as follows:
+    //  - Yplane, full size (each element represents a 1x1 block)
+    //  - UVplane, full width, half height (each pair represents a 2x2 block)
+    const uint32_t offsets[] = {0 /* y_offset */,
+                                static_cast<uint32_t>(coded_size.GetArea())};
+    const int32_t strides[] = {coded_size.width(), coded_size.width()};
+    return Create(format, coded_size, visible_rect, dimensions,
+                  std::move(region), offsets, strides, timestamp);
+  }
 }
 
 scoped_refptr<MojoSharedBufferVideoFrame>
-MojoSharedBufferVideoFrame::CreateFromYUVFrame(const VideoFrame& frame) {
-  DCHECK_EQ(VideoFrame::NumPlanes(frame.format()), 3u);
+MojoSharedBufferVideoFrame::CreateFromYUVFrame(VideoFrame& frame) {
+  size_t num_planes = VideoFrame::NumPlanes(frame.format());
+  DCHECK_LE(num_planes, 3u);
+  DCHECK_GE(num_planes, 2u);
 
-  const size_t y_stride = frame.stride(VideoFrame::kYPlane);
-  const size_t u_stride = frame.stride(VideoFrame::kUPlane);
-  const size_t v_stride = frame.stride(VideoFrame::kVPlane);
+  std::vector<uint32_t> offsets(num_planes);
+  std::vector<int32_t> strides(num_planes);
+  std::vector<size_t> sizes(num_planes);
+  size_t aggregate_size = 0;
+  for (size_t i = 0; i < num_planes; ++i) {
+    strides[i] = frame.stride(i);
+    offsets[i] = aggregate_size;
+    sizes[i] =
+        VideoFrame::Rows(i, frame.format(), frame.coded_size().height()) *
+        strides[i];
+    aggregate_size += sizes[i];
+  }
 
-  const size_t y_size =
-      VideoFrame::Rows(kYPlane, frame.format(), frame.coded_size().height()) *
-      y_stride;
-  const size_t u_size =
-      VideoFrame::Rows(kUPlane, frame.format(), frame.coded_size().height()) *
-      u_stride;
-  const size_t v_size =
-      VideoFrame::Rows(kVPlane, frame.format(), frame.coded_size().height()) *
-      v_stride;
-
-  size_t allocation_size = y_size + u_size + v_size;
-
-  mojo::ScopedSharedBufferHandle handle =
-      mojo::SharedBufferHandle::Create(allocation_size);
-
-  // Computes the offset of planes in shared memory buffer.
-  const size_t y_offset = 0u;
-  const size_t u_offset = y_offset + y_size;
-  const size_t v_offset = y_offset + y_size + u_size;
+  auto region = base::UnsafeSharedMemoryRegion::Create(aggregate_size);
+  if (!region.IsValid()) {
+    DLOG(ERROR) << "Can't create new frame backing memory";
+    return nullptr;
+  }
+  base::WritableSharedMemoryMapping dst_mapping = region.Map();
+  if (!dst_mapping.IsValid()) {
+    DLOG(ERROR) << "Can't create map frame backing memory";
+    return nullptr;
+  }
 
   // The data from |frame| may not be consecutive between planes. Copy data into
   // a shared memory buffer which is tightly packed. Padding inside each planes
@@ -92,20 +116,29 @@ MojoSharedBufferVideoFrame::CreateFromYUVFrame(const VideoFrame& frame) {
   scoped_refptr<MojoSharedBufferVideoFrame> mojo_frame =
       MojoSharedBufferVideoFrame::Create(
           frame.format(), frame.coded_size(), frame.visible_rect(),
-          frame.natural_size(), std::move(handle), allocation_size, y_offset,
-          u_offset, v_offset, y_stride, u_stride, v_stride, frame.timestamp());
+          frame.natural_size(), std::move(region), offsets, strides,
+          frame.timestamp());
+  CHECK(!!mojo_frame);
 
-  // Copy Y plane.
-  memcpy(mojo_frame->shared_buffer_data(),
-         static_cast<const void*>(frame.data(VideoFrame::kYPlane)), y_size);
+  // If the source memory region is a shared memory region we must map it too.
+  base::WritableSharedMemoryMapping src_mapping;
+  if (frame.storage_type() == VideoFrame::STORAGE_SHMEM) {
+    if (!frame.shm_region()->IsValid()) {
+      DLOG(ERROR) << "Invalid source shared memory region";
+      return nullptr;
+    }
+    src_mapping = frame.shm_region()->Map();
+    if (!src_mapping.IsValid()) {
+      DLOG(ERROR) << "Can't map source shared memory region";
+      return nullptr;
+    }
+  }
 
-  // Copy U plane.
-  memcpy(mojo_frame->shared_buffer_data() + u_offset,
-         static_cast<const void*>(frame.data(VideoFrame::kUPlane)), u_size);
-
-  // Copy V plane.
-  memcpy(mojo_frame->shared_buffer_data() + v_offset,
-         static_cast<const void*>(frame.data(VideoFrame::kVPlane)), v_size);
+  // Copy plane data while mappings are in scope.
+  for (size_t i = 0; i < num_planes; ++i) {
+    memcpy(mojo_frame->shared_buffer_data() + offsets[i],
+           static_cast<const void*>(frame.data(i)), sizes[i]);
+  }
 
   // TODO(xingliu): Maybe also copy the alpha plane in
   // |MojoSharedBufferVideoFrame|. The alpha plane is ignored here, but
@@ -120,14 +153,9 @@ scoped_refptr<MojoSharedBufferVideoFrame> MojoSharedBufferVideoFrame::Create(
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    mojo::ScopedSharedBufferHandle handle,
-    size_t data_size,
-    size_t y_offset,
-    size_t u_offset,
-    size_t v_offset,
-    int32_t y_stride,
-    int32_t u_stride,
-    int32_t v_stride,
+    base::UnsafeSharedMemoryRegion region,
+    base::span<const uint32_t> offsets,
+    base::span<const int32_t> strides,
     base::TimeDelta timestamp) {
   if (!IsValidConfig(format, STORAGE_MOJO_SHARED_BUFFER, coded_size,
                      visible_rect, natural_size)) {
@@ -137,71 +165,72 @@ scoped_refptr<MojoSharedBufferVideoFrame> MojoSharedBufferVideoFrame::Create(
     return nullptr;
   }
 
+  // Validate that the format has the proper plane count and that it matches the
+  // offsets/strides array sizes passed in.
+  size_t num_planes = NumPlanes(format);
+  if (num_planes != 3 && num_planes != 2) {
+    DLOG(ERROR) << __func__ << " " << VideoPixelFormatToString(format)
+                << " is not supported; only bi/tri-planar formats are allowed";
+    return nullptr;
+  }
+  if (num_planes != offsets.size() || num_planes != strides.size()) {
+    DLOG(ERROR) << __func__ << " offsets and strides length must match number "
+                << "of planes";
+    return nullptr;
+  }
+
   // Validate that the offsets and strides fit in the buffer.
   //
   // We can rely on coded_size.GetArea() being relatively small (compared to the
   // range of an int) due to the IsValidConfig() check above.
   //
   // TODO(sandersd): Allow non-sequential formats.
-  if (NumPlanes(format) != 3) {
-    DLOG(ERROR) << __func__ << " " << VideoPixelFormatToString(format)
-                << " is not supported; only YUV formats are allowed";
-    return nullptr;
+  const size_t data_size = region.GetSize();
+  std::vector<ColorPlaneLayout> planes(num_planes);
+  for (size_t i = 0; i < num_planes; ++i) {
+    if (strides[i] < 0) {
+      DLOG(ERROR) << __func__ << " Invalid stride";
+      return nullptr;
+    }
+
+    // Compute the number of bytes needed on each row.
+    const size_t row_bytes = RowBytes(i, format, coded_size.width());
+
+    // Safe given sizeof(size_t) >= sizeof(int32_t).
+    size_t stride_size_t = strides[i];
+    if (stride_size_t < row_bytes) {
+      DLOG(ERROR) << __func__ << " Invalid stride";
+      return nullptr;
+    }
+    const size_t rows = Rows(i, format, coded_size.height());
+
+    // The last row only needs RowBytes() and not a full stride. This is to
+    // avoid problems if the U and V data is interleaved (where |stride| is
+    // double the number of bytes actually needed).
+    base::CheckedNumeric<size_t> bound = base::CheckAdd(
+        offsets[i], base::CheckMul(base::CheckSub(rows, 1), stride_size_t),
+        row_bytes);
+    if (!bound.IsValid() || bound.ValueOrDie() > data_size) {
+      DLOG(ERROR) << __func__ << " Invalid offset";
+      return nullptr;
+    }
+
+    planes[i].stride = strides[i];
+    planes[i].offset = offsets[i];
+    planes[i].size = i + 1 < num_planes ? offsets[i + 1] - offsets[i]
+                                        : data_size - offsets.back();
   }
 
-  if (y_stride < 0 || u_stride < 0 || v_stride < 0) {
-    DLOG(ERROR) << __func__ << " Invalid stride";
-    return nullptr;
-  }
-
-  // Compute the number of bytes needed on each row.
-  const size_t y_row_bytes = RowBytes(kYPlane, format, coded_size.width());
-  const size_t u_row_bytes = RowBytes(kUPlane, format, coded_size.width());
-  const size_t v_row_bytes = RowBytes(kVPlane, format, coded_size.width());
-
-  // Safe given sizeof(size_t) >= sizeof(int32_t).
-  size_t y_stride_size_t = y_stride;
-  size_t u_stride_size_t = u_stride;
-  size_t v_stride_size_t = v_stride;
-  if (y_stride_size_t < y_row_bytes || u_stride_size_t < u_row_bytes ||
-      v_stride_size_t < v_row_bytes) {
-    DLOG(ERROR) << __func__ << " Invalid stride";
-    return nullptr;
-  }
-
-  const size_t y_rows = Rows(kYPlane, format, coded_size.height());
-  const size_t u_rows = Rows(kUPlane, format, coded_size.height());
-  const size_t v_rows = Rows(kVPlane, format, coded_size.height());
-
-  // The last row only needs RowBytes() and not a full stride. This is to avoid
-  // problems if the U and V data is interleaved (where |stride| is double the
-  // number of bytes actually needed).
-  base::CheckedNumeric<size_t> y_bound = base::CheckAdd(
-      y_offset, base::CheckMul(base::CheckSub(y_rows, 1), y_stride_size_t),
-      y_row_bytes);
-  base::CheckedNumeric<size_t> u_bound = base::CheckAdd(
-      u_offset, base::CheckMul(base::CheckSub(u_rows, 1), u_stride_size_t),
-      u_row_bytes);
-  base::CheckedNumeric<size_t> v_bound = base::CheckAdd(
-      v_offset, base::CheckMul(base::CheckSub(v_rows, 1), v_stride_size_t),
-      v_row_bytes);
-
-  if (!y_bound.IsValid() || !u_bound.IsValid() || !v_bound.IsValid() ||
-      y_bound.ValueOrDie() > data_size || u_bound.ValueOrDie() > data_size ||
-      v_bound.ValueOrDie() > data_size) {
-    DLOG(ERROR) << __func__ << " Invalid offset";
-    return nullptr;
-  }
-  auto layout = VideoFrameLayout::CreateWithStrides(
-      format, coded_size, {y_stride, u_stride, v_stride});
+  auto layout =
+      VideoFrameLayout::CreateWithPlanes(format, coded_size, std::move(planes));
   if (!layout) {
     return nullptr;
   }
   // Now allocate the frame and initialize it.
   scoped_refptr<MojoSharedBufferVideoFrame> frame(
       new MojoSharedBufferVideoFrame(*layout, visible_rect, natural_size,
-                                     std::move(handle), data_size, timestamp));
-  if (!frame->Init(y_offset, u_offset, v_offset)) {
+                                     std::move(region), timestamp));
+  if (!frame->Init(offsets)) {
     DLOG(ERROR) << __func__ << " MojoSharedBufferVideoFrame::Init failed.";
     return nullptr;
   }
@@ -213,60 +242,47 @@ MojoSharedBufferVideoFrame::MojoSharedBufferVideoFrame(
     const VideoFrameLayout& layout,
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
-    mojo::ScopedSharedBufferHandle handle,
-    size_t mapped_size,
+    base::UnsafeSharedMemoryRegion region,
     base::TimeDelta timestamp)
     : VideoFrame(layout,
                  STORAGE_MOJO_SHARED_BUFFER,
                  visible_rect,
                  natural_size,
                  timestamp),
-      shared_buffer_handle_(std::move(handle)),
-      shared_buffer_size_(mapped_size) {
-  DCHECK(shared_buffer_handle_.is_valid());
+      region_(std::move(region)) {
+  DCHECK(region_.IsValid());
 }
 
-bool MojoSharedBufferVideoFrame::Init(size_t y_offset,
-                                      size_t u_offset,
-                                      size_t v_offset) {
-  DCHECK(!shared_buffer_mapping_);
-  shared_buffer_mapping_ = shared_buffer_handle_->Map(shared_buffer_size_);
-  if (!shared_buffer_mapping_)
+bool MojoSharedBufferVideoFrame::Init(base::span<const uint32_t> offsets) {
+  DCHECK(!mapping_.IsValid());
+  mapping_ = region_.Map();
+  if (!mapping_.IsValid())
     return false;
-
-  offsets_[kYPlane] = y_offset;
-  offsets_[kUPlane] = u_offset;
-  offsets_[kVPlane] = v_offset;
-  set_data(kYPlane, shared_buffer_data() + y_offset);
-  set_data(kUPlane, shared_buffer_data() + u_offset);
-  set_data(kVPlane, shared_buffer_data() + v_offset);
+  const size_t num_planes = NumPlanes(format());
+  DCHECK_EQ(offsets.size(), num_planes);
+  for (size_t i = 0; i < num_planes; ++i) {
+    offsets_[i] = offsets[i];
+    set_data(i, shared_buffer_data() + offsets[i]);
+  }
   return true;
 }
 
 MojoSharedBufferVideoFrame::~MojoSharedBufferVideoFrame() {
   // Call |mojo_shared_buffer_done_cb_| to take ownership of
   // |shared_buffer_handle_|.
-  if (mojo_shared_buffer_done_cb_)
-    mojo_shared_buffer_done_cb_.Run(std::move(shared_buffer_handle_),
-                                    shared_buffer_size_);
+  if (mojo_shared_buffer_done_cb_) {
+    std::move(mojo_shared_buffer_done_cb_).Run(std::move(region_));
+  }
 }
 
 size_t MojoSharedBufferVideoFrame::PlaneOffset(size_t plane) const {
-  DCHECK(IsValidPlane(plane, format()));
+  DCHECK(IsValidPlane(format(), plane));
   return offsets_[plane];
 }
 
 void MojoSharedBufferVideoFrame::SetMojoSharedBufferDoneCB(
-    const MojoSharedBufferDoneCB& mojo_shared_buffer_done_cb) {
-  mojo_shared_buffer_done_cb_ = mojo_shared_buffer_done_cb;
-}
-
-const mojo::SharedBufferHandle& MojoSharedBufferVideoFrame::Handle() const {
-  return shared_buffer_handle_.get();
-}
-
-size_t MojoSharedBufferVideoFrame::MappedSize() const {
-  return shared_buffer_size_;
+    MojoSharedBufferDoneCB mojo_shared_buffer_done_cb) {
+  mojo_shared_buffer_done_cb_ = std::move(mojo_shared_buffer_done_cb);
 }
 
 }  // namespace media

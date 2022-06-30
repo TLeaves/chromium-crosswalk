@@ -5,8 +5,7 @@
 #ifndef CHROME_BROWSER_UI_SYNC_BROWSER_SYNCED_WINDOW_DELEGATE_H_
 #define CHROME_BROWSER_UI_SYNC_BROWSER_SYNCED_WINDOW_DELEGATE_H_
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "components/sessions/core/session_id.h"
 #include "components/sync_sessions/synced_window_delegate.h"
 
@@ -22,6 +21,11 @@ class SyncedTabDelegate;
 class BrowserSyncedWindowDelegate : public sync_sessions::SyncedWindowDelegate {
  public:
   explicit BrowserSyncedWindowDelegate(Browser* browser);
+
+  BrowserSyncedWindowDelegate(const BrowserSyncedWindowDelegate&) = delete;
+  BrowserSyncedWindowDelegate& operator=(const BrowserSyncedWindowDelegate&) =
+      delete;
+
   ~BrowserSyncedWindowDelegate() override;
 
   // SyncedWindowDelegate:
@@ -29,8 +33,7 @@ class BrowserSyncedWindowDelegate : public sync_sessions::SyncedWindowDelegate {
   SessionID GetSessionId() const override;
   int GetTabCount() const override;
   int GetActiveIndex() const override;
-  bool IsApp() const override;
-  bool IsTypeTabbed() const override;
+  bool IsTypeNormal() const override;
   bool IsTypePopup() const override;
   bool IsTabPinned(const sync_sessions::SyncedTabDelegate* tab) const override;
   sync_sessions::SyncedTabDelegate* GetTabAt(int index) const override;
@@ -39,9 +42,7 @@ class BrowserSyncedWindowDelegate : public sync_sessions::SyncedWindowDelegate {
   bool ShouldSync() const override;
 
  private:
-  Browser* const browser_;
-
-  DISALLOW_COPY_AND_ASSIGN(BrowserSyncedWindowDelegate);
+  const raw_ptr<Browser> browser_;
 };
 
 #endif  // CHROME_BROWSER_UI_SYNC_BROWSER_SYNCED_WINDOW_DELEGATE_H_

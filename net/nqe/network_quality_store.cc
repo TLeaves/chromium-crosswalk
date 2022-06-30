@@ -6,14 +6,11 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/observer_list.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/network_change_notifier.h"
 
-namespace net {
-
-namespace nqe {
-
-namespace internal {
+namespace net::nqe::internal {
 
 NetworkQualityStore::NetworkQualityStore() {
   static_assert(kMaximumNetworkQualityCacheSize > 0,
@@ -192,12 +189,8 @@ void NetworkQualityStore::NotifyCacheObserverIfPresent(
 
   if (!network_qualities_cache_observer_list_.HasObserver(observer))
     return;
-  for (const auto it : cached_network_qualities_)
+  for (const auto& it : cached_network_qualities_)
     observer->OnChangeInCachedNetworkQuality(it.first, it.second);
 }
 
-}  // namespace internal
-
-}  // namespace nqe
-
-}  // namespace net
+}  // namespace net::nqe::internal

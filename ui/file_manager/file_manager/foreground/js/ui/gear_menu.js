@@ -2,7 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-class GearMenu {
+import {assertInstanceof} from 'chrome://resources/js/assert.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {queryRequiredElement} from 'chrome://resources/js/util.m.js';
+
+import {str, strf, util} from '../../../common/js/util.js';
+
+export class GearMenu {
   /**
    * @param {!HTMLElement} element
    */
@@ -57,12 +63,12 @@ class GearMenu {
      * @const
      * @private
      */
-    this.newServiceMenuItem_ =
-        queryRequiredElement('#gear-menu-newservice', element);
+    this.providersMenuItem_ =
+        queryRequiredElement('#gear-menu-providers', element);
 
     /**
      * Volume space info.
-     * @type {Promise<chrome.fileManagerPrivate.MountPointSizeStats>}
+     * @type {Promise<chrome.fileManagerPrivate.MountPointSizeStats|undefined>}
      * @private
      */
     this.spaceInfoPromise_ = null;
@@ -72,21 +78,15 @@ class GearMenu {
   }
 
   /**
-   * @param {!string} commandId Element id of the command that new service menu
-   *     should trigger.
-   * @param {!string} label Text that should be displayed to user in the menu.
+   * @param {!boolean} shouldHide Whether the providers gear menu item should be
+   *     hidden or not.
    */
-  setNewServiceCommand(commandId, label) {
-    this.newServiceMenuItem_.textContent = label;
-    // Only change command if needed because it does some parsing when setting.
-    if ('#' + this.newServiceMenuItem_.command.id === commandId) {
-      return;
-    }
-    this.newServiceMenuItem_.command = commandId;
+  updateShowProviders(shouldHide) {
+    this.providersMenuItem_.hidden = shouldHide;
   }
 
   /**
-   * @param {Promise<chrome.fileManagerPrivate.MountPointSizeStats>}
+   * @param {Promise<chrome.fileManagerPrivate.MountPointSizeStats|undefined>}
    * spaceInfoPromise Promise to be fulfilled with space info.
    * @param {boolean} showLoadingCaption Whether show loading caption or not.
    */
@@ -112,18 +112,20 @@ class GearMenu {
         return;
       }
       this.volumeSpaceInnerBar_.removeAttribute('pending');
+      this.volumeSpaceOuterBar_.hidden = true;
       if (spaceInfo) {
         const sizeStr = util.bytesToString(spaceInfo.remainingSize);
         this.volumeSpaceInfoLabel_.textContent =
             strf('SPACE_AVAILABLE', sizeStr);
 
-        const usedSpace = spaceInfo.totalSize - spaceInfo.remainingSize;
-        this.volumeSpaceInnerBar_.style.width =
-            (100 * usedSpace / spaceInfo.totalSize) + '%';
+        if (spaceInfo.totalSize > 0) {
+          const usedSpace = spaceInfo.totalSize - spaceInfo.remainingSize;
+          this.volumeSpaceInnerBar_.style.width =
+              (100 * usedSpace / spaceInfo.totalSize) + '%';
 
-        this.volumeSpaceOuterBar_.hidden = false;
+          this.volumeSpaceOuterBar_.hidden = false;
+        }
       } else {
-        this.volumeSpaceOuterBar_.hidden = true;
         this.volumeSpaceInfoLabel_.textContent = str('FAILED_SPACE_INFO');
       }
     });

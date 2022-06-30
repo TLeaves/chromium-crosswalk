@@ -9,8 +9,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
-#include "base/task_runner_util.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/task/task_runner_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 
 namespace net {
@@ -31,7 +31,7 @@ void DoCallback(const base::WeakPtr<ThreadedSSLPrivateKey>& key,
 class ThreadedSSLPrivateKey::Core
     : public base::RefCountedThreadSafe<ThreadedSSLPrivateKey::Core> {
  public:
-  Core(std::unique_ptr<ThreadedSSLPrivateKey::Delegate> delegate)
+  explicit Core(std::unique_ptr<ThreadedSSLPrivateKey::Delegate> delegate)
       : delegate_(std::move(delegate)) {}
 
   ThreadedSSLPrivateKey::Delegate* delegate() { return delegate_.get(); }

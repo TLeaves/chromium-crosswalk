@@ -11,23 +11,20 @@
 @class BookmarkEditViewController;
 @class BookmarkFolderViewController;
 @protocol BrowserCommands;
+class Browser;
 
 namespace bookmarks {
 class BookmarkNode;
 }  // namespace bookmarks
 
-namespace ios {
-class ChromeBrowserState;
-}  // namespace ios
-
 @protocol BookmarkEditViewControllerDelegate
 
 // Called when the edited bookmark is set for deletion.
-// If the delegate returns |YES|, all nodes matching the URL of |bookmark| will
+// If the delegate returns `YES`, all nodes matching the URL of `bookmark` will
 // be deleted.
-// If the delegate returns |NO|, only |bookmark| will be deleted.
+// If the delegate returns `NO`, only `bookmark` will be deleted.
 // If the delegate doesn't implement this method, the default behavior is to
-// delete all nodes matching the URL of |bookmark|.
+// delete all nodes matching the URL of `bookmark`.
 - (BOOL)bookmarkEditor:(BookmarkEditViewController*)controller
     shoudDeleteAllOccurencesOfBookmark:(const bookmarks::BookmarkNode*)bookmark;
 
@@ -46,20 +43,23 @@ class ChromeBrowserState;
 // This view controller will also monitor bookmark model change events and react
 // accordingly depending on whether the bookmark and folder it is editing
 // changes underneath it.
-@interface BookmarkEditViewController : ChromeTableViewController
+@interface BookmarkEditViewController
+    : ChromeTableViewController <UIAdaptivePresentationControllerDelegate>
 
 @property(nonatomic, weak) id<BookmarkEditViewControllerDelegate> delegate;
 
+// TODO(crbug.com/1323778): This class needs to have an explicit
+// id<SnacbarCommands> handler property.
+
 // Designated initializer.
-// |bookmark|: mustn't be NULL at initialization time. It also mustn't be a
+// `bookmark`: mustn't be NULL at initialization time. It also mustn't be a
 //             folder.
 - (instancetype)initWithBookmark:(const bookmarks::BookmarkNode*)bookmark
-                    browserState:(ios::ChromeBrowserState*)browserState
-                      dispatcher:(id<BrowserCommands>)dispatcher
-    NS_DESIGNATED_INITIALIZER;
-- (instancetype)initWithTableViewStyle:(UITableViewStyle)style
-                           appBarStyle:(ChromeTableViewControllerStyle)style
-    NS_UNAVAILABLE;
+                         browser:(Browser*)browser NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithStyle:(UITableViewStyle)style NS_UNAVAILABLE;
+
+// Called before the instance is deallocated.
+- (void)shutdown;
 
 // Closes the edit view as if close button was pressed.
 - (void)dismiss;

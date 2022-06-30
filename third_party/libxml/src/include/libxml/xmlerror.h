@@ -209,6 +209,7 @@ typedef enum {
     XML_ERR_VERSION_MISMATCH, /* 109 */
     XML_ERR_NAME_TOO_LONG, /* 110 */
     XML_ERR_USER_STOP, /* 111 */
+    XML_ERR_COMMENT_ABRUPTLY_ENDED, /* 112 */
     XML_NS_ERR_XML_NAMESPACE = 200,
     XML_NS_ERR_UNDEFINED_NAMESPACE, /* 201 */
     XML_NS_ERR_QNAME, /* 202 */
@@ -837,7 +838,7 @@ typedef enum {
  * xmlGenericErrorFunc:
  * @ctx:  a parsing context
  * @msg:  the message
- * @...:  the extra arguments of the varags to format the message
+ * @...:  the extra arguments of the varargs to format the message
  *
  * Signature of the function to use when there is an error and
  * no parsing or validity context available .

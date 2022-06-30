@@ -4,14 +4,14 @@
 
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_cell.h"
 
-#import "ios/chrome/browser/ui/ntp_tile_views/ntp_most_visited_tile_view.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_tile_view.h"
 
 #import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_most_visited_constants.h"
-#import "ios/chrome/browser/ui/ntp_tile_views/ntp_tile_layout_util.h"
+#import "ios/chrome/browser/ui/content_suggestions/cells/content_suggestions_tile_layout_util.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
-#import "ios/chrome/common/favicon/favicon_view.h"
 #import "ios/chrome/common/material_timing.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/favicon/favicon_view.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -19,7 +19,8 @@
 
 @interface ContentSuggestionsMostVisitedCell ()
 
-@property(nonatomic, strong) NTPMostVisitedTileView* mostVisitedTile;
+@property(nonatomic, strong)
+    ContentSuggestionsMostVisitedTileView* mostVisitedTile;
 
 @end
 
@@ -30,7 +31,8 @@
 - (instancetype)initWithFrame:(CGRect)frame {
   self = [super initWithFrame:frame];
   if (self) {
-    _mostVisitedTile = [[NTPMostVisitedTileView alloc] initWithFrame:frame];
+    _mostVisitedTile =
+        [[ContentSuggestionsMostVisitedTileView alloc] initWithFrame:frame];
     [self.contentView addSubview:_mostVisitedTile];
     _mostVisitedTile.translatesAutoresizingMaskIntoConstraints = NO;
     AddSameConstraints(self.contentView, _mostVisitedTile);

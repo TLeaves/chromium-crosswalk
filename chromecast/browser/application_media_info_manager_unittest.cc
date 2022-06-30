@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "content/public/test/test_content_client_initializer.h"
 #include "content/public/test/test_renderer_host.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,10 +36,10 @@ class ApplicationMediaInfoManagerTest
   void SetUp() override {
     initializer_ = std::make_unique<content::TestContentClientInitializer>();
     content::RenderViewHostTestHarness::SetUp();
-    application_media_info_manager_ =
-        std::make_unique<ApplicationMediaInfoManager>(
-            main_rfh(), mojo::MakeRequest(&application_media_info_manager_ptr_),
-            kSessionId, kMixedAudioEnabled);
+    application_media_info_manager_ = new ApplicationMediaInfoManager(
+        main_rfh(),
+        application_media_info_manager_remote_.BindNewPipeAndPassReceiver(),
+        kSessionId, kMixedAudioEnabled);
   }
 
   void OnCastApplicationMediaInfo(
@@ -48,15 +49,17 @@ class ApplicationMediaInfoManagerTest
     started_ = true;
   }
 
-  ::media::mojom::CastApplicationMediaInfoManagerPtr
-      application_media_info_manager_ptr_;
+  mojo::Remote<::media::mojom::CastApplicationMediaInfoManager>
+      application_media_info_manager_remote_;
   std::unique_ptr<content::TestContentClientInitializer> initializer_;
-  std::unique_ptr<ApplicationMediaInfoManager> application_media_info_manager_;
+  // `ApplicationMediaInfoManager` is a `DocumentService` and manages its
+  // own lifetime.
+  ApplicationMediaInfoManager* application_media_info_manager_;
   bool started_;
 };
 
 TEST_F(ApplicationMediaInfoManagerTest, NoBlock_GetMediaInfo) {
-  application_media_info_manager_ptr_->GetCastApplicationMediaInfo(
+  application_media_info_manager_remote_->GetCastApplicationMediaInfo(
       base::BindOnce(
           &ApplicationMediaInfoManagerTest::OnCastApplicationMediaInfo,
           base::Unretained(this)));
@@ -67,7 +70,7 @@ TEST_F(ApplicationMediaInfoManagerTest, NoBlock_GetMediaInfo) {
 TEST_F(ApplicationMediaInfoManagerTest, Block_GetMediaInfo_Unblock) {
   application_media_info_manager_->SetRendererBlock(true);
   base::RunLoop().RunUntilIdle();
-  application_media_info_manager_ptr_->GetCastApplicationMediaInfo(
+  application_media_info_manager_remote_->GetCastApplicationMediaInfo(
       base::BindOnce(
           &ApplicationMediaInfoManagerTest::OnCastApplicationMediaInfo,
           base::Unretained(this)));
@@ -84,7 +87,7 @@ TEST_F(ApplicationMediaInfoManagerTest, Block_Unblock_GetMediaInfo) {
   application_media_info_manager_->SetRendererBlock(false);
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(started_);
-  application_media_info_manager_ptr_->GetCastApplicationMediaInfo(
+  application_media_info_manager_remote_->GetCastApplicationMediaInfo(
       base::BindOnce(
           &ApplicationMediaInfoManagerTest::OnCastApplicationMediaInfo,
           base::Unretained(this)));

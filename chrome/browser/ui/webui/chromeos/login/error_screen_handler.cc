@@ -5,89 +5,59 @@
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 
 #include "base/time/time.h"
-#include "chrome/browser/chromeos/login/screens/error_screen.h"
-#include "chrome/browser/ui/webui/chromeos/network_element_localized_strings_provider.h"
+#include "base/values.h"
+#include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/login/localized_values_builder.h"
 #include "ui/chromeos/devicetype_utils.h"
+#include "ui/chromeos/strings/network_element_localized_strings_provider.h"
 #include "ui/strings/grit/ui_strings.h"
 
 namespace chromeos {
 
-constexpr StaticOobeScreenId ErrorScreenView::kScreenId;
+ErrorScreenHandler::ErrorScreenHandler() : BaseScreenHandler(kScreenId) {}
 
-ErrorScreenHandler::ErrorScreenHandler(JSCallsContainer* js_calls_container)
-    : BaseScreenHandler(kScreenId, js_calls_container) {
-  set_user_acted_method_path("login.ErrorMessageScreen.userActed");
-}
-
-ErrorScreenHandler::~ErrorScreenHandler() {
-  if (screen_)
-    screen_->OnViewDestroyed(this);
-}
+ErrorScreenHandler::~ErrorScreenHandler() = default;
 
 void ErrorScreenHandler::Show() {
-  if (!page_is_ready()) {
-    show_on_init_ = true;
-    return;
-  }
-  BaseScreenHandler::ShowScreen(kScreenId);
-  if (screen_)
-    screen_->DoShow();
-  showing_ = true;
-}
-
-void ErrorScreenHandler::Hide() {
-  showing_ = false;
-  if (screen_)
-    screen_->DoHide();
-}
-
-void ErrorScreenHandler::Bind(ErrorScreen* screen) {
-  screen_ = screen;
-  BaseScreenHandler::SetBaseScreen(screen_);
-}
-
-void ErrorScreenHandler::Unbind() {
-  screen_ = nullptr;
-  BaseScreenHandler::SetBaseScreen(nullptr);
+  base::Value::Dict data;
+  data.Set("hasUserPods", ash::LoginDisplayHost::default_host()->HasUserPods());
+  ShowInWebUI(std::move(data));
 }
 
 void ErrorScreenHandler::ShowOobeScreen(OobeScreenId screen) {
-  ShowScreen(screen);
+  // TODO(https://crbug.com/1310191): Migrate off ShowScreenDeprecated.
+  ShowScreenDeprecated(screen);
 }
 
 void ErrorScreenHandler::SetErrorStateCode(
     NetworkError::ErrorState error_state) {
-  CallJS("login.ErrorMessageScreen.setErrorState",
-         static_cast<int>(error_state));
+  CallExternalAPI("setErrorState", static_cast<int>(error_state));
 }
 
 void ErrorScreenHandler::SetErrorStateNetwork(const std::string& network_name) {
-  CallJS("login.ErrorMessageScreen.setErrorStateNetwork", network_name);
+  CallExternalAPI("setErrorStateNetwork", network_name);
 }
 
 void ErrorScreenHandler::SetGuestSigninAllowed(bool value) {
-  CallJS("login.ErrorMessageScreen.allowGuestSignin", value);
+  CallExternalAPI("allowGuestSignin", value);
 }
 
 void ErrorScreenHandler::SetOfflineSigninAllowed(bool value) {
-  CallJS("login.ErrorMessageScreen.allowOfflineLogin", value);
+  CallExternalAPI("allowOfflineLogin", value);
 }
 
 void ErrorScreenHandler::SetShowConnectingIndicator(bool value) {
-  CallJS("login.ErrorMessageScreen.showConnectingIndicator", value);
+  CallExternalAPI("showConnectingIndicator", value);
+}
+
+void ErrorScreenHandler::SetIsPersistentError(bool is_persistent) {
+  CallExternalAPI("setIsPersistentError", is_persistent);
 }
 
 void ErrorScreenHandler::SetUIState(NetworkError::UIState ui_state) {
-  CallJS("login.ErrorMessageScreen.setUIState", static_cast<int>(ui_state));
-}
-
-void ErrorScreenHandler::RegisterMessages() {
-  AddCallback("hideCaptivePortal",
-              &ErrorScreenHandler::HandleHideCaptivePortal);
-  BaseScreenHandler::RegisterMessages();
+  CallExternalAPI("setUIState", static_cast<int>(ui_state));
 }
 
 void ErrorScreenHandler::DeclareLocalizedValues(
@@ -130,23 +100,9 @@ void ErrorScreenHandler::DeclareLocalizedValues(
   builder->Add("proxySettingsMenuName",
                IDS_NETWORK_PROXY_SETTINGS_LIST_ITEM_NAME);
   builder->Add("addWiFiNetworkMenuName", IDS_NETWORK_ADD_WI_FI_LIST_ITEM_NAME);
-  network_element::AddLocalizedValuesToBuilder(builder);
-}
+  ui::network_element::AddLocalizedValuesToBuilder(builder);
 
-void ErrorScreenHandler::Initialize() {
-  if (!page_is_ready())
-    return;
-
-  if (show_on_init_) {
-    // TODO(nkostylev): Check that context initial state is properly passed.
-    Show();
-    show_on_init_ = false;
-  }
-}
-
-void ErrorScreenHandler::HandleHideCaptivePortal() {
-  if (screen_)
-    screen_->HideCaptivePortal();
+  builder->Add("offlineLogin", IDS_OFFLINE_LOGIN_HTML);
 }
 
 }  // namespace chromeos

@@ -7,16 +7,16 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/task/sequence_manager/sequence_manager.h"
 #include "base/task/sequence_manager/task_queue.h"
+#include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
-#include "third_party/blink/public/platform/web_thread_type.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/scheduler/common/single_thread_idle_task_runner.h"
 #include "third_party/blink/renderer/platform/scheduler/common/thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/common/tracing_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_type.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_scheduler_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_task_queue.h"
 
@@ -27,22 +27,29 @@ class WorkerSchedulerProxy;
 
 class PLATFORM_EXPORT NonMainThreadSchedulerImpl : public ThreadSchedulerImpl {
  public:
+  NonMainThreadSchedulerImpl(const NonMainThreadSchedulerImpl&) = delete;
+  NonMainThreadSchedulerImpl& operator=(const NonMainThreadSchedulerImpl&) =
+      delete;
   ~NonMainThreadSchedulerImpl() override;
 
   // |sequence_manager| and |proxy| must remain valid for the entire lifetime of
   // this object.
   static std::unique_ptr<NonMainThreadSchedulerImpl> Create(
-      WebThreadType thread_type,
+      ThreadType thread_type,
       base::sequence_manager::SequenceManager* sequence_manager,
       WorkerSchedulerProxy* proxy);
 
-  // Blink should use NonMainThreadSchedulerImpl::DefaultTaskQueue instead of
-  // WebThreadScheduler::DefaultTaskRunner.
-  virtual scoped_refptr<NonMainThreadTaskQueue> DefaultTaskQueue() = 0;
+  // Performs initialization that must occur after the constructor of all
+  // subclasses has run. Must be invoked before any other method. Must be
+  // invoked on the same sequence as the constructor.
+  virtual void Init() {}
 
-  // Must be called before the scheduler can be used. Does any post construction
-  // initialization needed such as initializing idle period detection.
-  void Init();
+  // Attaches the scheduler to the current thread. Must be invoked on the thread
+  // that runs tasks from this scheduler, before running tasks from this
+  // scheduler.
+  void AttachToCurrentThread();
+
+  virtual scoped_refptr<NonMainThreadTaskQueue> DefaultTaskQueue() = 0;
 
   virtual void OnTaskCompleted(
       NonMainThreadTaskQueue* worker_task_queue,
@@ -52,12 +59,7 @@ class PLATFORM_EXPORT NonMainThreadSchedulerImpl : public ThreadSchedulerImpl {
 
   // ThreadSchedulerImpl:
   scoped_refptr<base::SingleThreadTaskRunner> ControlTaskRunner() override;
-  void RegisterTimeDomain(
-      base::sequence_manager::TimeDomain* time_domain) override;
-  void UnregisterTimeDomain(
-      base::sequence_manager::TimeDomain* time_domain) override;
-  base::sequence_manager::TimeDomain* GetActiveTimeDomain() override;
-  const base::TickClock* GetTickClock() override;
+  const base::TickClock* GetTickClock() const override;
 
   // ThreadScheduler implementation.
   // TODO(yutak): Some functions are only meaningful in main thread. Move them
@@ -69,11 +71,9 @@ class PLATFORM_EXPORT NonMainThreadSchedulerImpl : public ThreadSchedulerImpl {
   void PostDelayedIdleTask(const base::Location& location,
                            base::TimeDelta delay,
                            Thread::IdleTask task) override;
-
-  std::unique_ptr<PageScheduler> CreatePageScheduler(
-      PageScheduler::Delegate*) override;
-  std::unique_ptr<RendererPauseHandle> PauseScheduler() override
-      WARN_UNUSED_RESULT;
+  std::unique_ptr<WebAgentGroupScheduler> CreateAgentGroupScheduler() override;
+  WebAgentGroupScheduler* GetCurrentAgentGroupScheduler() override;
+  [[nodiscard]] std::unique_ptr<RendererPauseHandle> PauseScheduler() override;
 
   // Returns base::TimeTicks::Now() by default.
   base::TimeTicks MonotonicallyIncreasingVirtualTime() override;
@@ -92,7 +92,9 @@ class PLATFORM_EXPORT NonMainThreadSchedulerImpl : public ThreadSchedulerImpl {
   //
   // virtual void Shutdown();
 
-  scoped_refptr<NonMainThreadTaskQueue> CreateTaskQueue(const char* name);
+  scoped_refptr<NonMainThreadTaskQueue> CreateTaskQueue(
+      const char* name,
+      bool can_be_throttled = false);
 
   scoped_refptr<base::SingleThreadTaskRunner> DeprecatedDefaultTaskRunner()
       override;
@@ -100,23 +102,24 @@ class PLATFORM_EXPORT NonMainThreadSchedulerImpl : public ThreadSchedulerImpl {
  protected:
   static void RunIdleTask(Thread::IdleTask task, base::TimeTicks deadline);
 
+  // ThreadSchedulerImpl:
+  WTF::Vector<base::OnceClosure>& GetOnTaskCompletionCallbacks() override;
+
   // |sequence_manager| must remain valid for the entire lifetime of
   // this object.
   explicit NonMainThreadSchedulerImpl(
       base::sequence_manager::SequenceManager* sequence_manager,
       TaskType default_task_type);
 
-  friend class WorkerScheduler;
+  friend class WorkerSchedulerImpl;
 
-  // Called during Init() for delayed initialization for subclasses.
-  virtual void InitImpl() = 0;
-
-  NonMainThreadSchedulerHelper* helper() { return &helper_; }
+  NonMainThreadSchedulerHelper& GetHelper() override { return helper_; }
 
  private:
   NonMainThreadSchedulerHelper helper_;
 
-  DISALLOW_COPY_AND_ASSIGN(NonMainThreadSchedulerImpl);
+  // List of callbacks to execute after the current task.
+  WTF::Vector<base::OnceClosure> on_task_completion_callbacks_;
 };
 
 }  // namespace scheduler

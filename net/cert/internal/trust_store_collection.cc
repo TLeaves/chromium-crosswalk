@@ -21,15 +21,14 @@ void TrustStoreCollection::SyncGetIssuersOf(const ParsedCertificate* cert,
   }
 }
 
-void TrustStoreCollection::GetTrust(
-    const scoped_refptr<ParsedCertificate>& cert,
-    CertificateTrust* out_trust) const {
+CertificateTrust TrustStoreCollection::GetTrust(
+    const ParsedCertificate* cert,
+    base::SupportsUserData* debug_data) const {
   // The current aggregate result.
   CertificateTrust result = CertificateTrust::ForUnspecified();
 
   for (auto* store : stores_) {
-    CertificateTrust cur_trust;
-    store->GetTrust(cert, &cur_trust);
+    CertificateTrust cur_trust = store->GetTrust(cert, debug_data);
 
     // * If any stores distrust the certificate, consider it untrusted.
     // * If multiple stores consider it trusted, use the trust result from the
@@ -41,7 +40,7 @@ void TrustStoreCollection::GetTrust(
     }
   }
 
-  *out_trust = result;
+  return result;
 }
 
 }  // namespace net

@@ -15,7 +15,7 @@ public class DownloadNotificationController extends PageController {
     private static final IUi2Locator LOCATOR_DOWNLOAD_NOTIFICATION =
             Ui2Locators.withTextContaining("needs storage access to download files");
     private static final IUi2Locator LOCATOR_CONTINUE =
-            Ui2Locators.withResEntries(android.R.id.button1);
+            Ui2Locators.withAnyResEntry(android.R.id.button1);
 
     private static final DownloadNotificationController sInstance =
             new DownloadNotificationController();
@@ -29,7 +29,8 @@ public class DownloadNotificationController extends PageController {
     }
 
     @Override
-    public boolean isCurrentPageThis() {
-        return mLocatorHelper.isOnScreen(LOCATOR_DOWNLOAD_NOTIFICATION);
+    public DownloadNotificationController verifyActive() {
+        mLocatorHelper.verifyOnScreen(LOCATOR_DOWNLOAD_NOTIFICATION);
+        return this;
     }
 }

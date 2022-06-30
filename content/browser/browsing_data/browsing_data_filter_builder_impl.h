@@ -7,8 +7,9 @@
 
 #include <set>
 
-#include "base/macros.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -16,28 +17,40 @@ class CONTENT_EXPORT BrowsingDataFilterBuilderImpl
     : public BrowsingDataFilterBuilder {
  public:
   explicit BrowsingDataFilterBuilderImpl(Mode mode);
+
+  BrowsingDataFilterBuilderImpl(const BrowsingDataFilterBuilderImpl&) = delete;
+  BrowsingDataFilterBuilderImpl& operator=(
+      const BrowsingDataFilterBuilderImpl&) = delete;
+
   ~BrowsingDataFilterBuilderImpl() override;
 
   // BrowsingDataFilterBuilder implementation:
   void AddOrigin(const url::Origin& origin) override;
   void AddRegisterableDomain(const std::string& registrable_domain) override;
-  bool IsEmptyBlacklist() override;
-  base::RepeatingCallback<bool(const GURL&)> BuildGeneralFilter() override;
+  void SetCookiePartitionKeyCollection(
+      const net::CookiePartitionKeyCollection& cookie_partition_key_collection)
+      override;
+  bool IsCrossSiteClearSiteData() const override;
+  bool MatchesAllOriginsAndDomains() override;
+  base::RepeatingCallback<bool(const GURL&)> BuildUrlFilter() override;
+  base::RepeatingCallback<bool(const url::Origin&)> BuildOriginFilter()
+      override;
   network::mojom::ClearDataFilterPtr BuildNetworkServiceFilter() override;
   network::mojom::CookieDeletionFilterPtr BuildCookieDeletionFilter() override;
   base::RepeatingCallback<bool(const std::string& site)> BuildPluginFilter()
       override;
   Mode GetMode() override;
   std::unique_ptr<BrowsingDataFilterBuilder> Copy() override;
-  bool operator==(const BrowsingDataFilterBuilder& other) override;
 
  private:
+  bool IsEqual(const BrowsingDataFilterBuilder& other) const override;
+
   Mode mode_;
 
   std::set<url::Origin> origins_;
   std::set<std::string> domains_;
-
-  DISALLOW_COPY_AND_ASSIGN(BrowsingDataFilterBuilderImpl);
+  net::CookiePartitionKeyCollection cookie_partition_key_collection_ =
+      net::CookiePartitionKeyCollection::ContainsAll();
 };
 
 }  // content

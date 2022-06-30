@@ -27,7 +27,6 @@ bool RebootShlib::IsRebootSourceSupported(
 }
 
 bool RebootShlib::RebootNow(RebootShlib::RebootSource /* reboot_source */) {
-  NOTREACHED();
   return false;
 }
 
@@ -46,4 +45,13 @@ bool RebootShlib::IsOtaForNextRebootSupported() {
 void RebootShlib::SetOtaForNextReboot() {
   NOTREACHED();
 }
+
+bool RebootShlib::IsClearOtaForNextRebootSupported() {
+  return false;
+}
+
+void RebootShlib::ClearOtaForNextReboot() {
+  NOTREACHED();
+}
+
 }  // namespace chromecast

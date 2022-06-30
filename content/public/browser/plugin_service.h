@@ -9,9 +9,13 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
+#include "ppapi/buildflags/buildflags.h"
+
+#if !BUILDFLAG(ENABLE_PLUGINS)
+#error "Plugins should be enabled"
+#endif
 
 class GURL;
 
@@ -19,15 +23,10 @@ namespace base {
 class FilePath;
 }
 
-namespace url {
-class Origin;
-}
-
 namespace content {
 
 class BrowserContext;
 class PluginServiceFilter;
-class ResourceContext;
 struct PepperPluginInfo;
 struct WebPluginInfo;
 
@@ -36,6 +35,7 @@ struct WebPluginInfo;
 // PluginList interface for querying plugin information. This must be used
 // instead of that to avoid doing expensive disk operations on the IO/UI
 // threads.
+// TODO(http://crbug.com/990013): Only use this on the UI thread.
 class CONTENT_EXPORT PluginService {
  public:
   using GetPluginsCallback =
@@ -70,12 +70,9 @@ class CONTENT_EXPORT PluginService {
   // Gets plugin info for an individual plugin and filters the plugins using
   // the |context| and renderer IDs. This will report whether the data is stale
   // via |is_stale| and returns whether or not the plugin can be found.
-  // This can be called from any thread.
+  // This must be called from the UI thread.
   virtual bool GetPluginInfo(int render_process_id,
-                             int render_frame_id,
-                             ResourceContext* context,
                              const GURL& url,
-                             const url::Origin& main_frame_origin,
                              const std::string& mime_type,
                              bool allow_wildcard,
                              bool* is_stale,
@@ -93,7 +90,7 @@ class CONTENT_EXPORT PluginService {
   // the path doesn't identify a plugin, or the plugin has no display name,
   // this will attempt to generate a display name from the path.
   // This can be called from any thread.
-  virtual base::string16 GetPluginDisplayNameByPath(
+  virtual std::u16string GetPluginDisplayNameByPath(
       const base::FilePath& plugin_path) = 0;
 
   // Asynchronously loads plugins if necessary and then calls back to the

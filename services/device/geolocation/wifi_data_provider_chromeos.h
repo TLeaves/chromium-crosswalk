@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "services/device/geolocation/wifi_data_provider.h"
 #include "services/device/geolocation/wifi_polling_policy.h"
 
@@ -18,11 +17,15 @@ class WifiDataProviderChromeOs : public WifiDataProvider {
  public:
   WifiDataProviderChromeOs();
 
+  WifiDataProviderChromeOs(const WifiDataProviderChromeOs&) = delete;
+  WifiDataProviderChromeOs& operator=(const WifiDataProviderChromeOs&) = delete;
+
   // WifiDataProvider
   void StartDataProvider() override;
   void StopDataProvider() override;
   bool DelayedByPolicy() override;
   bool GetData(WifiData* data) override;
+  void ForceRescan() override;
 
  private:
   friend class GeolocationChromeOsWifiDataProviderTest;
@@ -61,8 +64,6 @@ class WifiDataProviderChromeOs : public WifiDataProvider {
 
   // Whether our first scan was delayed due to polling policy. (client thread)
   bool first_scan_delayed_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(WifiDataProviderChromeOs);
 };
 
 }  // namespace device

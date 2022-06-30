@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/macros.h"
+#include "base/callback_forward.h"
 #include "base/supports_user_data.h"
 #include "base/time/time.h"
 #include "url/gurl.h"
@@ -18,18 +18,28 @@ class Value;
 
 namespace web {
 
+class BrowserState;
+class WebFrameInternal;
+
+// Default timeout in milliseconds for |CallJavaScriptFunction|.
+extern const double kJavaScriptFunctionCallDefaultTimeout;
+
 class WebFrame : public base::SupportsUserData {
  public:
   // The frame identifier which uniquely identifies this frame across the
   // application's lifetime.
   virtual std::string GetFrameId() const = 0;
   // Whether or not the receiver represents the main frame of the webpage.
+  // TODO(crbug.com/1300655): Rename IsMainFrame to IsAnyMainFrame
   virtual bool IsMainFrame() const = 0;
   // The security origin associated with this frame.
   virtual GURL GetSecurityOrigin() const = 0;
   // Whether or not the receiver represents a frame which supports calling
   // JavaScript functions using |CallJavaScriptFunction()|.
   virtual bool CanCallJavaScriptFunction() const = 0;
+
+  // Returns the BrowserState associated with this WebFrame.
+  virtual BrowserState* GetBrowserState() = 0;
 
   // Calls the JavaScript function |name| in the frame context. For example, to
   // call __gCrWeb.formHandlers.trackFormMutations(delay), pass
@@ -61,12 +71,37 @@ class WebFrame : public base::SupportsUserData {
       base::OnceCallback<void(const base::Value*)> callback,
       base::TimeDelta timeout) = 0;
 
+  // Executes the given |script| and returns whether the script was run.
+  virtual bool ExecuteJavaScript(const std::u16string& script) = 0;
+
+  // Executes the given |script| and returns whether the script was run.
+  // If the script is successfully executed, |callback| is called with
+  // the result.
+  virtual bool ExecuteJavaScript(
+      const std::u16string& script,
+      base::OnceCallback<void(const base::Value*)> callback) = 0;
+
+  using ExecuteJavaScriptCallbackWithError =
+      base::OnceCallback<void(const base::Value*, bool)>;
+  // Executes the given |script| and returns whether the script was run.
+  // If the script is successfully executed, |callback| is called with
+  // the result. Otherwise, |callback| is called with the bool. The
+  // bool parameter in the |callback| is used to signal that an error
+  // during the execution of the |script| occurred.
+  virtual bool ExecuteJavaScript(
+      const std::u16string& script,
+      ExecuteJavaScriptCallbackWithError callback) = 0;
+
+  // Returns the WebFrameInternal instance for this object.
+  virtual WebFrameInternal* GetWebFrameInternal() = 0;
+
+  WebFrame(const WebFrame&) = delete;
+  WebFrame& operator=(const WebFrame&) = delete;
+
   ~WebFrame() override {}
 
  protected:
   WebFrame() {}
-
-  DISALLOW_COPY_AND_ASSIGN(WebFrame);
 };
 
 }  // namespace web

@@ -4,8 +4,10 @@
 
 #include "base/threading/platform_thread_internal_posix.h"
 
+#include <ostream>
+
 #include "base/containers/adapters.h"
-#include "base/logging.h"
+#include "base/notreached.h"
 
 namespace base {
 

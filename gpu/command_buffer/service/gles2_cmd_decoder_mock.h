@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "gpu/command_buffer/common/context_creation_attribs.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
@@ -40,6 +39,10 @@ class MockGLES2Decoder : public GLES2Decoder {
   MockGLES2Decoder(DecoderClient* client,
                    CommandBufferServiceBase* command_buffer_service,
                    Outputter* outputter);
+
+  MockGLES2Decoder(const MockGLES2Decoder&) = delete;
+  MockGLES2Decoder& operator=(const MockGLES2Decoder&) = delete;
+
   ~MockGLES2Decoder() override;
 
   base::WeakPtr<DecoderContext> AsWeakPtr() override;
@@ -129,6 +132,14 @@ class MockGLES2Decoder : public GLES2Decoder {
                     unsigned format,
                     int width,
                     int height));
+  MOCK_METHOD7(ClearCompressedTextureLevel3D,
+               bool(Texture* texture,
+                    unsigned target,
+                    int level,
+                    unsigned format,
+                    int width,
+                    int height,
+                    int depth));
   MOCK_METHOD1(IsCompressedTextureFormat,
                bool(unsigned format));
   MOCK_METHOD8(ClearLevel3D,
@@ -178,8 +189,6 @@ class MockGLES2Decoder : public GLES2Decoder {
 
  private:
   base::WeakPtrFactory<MockGLES2Decoder> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MockGLES2Decoder);
 };
 
 }  // namespace gles2

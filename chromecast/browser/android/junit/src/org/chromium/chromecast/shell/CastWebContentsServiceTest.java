@@ -21,6 +21,7 @@ import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.PatternMatcher;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -92,6 +93,12 @@ public class CastWebContentsServiceTest {
         mShadowService = Shadows.shadowOf(mService);
     }
 
+    @After
+    public void tearDown() {
+        mServiceLifecycle.unbind();
+        mServiceLifecycle.destroy();
+    }
+
     @Test
     public void testForegroundedAfterBind() {
         mServiceLifecycle.bind();
@@ -131,13 +138,6 @@ public class CastWebContentsServiceTest {
         mServiceLifecycle.bind().unbind();
         assertTrue(mShadowService.getNotificationShouldRemoved());
         assertTrue(mShadowService.isForegroundStopped());
-    }
-
-    @Test
-    public void testBroadcastsComponentClosedWhenUnbind() {
-        mServiceLifecycle.bind();
-        IntentFilter filter = filterFor(CastWebContentsIntentUtils.ACTION_ACTIVITY_STOPPED);
-        expectBroadcastedIntent(filter, () -> mServiceLifecycle.unbind());
     }
 
     @Test

@@ -2,52 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/** @implements {settings.AppearanceBrowserProxy} */
-class TestPersonalizationBrowserProxy extends TestBrowserProxy {
-  constructor() {
-    super([
-      'isWallpaperSettingVisible',
-      'isWallpaperPolicyControlled',
-      'openWallpaperManager',
-    ]);
+import {Router, routes, WallpaperBrowserProxyImpl} from 'chrome://os-settings/chromeos/os_settings.js';
+import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {waitAfterNextRender} from 'chrome://test/test_util.js';
 
-    /** @private */
-    this.isWallpaperSettingVisible_ = true;
+import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
 
-    /** @private */
-    this.isWallpaperPolicyControlled_ = false;
-  }
-
-  /** @override */
-  isWallpaperSettingVisible() {
-    this.methodCalled('isWallpaperSettingVisible');
-    return Promise.resolve(this.isWallpaperSettingVisible_);
-  }
-
-  /** @override */
-  isWallpaperPolicyControlled() {
-    this.methodCalled('isWallpaperPolicyControlled');
-    return Promise.resolve(this.isWallpaperPolicyControlled_);
-  }
-
-  /** @override */
-  openWallpaperManager() {
-    this.methodCalled('openWallpaperManager');
-  }
-
-  /** @param {boolean} Whether the wallpaper is policy controlled. */
-  setIsWallpaperPolicyControlled(isPolicyControlled) {
-    this.isWallpaperPolicyControlled_ = isPolicyControlled;
-  }
-}
+import {TestWallpaperBrowserProxy} from './test_wallpaper_browser_proxy.js';
 
 let personalizationPage = null;
 
-/** @type {?TestPersonalizationBrowserProxy} */
-let personalizationBrowserProxy = null;
+/** @type {?TestWallpaperBrowserProxy} */
+let WallpaperBrowserProxy = null;
 
 function createPersonalizationPage() {
-  personalizationBrowserProxy.reset();
+  WallpaperBrowserProxy.reset();
   PolymerTest.clearBody();
 
   personalizationPage = document.createElement('settings-personalization-page');
@@ -69,67 +39,117 @@ function createPersonalizationPage() {
   });
 
   document.body.appendChild(personalizationPage);
-  Polymer.dom.flush();
+  flush();
 }
 
 suite('PersonalizationHandler', function() {
   suiteSetup(function() {
+    assertFalse(
+        loadTimeData.getBoolean('isPersonalizationHubEnabled'),
+        'this test should only run with PersonalizationHub disabled');
     testing.Test.disableAnimationsAndTransitions();
   });
 
   setup(function() {
-    personalizationBrowserProxy = new TestPersonalizationBrowserProxy();
-    settings.PersonalizationBrowserProxyImpl.instance_ =
-        personalizationBrowserProxy;
+    WallpaperBrowserProxy = new TestWallpaperBrowserProxy();
+    WallpaperBrowserProxyImpl.setInstanceForTesting(WallpaperBrowserProxy);
     createPersonalizationPage();
   });
 
   teardown(function() {
     personalizationPage.remove();
+    Router.getInstance().resetRouteForTesting();
   });
 
-  test('wallpaperManager', function() {
-    personalizationBrowserProxy.setIsWallpaperPolicyControlled(false);
+  test('wallpaperManager', async () => {
+    WallpaperBrowserProxy.setIsWallpaperPolicyControlled(false);
     // TODO(dschuyler): This should notice the policy change without needing
     // the page to be recreated.
     createPersonalizationPage();
-    return personalizationBrowserProxy.whenCalled('isWallpaperPolicyControlled')
-        .then(() => {
-          const button = personalizationPage.$.wallpaperButton;
-          assertTrue(!!button);
-          assertFalse(button.disabled);
-          button.click();
-          return personalizationBrowserProxy.whenCalled('openWallpaperManager');
-        });
+    await WallpaperBrowserProxy.whenCalled('isWallpaperPolicyControlled');
+    const button =
+        personalizationPage.shadowRoot.getElementById('wallpaperButton');
+    assertTrue(!!button);
+    assertFalse(button.disabled);
+    button.click();
+    await WallpaperBrowserProxy.whenCalled('openWallpaperManager');
   });
 
   test('wallpaperSettingVisible', function() {
-    personalizationPage.set('pageVisibility.setWallpaper', false);
-    return personalizationBrowserProxy.whenCalled('isWallpaperSettingVisible')
-        .then(function() {
-          Polymer.dom.flush();
-          assertTrue(personalizationPage.$$('#wallpaperButton').hidden);
-        });
+    personalizationPage.showWallpaperRow_ = false;
+    flush();
+    assertTrue(personalizationPage.shadowRoot.querySelector('#wallpaperButton')
+                   .hidden);
   });
 
-  test('wallpaperPolicyControlled', function() {
+  test('wallpaperPolicyControlled', async () => {
     // Should show the wallpaper policy indicator and disable the toggle
     // button if the wallpaper is policy controlled.
-    personalizationBrowserProxy.setIsWallpaperPolicyControlled(true);
+    WallpaperBrowserProxy.setIsWallpaperPolicyControlled(true);
     createPersonalizationPage();
-    return personalizationBrowserProxy.whenCalled('isWallpaperPolicyControlled')
-        .then(function() {
-          Polymer.dom.flush();
-          assertFalse(
-              personalizationPage.$$('#wallpaperPolicyIndicator').hidden);
-          assertTrue(personalizationPage.$$('#wallpaperButton').disabled);
-        });
+    await WallpaperBrowserProxy.whenCalled('isWallpaperPolicyControlled');
+    flush();
+    assertFalse(personalizationPage.shadowRoot
+                    .querySelector('#wallpaperPolicyIndicator')
+                    .hidden);
+    assertTrue(personalizationPage.shadowRoot.querySelector('#wallpaperButton')
+                   .disabled);
+  });
+
+  test('Deep link to open wallpaper button', async () => {
+    const params = new URLSearchParams();
+    params.append('settingId', '500');
+    Router.getInstance().navigateTo(routes.PERSONALIZATION, params);
+
+    const deepLinkElement =
+        personalizationPage.shadowRoot.getElementById('wallpaperButton')
+            .shadowRoot.querySelector('#icon');
+    await waitAfterNextRender(deepLinkElement);
+    assertEquals(
+        deepLinkElement, getDeepActiveElement(),
+        'Wallpaper button should be focused for settingId=500.');
   });
 
   test('changePicture', function() {
-    const row = personalizationPage.$.changePictureRow;
+    const row =
+        personalizationPage.shadowRoot.getElementById('changePictureRow');
     assertTrue(!!row);
     row.click();
-    assertEquals(settings.routes.CHANGE_PICTURE, settings.getCurrentRoute());
+    assertEquals(routes.CHANGE_PICTURE, Router.getInstance().getCurrentRoute());
+  });
+
+  test('ambientMode', function() {
+    const isGuest = loadTimeData.getBoolean('isGuest');
+    const isAmbientModeEnabled = loadTimeData.getBoolean('isAmbientModeEnabled');
+
+    if(!isGuest && isAmbientModeEnabled){
+      const row =
+          personalizationPage.shadowRoot.querySelector('#ambientModeRow');
+      assertTrue(!!row);
+      row.click();
+      assertEquals(routes.AMBIENT_MODE, Router.getInstance().getCurrentRoute());
+    }
+  });
+
+  test('Deep link to change account picture', async () => {
+    const params = new URLSearchParams();
+    params.append('settingId', '503');
+    Router.getInstance().navigateTo(routes.CHANGE_PICTURE, params);
+
+    flush();
+
+    await waitAfterNextRender(personalizationPage);
+
+    const changePicturePage =
+        personalizationPage.shadowRoot.querySelector('settings-change-picture');
+    assertTrue(!!changePicturePage);
+    const deepLinkElement =
+        changePicturePage.shadowRoot.querySelector('#pictureList')
+            .shadowRoot.querySelector('#selector')
+            .$$('[class="iron-selected"]');
+    await waitAfterNextRender(deepLinkElement);
+    assertEquals(
+        deepLinkElement, getDeepActiveElement(),
+        'Account picture elem should be focused for settingId=503.');
   });
 });

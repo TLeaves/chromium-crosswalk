@@ -6,6 +6,8 @@ package org.chromium.content.browser;
 
 import android.support.test.InstrumentationRegistry;
 
+import androidx.test.filters.SmallTest;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -15,6 +17,7 @@ import org.junit.runner.RunWith;
 import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.DisabledTest;
+import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
@@ -54,23 +57,21 @@ public class WebContentsObserverAndroidTest {
     }
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         ContentShellActivity activity = mActivityTestRule.launchContentShellWithUrl(null);
         Assert.assertNotNull(activity);
         mActivityTestRule.waitForActiveShellToBeDoneLoading();
     }
 
-    /*
+    @Test
     @SmallTest
     @Feature({"Navigation"})
-    */
-    @Test
     @DisabledTest(message = "crbug.com/411931")
     public void testDidFirstVisuallyNonEmptyPaint() throws Throwable {
         TestWebContentsObserver observer =
                 TestThreadUtils.runOnUiThreadBlocking(new Callable<TestWebContentsObserver>() {
                     @Override
-                    public TestWebContentsObserver call() throws Exception {
+                    public TestWebContentsObserver call() {
                         return new TestWebContentsObserver(mActivityTestRule.getWebContents());
                     }
                 });

@@ -7,7 +7,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "components/subresource_filter/core/mojom/subresource_filter.mojom.h"
 
 namespace subresource_filter {
@@ -19,6 +18,12 @@ namespace testing {
 class TestActivationStateCallbackReceiver {
  public:
   TestActivationStateCallbackReceiver();
+
+  TestActivationStateCallbackReceiver(
+      const TestActivationStateCallbackReceiver&) = delete;
+  TestActivationStateCallbackReceiver& operator=(
+      const TestActivationStateCallbackReceiver&) = delete;
+
   ~TestActivationStateCallbackReceiver();
 
   base::OnceCallback<void(mojom::ActivationState)> GetCallback();
@@ -33,9 +38,7 @@ class TestActivationStateCallbackReceiver {
   mojom::ActivationState last_activation_state_;
   int callback_count_ = 0;
 
-  base::Closure quit_closure_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestActivationStateCallbackReceiver);
+  base::OnceClosure quit_closure_;
 };
 
 }  // namespace testing

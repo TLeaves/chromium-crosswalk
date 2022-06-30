@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/macros.h"
+#include "base/files/file_path.h"
 #include "extensions/shell/test/shell_test.h"
 
 namespace extensions {
@@ -20,12 +20,21 @@ class ResultCatcher;
 class ShellApiTest : public AppShellTest {
  public:
   ShellApiTest();
+
+  ShellApiTest(const ShellApiTest&) = delete;
+  ShellApiTest& operator=(const ShellApiTest&) = delete;
+
   ~ShellApiTest() override;
 
   // Loads an unpacked extension. Returns an instance of the extension that was
   // just loaded.
   // |extension_dir| should be a subpath under extensions/test/data.
   const Extension* LoadExtension(const std::string& extension_dir);
+
+  // Loads an unpacked extension. Returns an instance of the extension that was
+  // just loaded.
+  // |extension_path| should be an absolute path to the extension.
+  const Extension* LoadExtension(const base::FilePath& extension_path);
 
   // Loads and launches an unpacked platform app. Returns an instance of the
   // extension that was just loaded.
@@ -50,8 +59,6 @@ class ShellApiTest : public AppShellTest {
 
  private:
   bool RunTest(const Extension* extension, ResultCatcher* catcher);
-
-  DISALLOW_COPY_AND_ASSIGN(ShellApiTest);
 };
 
 }  // namespace extensions

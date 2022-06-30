@@ -6,6 +6,8 @@
 
 #include <stddef.h>
 
+#include <string>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
@@ -14,10 +16,9 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/stl_util.h"
-#include "base/strings/string16.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/stringprintf.h"
-#include "base/task_runner_util.h"
+#include "base/task/task_runner_util.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
 #include "chrome/browser/extensions/activity_log/activity_database.h"
 #include "chrome/browser/extensions/activity_log/activity_log_task_runner.h"
@@ -48,7 +49,7 @@ const char* const FullStreamUIPolicy::kTableFieldTypes[] = {
   "LONGVARCHAR", "LONGVARCHAR", "LONGVARCHAR", "LONGVARCHAR"
 };
 const int FullStreamUIPolicy::kTableFieldCount =
-    base::size(FullStreamUIPolicy::kTableContentFields);
+    std::size(FullStreamUIPolicy::kTableContentFields);
 
 FullStreamUIPolicy::FullStreamUIPolicy(Profile* profile)
     : ActivityLogDatabasePolicy(
@@ -61,7 +62,7 @@ bool FullStreamUIPolicy::InitDatabase(sql::Database* db) {
   // Create the unified activity log entry table.
   return ActivityDatabase::InitializeTable(db, kTableName, kTableContentFields,
                                            kTableFieldTypes,
-                                           base::size(kTableContentFields));
+                                           std::size(kTableContentFields));
 }
 
 bool FullStreamUIPolicy::FlushDatabase(sql::Database* db) {
@@ -135,8 +136,8 @@ std::unique_ptr<Action::ActionVector> FullStreamUIPolicy::DoReadFilteredData(
   }
 
   // Build up the query based on which parameters were specified.
-  std::string where_str = "";
-  std::string where_next = "";
+  std::string where_str;
+  std::string where_next;
   if (!extension_id.empty()) {
     where_str += "extension_id=?";
     where_next = " AND ";
@@ -186,11 +187,11 @@ std::unique_ptr<Action::ActionVector> FullStreamUIPolicy::DoReadFilteredData(
 
   // Execute the query and get results.
   while (query.is_valid() && query.Step()) {
-    scoped_refptr<Action> action =
-        new Action(query.ColumnString(0),
-                   base::Time::FromInternalValue(query.ColumnInt64(1)),
-                   static_cast<Action::ActionType>(query.ColumnInt(2)),
-                   query.ColumnString(3), query.ColumnInt64(9));
+    auto action = base::MakeRefCounted<Action>(
+        query.ColumnString(0),
+        base::Time::FromInternalValue(query.ColumnInt64(1)),
+        static_cast<Action::ActionType>(query.ColumnInt(2)),
+        query.ColumnString(3), query.ColumnInt64(9));
 
     if (query.GetColumnType(4) != sql::ColumnType::kNull) {
       std::unique_ptr<base::Value> parsed_value =

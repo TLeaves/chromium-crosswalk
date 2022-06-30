@@ -5,18 +5,10 @@
 import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("mojom") {
-  sources = [
-    "file_patcher.mojom",
-  ]
+  sources = [ "file_patcher.mojom" ]
 
   public_deps = [
-    ":constants",
     "//mojo/public/mojom/base",
-  ]
-}
-
-mojom("constants") {
-  sources = [
-    "constants.mojom",
+    "//sandbox/policy/mojom",
   ]
 }

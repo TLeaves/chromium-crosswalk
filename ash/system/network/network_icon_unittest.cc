@@ -7,16 +7,17 @@
 #include <memory>
 #include <set>
 
+#include "ash/public/cpp/network_config_service.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/network/active_network_icon.h"
+#include "ash/system/network/tray_network_state_model.h"
+#include "ash/test/ash_test_base.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
-#include "base/test/scoped_task_environment.h"
+#include "chromeos/ash/components/network/network_state_test_helper.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/network_state_test_helper.h"
 #include "chromeos/network/tether_constants.h"
 #include "chromeos/services/network_config/public/cpp/cros_network_config_test_helper.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/cros_system_api/dbus/shill/dbus-constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image_unittest_util.h"
@@ -33,22 +34,27 @@ namespace ash {
 
 namespace network_icon {
 
-class NetworkIconTest : public testing::Test {
+class NetworkIconTest : public AshTestBase {
  public:
   NetworkIconTest() = default;
+
+  NetworkIconTest(const NetworkIconTest&) = delete;
+  NetworkIconTest& operator=(const NetworkIconTest&) = delete;
+
   ~NetworkIconTest() override = default;
 
   void SetUp() override {
+    AshTestBase::SetUp();
     SetUpDefaultNetworkState();
-    network_state_model_ = std::make_unique<TrayNetworkStateModel>(
-        network_config_helper_.connector());
-    active_network_icon_ = std::make_unique<ActiveNetworkIcon>(
-        network_config_helper_.connector(), network_state_model_.get());
+    network_state_model_ = std::make_unique<TrayNetworkStateModel>();
+    active_network_icon_ =
+        std::make_unique<ActiveNetworkIcon>(network_state_model_.get());
   }
 
   void TearDown() override {
     active_network_icon_.reset();
     PurgeNetworkIconCache(std::set<std::string>());
+    AshTestBase::TearDown();
   }
 
   std::string ConfigureService(const std::string& shill_json_string) {
@@ -86,7 +92,7 @@ class NetworkIconTest : public testing::Test {
       NetworkType type,
       ConnectionStateType connection_state,
       int signal_strength) {
-    return helper().CreateStandaloneNetworkProperties(
+    return network_config_helper_.CreateStandaloneNetworkProperties(
         id, type, connection_state, signal_strength);
   }
 
@@ -150,7 +156,6 @@ class NetworkIconTest : public testing::Test {
   IconType icon_type_ = ICON_TYPE_TRAY_REGULAR;
 
  private:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
   chromeos::network_config::CrosNetworkConfigTestHelper network_config_helper_;
   std::unique_ptr<TrayNetworkStateModel> network_state_model_;
   std::unique_ptr<ActiveNetworkIcon> active_network_icon_;
@@ -159,8 +164,6 @@ class NetworkIconTest : public testing::Test {
   std::string wifi1_path_;
   std::string wifi2_path_;
   std::string cellular_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkIconTest);
 };
 
 // This tests that the correct icons are being generated for the correct
@@ -176,12 +179,6 @@ TEST_F(NetworkIconTest, CompareImagesByNetworkType_NotVisible) {
   NetworkStatePropertiesPtr cellular_network =
       CreateStandaloneNetworkProperties("cellular", NetworkType::kCellular,
                                         ConnectionStateType::kNotConnected, 50);
-
-  NetworkStatePropertiesPtr wimax_network = CreateStandaloneNetworkProperties(
-      "wimax", NetworkType::kWiMAX, ConnectionStateType::kNotConnected, 50);
-
-  EXPECT_TRUE(gfx::test::AreImagesEqual(ImageForNetwork(wifi_network.get()),
-                                        ImageForNetwork(wimax_network.get())));
 
   NetworkStatePropertiesPtr tether_network = CreateStandaloneNetworkProperties(
       "tether", NetworkType::kTether, ConnectionStateType::kNotConnected, 50);

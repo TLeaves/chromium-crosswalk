@@ -17,6 +17,7 @@
 #include "device/fido/ctap_get_assertion_request.h"
 #include "device/fido/ctap_make_credential_request.h"
 #include "device/fido/fido_constants.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/microsoft_webauthn/webauthn.h"
 
 namespace device {
@@ -39,6 +40,11 @@ class COMPONENT_EXPORT(DEVICE_FIDO) WinWebAuthnApi {
   // false, none of the other methods on this instance may be called.
   virtual bool IsAvailable() const = 0;
 
+  // Returns whether the API is available and supports the
+  // |GetPlatformCredentialList| and |FreePlatformCredentialList| methods.
+  // This should be preferred to checking the API version.
+  virtual bool SupportsSilentDiscovery() const = 0;
+
   virtual HRESULT IsUserVerifyingPlatformAuthenticatorAvailable(
       BOOL* available) = 0;
 
@@ -60,36 +66,40 @@ class COMPONENT_EXPORT(DEVICE_FIDO) WinWebAuthnApi {
 
   virtual HRESULT CancelCurrentOperation(GUID* cancellation_id) = 0;
 
+  virtual HRESULT GetPlatformCredentialList(
+      PCWEBAUTHN_GET_CREDENTIALS_OPTIONS options,
+      PWEBAUTHN_CREDENTIAL_DETAILS_LIST* credentials) = 0;
+
   virtual PCWSTR GetErrorName(HRESULT hr) = 0;
 
   virtual void FreeCredentialAttestation(PWEBAUTHN_CREDENTIAL_ATTESTATION) = 0;
 
   virtual void FreeAssertion(PWEBAUTHN_ASSERTION pWebAuthNAssertion) = 0;
 
+  virtual void FreePlatformCredentialList(
+      PWEBAUTHN_CREDENTIAL_DETAILS_LIST credentials) = 0;
+
   virtual int Version() = 0;
 
  protected:
   WinWebAuthnApi();
-
- private:
-  friend class ScopedFakeWinWebAuthnApi;
-  static void SetDefaultForTesting(WinWebAuthnApi* api);
-  static void ClearDefaultForTesting();
 };
 
 std::pair<CtapDeviceResponseCode,
-          base::Optional<AuthenticatorMakeCredentialResponse>>
+          absl::optional<AuthenticatorMakeCredentialResponse>>
 AuthenticatorMakeCredentialBlocking(WinWebAuthnApi* webauthn_api,
                                     HWND h_wnd,
                                     GUID cancellation_id,
-                                    CtapMakeCredentialRequest request);
+                                    CtapMakeCredentialRequest request,
+                                    MakeCredentialOptions request_options);
 
 std::pair<CtapDeviceResponseCode,
-          base::Optional<AuthenticatorGetAssertionResponse>>
+          absl::optional<AuthenticatorGetAssertionResponse>>
 AuthenticatorGetAssertionBlocking(WinWebAuthnApi* webauthn_api,
                                   HWND h_wnd,
                                   GUID cancellation_id,
-                                  CtapGetAssertionRequest request);
+                                  CtapGetAssertionRequest request,
+                                  CtapGetAssertionOptions request_options);
 
 }  // namespace device
 

@@ -4,12 +4,15 @@
 
 #include "components/subresource_filter/content/browser/subresource_filter_observer_manager.h"
 
+#include "base/observer_list.h"
 #include "components/subresource_filter/core/mojom/subresource_filter.mojom.h"
 
 namespace subresource_filter {
 
 SubresourceFilterObserverManager::SubresourceFilterObserverManager(
-    content::WebContents* web_contents) {}
+    content::WebContents* web_contents)
+    : content::WebContentsUserData<SubresourceFilterObserverManager>(
+          *web_contents) {}
 
 SubresourceFilterObserverManager::~SubresourceFilterObserverManager() {
   for (auto& observer : observers_)
@@ -28,9 +31,9 @@ void SubresourceFilterObserverManager::RemoveObserver(
 
 void SubresourceFilterObserverManager::NotifySafeBrowsingChecksComplete(
     content::NavigationHandle* navigation_handle,
-    const SubresourceFilterObserver::SafeBrowsingCheckResults& results) {
+    const SubresourceFilterSafeBrowsingClient::CheckResult& result) {
   for (auto& observer : observers_) {
-    observer.OnSafeBrowsingChecksComplete(navigation_handle, results);
+    observer.OnSafeBrowsingChecksComplete(navigation_handle, result);
   }
 }
 
@@ -44,19 +47,18 @@ void SubresourceFilterObserverManager::NotifyPageActivationComputed(
 
 void SubresourceFilterObserverManager::NotifySubframeNavigationEvaluated(
     content::NavigationHandle* navigation_handle,
-    LoadPolicy load_policy,
+    LoadPolicy load_policy) {
+  for (auto& observer : observers_)
+    observer.OnSubframeNavigationEvaluated(navigation_handle, load_policy);
+}
+
+void SubresourceFilterObserverManager::NotifyIsAdSubframeChanged(
+    content::RenderFrameHost* render_frame_host,
     bool is_ad_subframe) {
   for (auto& observer : observers_)
-    observer.OnSubframeNavigationEvaluated(navigation_handle, load_policy,
-                                           is_ad_subframe);
+    observer.OnIsAdSubframeChanged(render_frame_host, is_ad_subframe);
 }
 
-void SubresourceFilterObserverManager::NotifyAdSubframeDetected(
-    content::RenderFrameHost* render_frame_host) {
-  for (auto& observer : observers_)
-    observer.OnAdSubframeDetected(render_frame_host);
-}
-
-WEB_CONTENTS_USER_DATA_KEY_IMPL(SubresourceFilterObserverManager)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(SubresourceFilterObserverManager);
 
 }  // namespace subresource_filter

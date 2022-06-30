@@ -11,7 +11,7 @@
 #include "components/strings/grit/components_strings.h"
 #import "ios/chrome/browser/ui/material_components/activity_indicator.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 #import "ios/third_party/material_components_ios/src/components/ActivityIndicator/src/MaterialActivityIndicator.h"
 #import "ios/third_party/material_components_ios/src/components/Buttons/src/MaterialButtons.h"
 #import "ios/third_party/material_components_ios/src/components/Dialogs/src/MaterialDialogs.h"
@@ -47,7 +47,7 @@ const CGFloat kPrefHeight = 300;
   NSString* _title;
   // Callback for the cancel button.
   ProceduralBlock _cancelHandler;
-  // View Controller which will be displayed on |baseViewController|.
+  // View Controller which will be displayed on `baseViewController`.
   UIViewController* _presentedViewController;
 }
 
@@ -68,7 +68,7 @@ const CGFloat kPrefHeight = 300;
   MDCDialogTransitionController* _transitionDelegate;
 }
 
-// Initializes with the |title| of the dialog and the |coordinator| which will
+// Initializes with the `title` of the dialog and the `coordinator` which will
 // be notified if the cancel callback occurs.
 - (instancetype)initWithTitle:(NSString*)title
                   coordinator:(LoadingAlertCoordinator*)coordinator;

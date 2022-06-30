@@ -8,15 +8,11 @@
 #import <Foundation/Foundation.h>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
-#include "base/scoped_observer.h"
+#include "base/scoped_observation.h"
+#include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_service_observer.h"
 
-namespace syncer {
-class SyncService;
-}
-
-@protocol SyncObserverModelBridge<NSObject>
+@protocol SyncObserverModelBridge <NSObject>
 - (void)onSyncStateChanged;
 @optional
 - (void)onSyncConfigurationCompleted;
@@ -29,6 +25,9 @@ class SyncObserverBridge : public syncer::SyncServiceObserver {
   SyncObserverBridge(id<SyncObserverModelBridge> delegate,
                      syncer::SyncService* service);
 
+  SyncObserverBridge(const SyncObserverBridge&) = delete;
+  SyncObserverBridge& operator=(const SyncObserverBridge&) = delete;
+
   ~SyncObserverBridge() override;
 
   // syncer::SyncServiceObserver implementation:
@@ -37,10 +36,8 @@ class SyncObserverBridge : public syncer::SyncServiceObserver {
 
  private:
   __weak id<SyncObserverModelBridge> delegate_ = nil;
-  ScopedObserver<syncer::SyncService, syncer::SyncServiceObserver>
-      scoped_observer_;
-
-  DISALLOW_COPY_AND_ASSIGN(SyncObserverBridge);
+  base::ScopedObservation<syncer::SyncService, syncer::SyncServiceObserver>
+      scoped_observation_{this};
 };
 
 #endif  // IOS_CHROME_BROWSER_SYNC_SYNC_OBSERVER_BRIDGE_H_

@@ -17,15 +17,12 @@ class PersonalDataManager;
     : AutofillEditTableViewController
 
 // Initializes a AutofillCreditCardEditTableViewController with
-// |creditCard| and |dataManager|. These cannot be null.
+// `creditCard` and `dataManager`. These cannot be null.
 - (instancetype)initWithCreditCard:(const autofill::CreditCard&)creditCard
                personalDataManager:(autofill::PersonalDataManager*)dataManager
     NS_DESIGNATED_INITIALIZER;
 
-- (instancetype)initWithTableViewStyle:(UITableViewStyle)style
-                           appBarStyle:
-                               (ChromeTableViewControllerStyle)appBarStyle
-    NS_UNAVAILABLE;
+- (instancetype)initWithStyle:(UITableViewStyle)style NS_UNAVAILABLE;
 
 @end
 

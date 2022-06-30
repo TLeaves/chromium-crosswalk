@@ -2,38 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// clang-format off
+import {FocusRowBehavior} from 'chrome://resources/js/cr/ui/focus_row_behavior.m.js';
+import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {down, pressAndReleaseKeyOn, up} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
+import {html, Polymer} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {eventToPromise, waitAfterNextRender} from 'chrome://test/test_util.js';
+
+// clang-format on
+
 suite('cr-focus-row-behavior-test', function() {
   /** @type {FocusableIronListItemElement} */ let testElement;
 
   suiteSetup(function() {
-    document.body.innerHTML = `
-      <dom-module id="button-three">
-        <template>
-          <button>
-            fake button three
-          </button>
-        </template>
-      </dom-module>
-
-      <dom-module id="focus-row-element">
-        <template>
-          <div id="container" focus-row-container>
-            <span>fake text</span>
-            <button id="control" focus-row-control focus-type='fake-btn'>
-              fake button
-            </button>
-            <button id="controlTwo" focus-row-control focus-type='fake-btn-two'>
-              fake button two
-            </button>
-            <button-three focus-row-control focus-type='fake-btn-three'>
-            </button-three>
-          </div>
-        </template>
-      </dom-module>
-    `;
-
     Polymer({
       is: 'button-three',
+
+      _template: html`
+        <button>
+          fake button three
+        </button>
+      `,
 
       /** @return {!Element} */
       getFocusableElement: function() {
@@ -43,7 +32,22 @@ suite('cr-focus-row-behavior-test', function() {
 
     Polymer({
       is: 'focus-row-element',
-      behaviors: [cr.ui.FocusRowBehavior],
+
+      _template: html`
+        <div id="container" focus-row-container>
+          <span>fake text</span>
+          <button id="control" focus-row-control focus-type='fake-btn'>
+            fake button
+          </button>
+          <button id="controlTwo" focus-row-control focus-type='fake-btn-two'>
+            fake button two
+          </button>
+          <button-three focus-row-control focus-type='fake-btn-three'>
+          </button-three>
+        </div>
+      `,
+
+      behaviors: [FocusRowBehavior],
       focusCallCount: 0,
 
       focus: function() {
@@ -59,10 +63,31 @@ suite('cr-focus-row-behavior-test', function() {
     document.body.appendChild(testElement);
 
     // Block so that FocusRowBehavior.attached can run.
-    await PolymerTest.afterNextRender(testElement);
+    await waitAfterNextRender(testElement);
     // Wait one more time to ensure that async setup in FocusRowBehavior has
     // executed.
-    await PolymerTest.afterNextRender(testElement);
+    await waitAfterNextRender(testElement);
+  });
+
+  test('ID is not overriden when index is set', function() {
+    assertFalse(testElement.hasAttribute('id'));
+    assertFalse(testElement.hasAttribute('aria-rowindex'));
+    testElement.id = 'test-id';
+    assertTrue(testElement.hasAttribute('id'));
+    assertEquals('test-id', testElement.id);
+    assertFalse(testElement.hasAttribute('aria-rowindex'));
+    testElement.focusRowIndex = 5;  // Arbitrary index.
+    assertTrue(testElement.hasAttribute('id'));
+    assertEquals('test-id', testElement.id);
+    assertTrue(testElement.hasAttribute('aria-rowindex'));
+  });
+
+  test('ID and aria-rowindex are only set when index is set', function() {
+    assertFalse(testElement.hasAttribute('id'));
+    assertFalse(testElement.hasAttribute('aria-rowindex'));
+    testElement.focusRowIndex = 5;  // Arbitrary index.
+    assertTrue(testElement.hasAttribute('id'));
+    assertTrue(testElement.hasAttribute('aria-rowindex'));
   });
 
   test('item passes focus to first focusable child', function() {
@@ -92,8 +117,8 @@ suite('cr-focus-row-behavior-test', function() {
     testElement.$.control.addEventListener('focus', function() {
       focused = true;
     });
-    MockInteractions.down(testElement);
-    MockInteractions.up(testElement);
+    down(testElement);
+    up(testElement);
     testElement.click();
     // iron-list is responsible for firing 'focus' after taps, but is not used
     // in the test, so its necessary to manually fire 'focus' after tap.
@@ -106,7 +131,7 @@ suite('cr-focus-row-behavior-test', function() {
     lastButton.setAttribute('focus-type', 'fake-btn-three');
     testElement.lastFocused = lastButton;
 
-    const wait = test_util.eventToPromise('focus', testElement);
+    const wait = eventToPromise('focus', testElement);
     testElement.fire('focus');
     return wait.then(() => {
       const button = getDeepActiveElement();
@@ -117,22 +142,22 @@ suite('cr-focus-row-behavior-test', function() {
   test('when shift+tab pressed on first control, focus on container', () => {
     const first = testElement.$.control;
     const second = testElement.$.controlTwo;
-    MockInteractions.pressAndReleaseKeyOn(first, '', 'shift', 'Tab');
+    pressAndReleaseKeyOn(first, '', 'shift', 'Tab');
     assertEquals(1, testElement.focusCallCount);
-    MockInteractions.pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
+    pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
     assertEquals(1, testElement.focusCallCount);
 
     // Simulate updating a row with same first control.
     testElement.fire('dom-change');
-    MockInteractions.pressAndReleaseKeyOn(first, '', 'shift', 'Tab');
+    pressAndReleaseKeyOn(first, '', 'shift', 'Tab');
     assertEquals(2, testElement.focusCallCount);
-    MockInteractions.pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
+    pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
     assertEquals(2, testElement.focusCallCount);
 
     // Simulate updating row with different first control.
     first.remove();
     testElement.fire('dom-change');
-    MockInteractions.pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
+    pressAndReleaseKeyOn(second, '', 'shift', 'Tab');
     assertEquals(3, testElement.focusCallCount);
   });
 });

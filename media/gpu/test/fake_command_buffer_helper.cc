@@ -5,6 +5,9 @@
 #include "media/gpu/test/fake_command_buffer_helper.h"
 
 #include "base/logging.h"
+#include "build/build_config.h"
+#include "gpu/command_buffer/service/shared_image_backing.h"
+#include "gpu/command_buffer/service/shared_image_representation.h"
 
 namespace media {
 
@@ -64,6 +67,17 @@ gl::GLContext* FakeCommandBufferHelper::GetGLContext() {
   return nullptr;
 }
 
+gpu::SharedImageStub* FakeCommandBufferHelper::GetSharedImageStub() {
+  return nullptr;
+}
+
+#if BUILDFLAG(IS_WIN)
+gpu::DXGISharedHandleManager*
+FakeCommandBufferHelper::GetDXGISharedHandleManager() {
+  return nullptr;
+}
+#endif
+
 bool FakeCommandBufferHelper::HasStub() {
   return has_stub_;
 }
@@ -73,6 +87,21 @@ bool FakeCommandBufferHelper::MakeContextCurrent() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   is_context_current_ = !is_context_lost_;
   return is_context_current_;
+}
+
+std::unique_ptr<gpu::SharedImageRepresentationFactoryRef>
+FakeCommandBufferHelper::Register(
+    std::unique_ptr<gpu::SharedImageBacking> backing) {
+  DVLOG(2) << __func__;
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  return nullptr;
+}
+
+gpu::TextureBase* FakeCommandBufferHelper::GetTexture(GLuint service_id) const {
+  DVLOG(2) << __func__ << "(" << service_id << ")";
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(service_ids_.count(service_id));
+  return nullptr;
 }
 
 GLuint FakeCommandBufferHelper::CreateTexture(GLenum target,
@@ -141,6 +170,14 @@ void FakeCommandBufferHelper::SetWillDestroyStubCB(
     WillDestroyStubCB will_destroy_stub_cb) {
   DCHECK(!will_destroy_stub_cb_);
   will_destroy_stub_cb_ = std::move(will_destroy_stub_cb);
+}
+
+bool FakeCommandBufferHelper::IsPassthrough() const {
+  return false;
+}
+
+bool FakeCommandBufferHelper::SupportsTextureRectangle() const {
+  return false;
 }
 
 }  // namespace media

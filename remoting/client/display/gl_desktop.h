@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "remoting/client/display/drawable.h"
@@ -26,6 +25,10 @@ class Canvas;
 class GlDesktop : public Drawable {
  public:
   GlDesktop();
+
+  GlDesktop(const GlDesktop&) = delete;
+  GlDesktop& operator=(const GlDesktop&) = delete;
+
   ~GlDesktop() override;
 
   // |frame| can be either a full frame or updated regions only frame.
@@ -48,9 +51,7 @@ class GlDesktop : public Drawable {
   int max_texture_size_ = 0;
   base::WeakPtr<Canvas> canvas_ = nullptr;
   base::ThreadChecker thread_checker_;
-  base::WeakPtrFactory<Drawable> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(GlDesktop);
+  base::WeakPtrFactory<Drawable> weak_factory_{this};
 };
 
 }  // namespace remoting

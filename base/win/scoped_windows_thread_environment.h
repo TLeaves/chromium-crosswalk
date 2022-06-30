@@ -5,21 +5,22 @@
 #ifndef BASE_WIN_SCOPED_WINDOWS_THREAD_ENVIRONMENT_H_
 #define BASE_WIN_SCOPED_WINDOWS_THREAD_ENVIRONMENT_H_
 
-#include "base/macros.h"
-
 namespace base {
 namespace win {
 
 // Serves as a root class for ScopedCOMInitializer and ScopedWinrtInitializer.
 class ScopedWindowsThreadEnvironment {
  public:
-  ScopedWindowsThreadEnvironment() {}
-  virtual ~ScopedWindowsThreadEnvironment() {}
+  ScopedWindowsThreadEnvironment() = default;
+
+  ScopedWindowsThreadEnvironment(const ScopedWindowsThreadEnvironment&) =
+      delete;
+  ScopedWindowsThreadEnvironment& operator=(
+      const ScopedWindowsThreadEnvironment&) = delete;
+
+  virtual ~ScopedWindowsThreadEnvironment() = default;
 
   virtual bool Succeeded() const = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ScopedWindowsThreadEnvironment);
 };
 
 }  // namespace win

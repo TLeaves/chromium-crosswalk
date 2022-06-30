@@ -36,15 +36,19 @@ bool ProcessSnapshotFuchsia::Initialize(const zx::process& process) {
     return false;
   }
 
+  client_id_.InitializeToZero();
   system_.Initialize(&snapshot_time_);
 
   InitializeThreads();
   InitializeModules();
 
-  for (const auto& entry : process_reader_.MemoryMap()->Entries()) {
-    if (entry.type == ZX_INFO_MAPS_TYPE_MAPPING) {
-      memory_map_.push_back(
-          std::make_unique<internal::MemoryMapRegionSnapshotFuchsia>(entry));
+  const MemoryMapFuchsia* memory_map = process_reader_.MemoryMap();
+  if (memory_map) {
+    for (const auto& entry : memory_map->Entries()) {
+      if (entry.type == ZX_INFO_MAPS_TYPE_MAPPING) {
+        memory_map_.push_back(
+            std::make_unique<internal::MemoryMapRegionSnapshotFuchsia>(entry));
+      }
     }
   }
 
@@ -56,9 +60,14 @@ bool ProcessSnapshotFuchsia::InitializeException(
     zx_koid_t thread_id,
     const zx_exception_report_t& report) {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
-  exception_.reset(new internal::ExceptionSnapshotFuchsia());
-  exception_->Initialize(&process_reader_, thread_id, report);
-  return true;
+
+  std::unique_ptr<internal::ExceptionSnapshotFuchsia> exception(
+      new internal::ExceptionSnapshotFuchsia());
+  if (exception->Initialize(&process_reader_, thread_id, report)) {
+    exception_.swap(exception);
+    return true;
+  }
+  return false;
 }
 
 void ProcessSnapshotFuchsia::GetCrashpadOptions(

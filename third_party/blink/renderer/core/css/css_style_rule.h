@@ -22,9 +22,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_STYLE_RULE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_STYLE_RULE_H_
 
+#include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_rule.h"
 #include "third_party/blink/renderer/core/css/cssom/style_property_map.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 
 namespace blink {
@@ -54,10 +55,10 @@ class CORE_EXPORT CSSStyleRule final : public CSSRule {
   // FIXME: Not CSSOM. Remove.
   StyleRule* GetStyleRule() const { return style_rule_.Get(); }
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) const override;
 
  private:
-  CSSRule::Type type() const override { return kStyleRule; }
+  CSSRule::Type GetType() const override { return kStyleRule; }
 
   Member<StyleRule> style_rule_;
   mutable Member<StyleRuleCSSStyleDeclaration> properties_cssom_wrapper_;
@@ -67,7 +68,7 @@ class CORE_EXPORT CSSStyleRule final : public CSSRule {
 template <>
 struct DowncastTraits<CSSStyleRule> {
   static bool AllowFrom(const CSSRule& rule) {
-    return rule.type() == CSSRule::kStyleRule;
+    return rule.GetType() == CSSRule::kStyleRule;
   }
 };
 

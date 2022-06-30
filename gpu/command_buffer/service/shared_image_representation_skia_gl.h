@@ -5,6 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_REPRESENTATION_SKIA_GL_H_
 #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_REPRESENTATION_SKIA_GL_H_
 
+#include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/service/shared_image_representation.h"
 #include "ui/gl/gl_context.h"
 
@@ -19,7 +20,7 @@ class GPU_GLES2_EXPORT SharedImageRepresentationSkiaGL
     : public SharedImageRepresentationSkia {
  public:
   static std::unique_ptr<SharedImageRepresentationSkiaGL> Create(
-      std::unique_ptr<SharedImageRepresentationGLTexture> gl_representation,
+      std::unique_ptr<SharedImageRepresentationGLTextureBase> gl_representation,
       scoped_refptr<SharedContextState> context_state,
       SharedImageManager* manager,
       SharedImageBacking* backing,
@@ -32,29 +33,36 @@ class GPU_GLES2_EXPORT SharedImageRepresentationSkiaGL
       const SkSurfaceProps& surface_props,
       std::vector<GrBackendSemaphore>* begin_semaphores,
       std::vector<GrBackendSemaphore>* end_semaphores) override;
+  sk_sp<SkPromiseImageTexture> BeginWriteAccess(
+      std::vector<GrBackendSemaphore>* begin_semaphores,
+      std::vector<GrBackendSemaphore>* end_semaphores,
+      std::unique_ptr<GrBackendSurfaceMutableState>* end_state) override;
   void EndWriteAccess(sk_sp<SkSurface> surface) override;
   sk_sp<SkPromiseImageTexture> BeginReadAccess(
       std::vector<GrBackendSemaphore>* begin_semaphores,
       std::vector<GrBackendSemaphore>* end_semaphores) override;
   void EndReadAccess() override;
 
+  bool SupportsMultipleConcurrentReadAccess() override;
+
  private:
   SharedImageRepresentationSkiaGL(
-      std::unique_ptr<SharedImageRepresentationGLTexture> gl_representation,
+      std::unique_ptr<SharedImageRepresentationGLTextureBase> gl_representation,
       sk_sp<SkPromiseImageTexture> promise_texture,
       scoped_refptr<SharedContextState> context_state,
       SharedImageManager* manager,
       SharedImageBacking* backing,
       MemoryTypeTracker* tracker);
+
   void CheckContext();
 
-  std::unique_ptr<SharedImageRepresentationGLTexture> gl_representation_;
+  std::unique_ptr<SharedImageRepresentationGLTextureBase> gl_representation_;
   sk_sp<SkPromiseImageTexture> promise_texture_;
   scoped_refptr<SharedContextState> context_state_;
-  SkSurface* surface_ = nullptr;
+  sk_sp<SkSurface> surface_;
   RepresentationAccessMode mode_ = RepresentationAccessMode::kNone;
 #if DCHECK_IS_ON()
-  gl::GLContext* context_;
+  raw_ptr<gl::GLContext> context_;
 #endif
 };
 

@@ -35,12 +35,12 @@ bool URLDataSourceIOS::ShouldDenyXFrameOptions() const {
   return true;
 }
 
-bool URLDataSourceIOS::IsGzipped(const std::string& path) const {
-  return false;
-}
-
 bool URLDataSourceIOS::ShouldServiceRequest(const GURL& url) const {
   return GetWebClient()->IsAppSpecificURL(url);
+}
+
+bool URLDataSourceIOS::ShouldReplaceI18nInJS() const {
+  return false;
 }
 
 }  // namespace web

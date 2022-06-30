@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chromeos/dbus/blocking_method_caller.h"
+#include "chromeos/dbus/common/blocking_method_caller.h"
 
 #include <memory>
 #include <string>
@@ -11,7 +11,7 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "dbus/message.h"
 #include "dbus/mock_bus.h"
 #include "dbus/mock_object_proxy.h"
@@ -27,13 +27,19 @@ namespace chromeos {
 
 namespace {
 
-class FakeTaskRunner : public base::TaskRunner {
+class FakeTaskRunner : public base::SingleThreadTaskRunner {
  public:
+  // base::SingleThreadTaskRunner:
   bool PostDelayedTask(const base::Location& from_here,
                        base::OnceClosure task,
                        base::TimeDelta delay) override {
     std::move(task).Run();
     return true;
+  }
+  bool PostNonNestableDelayedTask(const base::Location& from_here,
+                                  base::OnceClosure task,
+                                  base::TimeDelta delay) override {
+    return PostDelayedTask(from_here, std::move(task), delay);
   }
   bool RunsTasksInCurrentSequence() const override { return true; }
 
@@ -45,8 +51,7 @@ class FakeTaskRunner : public base::TaskRunner {
 
 class BlockingMethodCallerTest : public testing::Test {
  public:
-  BlockingMethodCallerTest() : task_runner_(new FakeTaskRunner) {
-  }
+  BlockingMethodCallerTest() : task_runner_(new FakeTaskRunner) {}
 
   void SetUp() override {
     // Create a mock bus.
@@ -55,15 +60,13 @@ class BlockingMethodCallerTest : public testing::Test {
     mock_bus_ = new dbus::MockBus(options);
 
     // Create a mock proxy.
-    mock_proxy_ = new dbus::MockObjectProxy(
-        mock_bus_.get(),
-        "org.chromium.TestService",
-        dbus::ObjectPath("/org/chromium/TestObject"));
+    mock_proxy_ =
+        new dbus::MockObjectProxy(mock_bus_.get(), "org.chromium.TestService",
+                                  dbus::ObjectPath("/org/chromium/TestObject"));
 
     // Set an expectation so mock_proxy's CallMethodAndBlock() will use
     // CreateMockProxyResponse() to return responses.
-    EXPECT_CALL(*mock_proxy_.get(),
-                CallMethodAndBlockWithErrorDetails(_, _, _))
+    EXPECT_CALL(*mock_proxy_.get(), CallMethodAndBlockWithErrorDetails(_, _, _))
         .WillRepeatedly(
             Invoke(this, &BlockingMethodCallerTest::CreateMockProxyResponse));
 
@@ -119,8 +122,7 @@ TEST_F(BlockingMethodCallerTest, Echo) {
   const char kHello[] = "Hello";
   // Get an object proxy from the mock bus.
   dbus::ObjectProxy* proxy = mock_bus_->GetObjectProxy(
-      "org.chromium.TestService",
-      dbus::ObjectPath("/org/chromium/TestObject"));
+      "org.chromium.TestService", dbus::ObjectPath("/org/chromium/TestObject"));
 
   // Create a method call.
   dbus::MethodCall method_call("org.chromium.TestInterface", "Echo");

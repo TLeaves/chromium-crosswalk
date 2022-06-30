@@ -16,10 +16,10 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/stringize_macros.h"
+#include "base/test/task_environment.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "net/base/file_stream.h"
@@ -36,11 +36,12 @@
 #include "remoting/protocol/protocol_mock_objects.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace {
+
 using remoting::protocol::MockPairingRegistryDelegate;
 using remoting::protocol::PairingRegistry;
 using remoting::protocol::SynchronousPairingRegistry;
-
-namespace {
+using ::testing::Optional;
 
 void VerifyHelloResponse(std::unique_ptr<base::DictionaryValue> response) {
   ASSERT_TRUE(response);
@@ -94,7 +95,7 @@ void VerifyGetDaemonConfigResponse(
   EXPECT_EQ("getDaemonConfigResponse", value);
   const base::DictionaryValue* config = nullptr;
   EXPECT_TRUE(response->GetDictionary("config", &config));
-  EXPECT_TRUE(base::DictionaryValue().Equals(config));
+  EXPECT_EQ(base::DictionaryValue(), *config);
 }
 
 void VerifyGetUsageStatsConsentResponse(
@@ -103,13 +104,10 @@ void VerifyGetUsageStatsConsentResponse(
   std::string value;
   EXPECT_TRUE(response->GetString("type", &value));
   EXPECT_EQ("getUsageStatsConsentResponse", value);
-  bool supported, allowed, set_by_policy;
-  EXPECT_TRUE(response->GetBoolean("supported", &supported));
-  EXPECT_TRUE(response->GetBoolean("allowed", &allowed));
-  EXPECT_TRUE(response->GetBoolean("setByPolicy", &set_by_policy));
-  EXPECT_TRUE(supported);
-  EXPECT_TRUE(allowed);
-  EXPECT_TRUE(set_by_policy);
+
+  EXPECT_THAT(response->FindBoolKey("supported"), Optional(true));
+  EXPECT_THAT(response->FindBoolKey("allowed"), Optional(true));
+  EXPECT_THAT(response->FindBoolKey("setByPolicy"), Optional(true));
 }
 
 void VerifyStopDaemonResponse(std::unique_ptr<base::DictionaryValue> response) {
@@ -170,22 +168,25 @@ namespace remoting {
 class MockDaemonControllerDelegate : public DaemonController::Delegate {
  public:
   MockDaemonControllerDelegate();
+
+  MockDaemonControllerDelegate(const MockDaemonControllerDelegate&) = delete;
+  MockDaemonControllerDelegate& operator=(const MockDaemonControllerDelegate&) =
+      delete;
+
   ~MockDaemonControllerDelegate() override;
 
   // DaemonController::Delegate interface.
   DaemonController::State GetState() override;
   std::unique_ptr<base::DictionaryValue> GetConfig() override;
-  void SetConfigAndStart(
-      std::unique_ptr<base::DictionaryValue> config,
-      bool consent,
-      const DaemonController::CompletionCallback& done) override;
+  void CheckPermission(bool it2me,
+                       DaemonController::BoolCallback callback) override;
+  void SetConfigAndStart(std::unique_ptr<base::DictionaryValue> config,
+                         bool consent,
+                         DaemonController::CompletionCallback done) override;
   void UpdateConfig(std::unique_ptr<base::DictionaryValue> config,
-                    const DaemonController::CompletionCallback& done) override;
-  void Stop(const DaemonController::CompletionCallback& done) override;
+                    DaemonController::CompletionCallback done) override;
+  void Stop(DaemonController::CompletionCallback done) override;
   DaemonController::UsageStatsConsent GetUsageStatsConsent() override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockDaemonControllerDelegate);
 };
 
 MockDaemonControllerDelegate::MockDaemonControllerDelegate() = default;
@@ -201,31 +202,37 @@ MockDaemonControllerDelegate::GetConfig() {
   return std::make_unique<base::DictionaryValue>();
 }
 
+void MockDaemonControllerDelegate::CheckPermission(
+    bool it2me,
+    DaemonController::BoolCallback callback) {
+  std::move(callback).Run(true);
+}
+
 void MockDaemonControllerDelegate::SetConfigAndStart(
     std::unique_ptr<base::DictionaryValue> config,
     bool consent,
-    const DaemonController::CompletionCallback& done) {
+    DaemonController::CompletionCallback done) {
   // Verify parameters passed in.
-  if (consent && config && config->HasKey("start")) {
-    done.Run(DaemonController::RESULT_OK);
+  if (consent && config && config->FindKey("start")) {
+    std::move(done).Run(DaemonController::RESULT_OK);
   } else {
-    done.Run(DaemonController::RESULT_FAILED);
+    std::move(done).Run(DaemonController::RESULT_FAILED);
   }
 }
 
 void MockDaemonControllerDelegate::UpdateConfig(
     std::unique_ptr<base::DictionaryValue> config,
-    const DaemonController::CompletionCallback& done) {
-  if (config && config->HasKey("update")) {
-    done.Run(DaemonController::RESULT_OK);
+    DaemonController::CompletionCallback done) {
+  if (config && config->FindKey("update")) {
+    std::move(done).Run(DaemonController::RESULT_OK);
   } else {
-    done.Run(DaemonController::RESULT_FAILED);
+    std::move(done).Run(DaemonController::RESULT_FAILED);
   }
 }
 
 void MockDaemonControllerDelegate::Stop(
-    const DaemonController::CompletionCallback& done) {
-  done.Run(DaemonController::RESULT_OK);
+    DaemonController::CompletionCallback done) {
+  std::move(done).Run(DaemonController::RESULT_OK);
 }
 
 DaemonController::UsageStatsConsent
@@ -240,6 +247,11 @@ MockDaemonControllerDelegate::GetUsageStatsConsent() {
 class Me2MeNativeMessagingHostTest : public testing::Test {
  public:
   Me2MeNativeMessagingHostTest();
+
+  Me2MeNativeMessagingHostTest(const Me2MeNativeMessagingHostTest&) = delete;
+  Me2MeNativeMessagingHostTest& operator=(const Me2MeNativeMessagingHostTest&) =
+      delete;
+
   ~Me2MeNativeMessagingHostTest() override;
 
   void SetUp() override;
@@ -258,7 +270,7 @@ class Me2MeNativeMessagingHostTest : public testing::Test {
  protected:
   // Reference to the MockDaemonControllerDelegate, which is owned by
   // |channel_|.
-  MockDaemonControllerDelegate* daemon_controller_delegate_;
+  raw_ptr<MockDaemonControllerDelegate> daemon_controller_delegate_;
 
  private:
   void StartHost();
@@ -274,8 +286,7 @@ class Me2MeNativeMessagingHostTest : public testing::Test {
   base::File input_write_file_;
   base::File output_read_file_;
 
-  // Message loop of the test thread.
-  std::unique_ptr<base::MessageLoop> test_message_loop_;
+  std::unique_ptr<base::test::SingleThreadTaskEnvironment> task_environment_;
   std::unique_ptr<base::RunLoop> test_run_loop_;
 
   std::unique_ptr<base::Thread> host_thread_;
@@ -284,8 +295,6 @@ class Me2MeNativeMessagingHostTest : public testing::Test {
   // Task runner of the host thread.
   scoped_refptr<AutoThreadTaskRunner> host_task_runner_;
   std::unique_ptr<NativeMessagingPipe> native_messaging_pipe_;
-
-  DISALLOW_COPY_AND_ASSIGN(Me2MeNativeMessagingHostTest);
 };
 
 Me2MeNativeMessagingHostTest::Me2MeNativeMessagingHostTest() = default;
@@ -299,18 +308,19 @@ void Me2MeNativeMessagingHostTest::SetUp() {
   ASSERT_TRUE(MakePipe(&input_read_file, &input_write_file_));
   ASSERT_TRUE(MakePipe(&output_read_file_, &output_write_file));
 
-  test_message_loop_.reset(new base::MessageLoop());
-  test_run_loop_.reset(new base::RunLoop());
+  task_environment_ =
+      std::make_unique<base::test::SingleThreadTaskEnvironment>();
+  test_run_loop_ = std::make_unique<base::RunLoop>();
 
   // Run the host on a dedicated thread.
-  host_thread_.reset(new base::Thread("host_thread"));
+  host_thread_ = std::make_unique<base::Thread>("host_thread");
   host_thread_->Start();
 
-  // Arrange to run |test_message_loop_| until no components depend on it.
+  // Arrange to run |task_environment_| until no components depend on it.
   host_task_runner_ = new AutoThreadTaskRunner(
       host_thread_->task_runner(),
-      base::Bind(&Me2MeNativeMessagingHostTest::ExitTest,
-                 base::Unretained(this)));
+      base::BindOnce(&Me2MeNativeMessagingHostTest::ExitTest,
+                     base::Unretained(this)));
 
   host_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&Me2MeNativeMessagingHostTest::StartHost,
@@ -330,14 +340,14 @@ void Me2MeNativeMessagingHostTest::StartHost() {
   ASSERT_TRUE(MakePipe(&output_read_file_, &output_write_file));
 
   daemon_controller_delegate_ = new MockDaemonControllerDelegate();
-  scoped_refptr<DaemonController> daemon_controller(
-      new DaemonController(base::WrapUnique(daemon_controller_delegate_)));
+  scoped_refptr<DaemonController> daemon_controller(new DaemonController(
+      base::WrapUnique(daemon_controller_delegate_.get())));
 
   scoped_refptr<PairingRegistry> pairing_registry =
       new SynchronousPairingRegistry(
           base::WrapUnique(new MockPairingRegistryDelegate()));
 
-  native_messaging_pipe_.reset(new NativeMessagingPipe());
+  native_messaging_pipe_ = std::make_unique<NativeMessagingPipe>();
 
   std::unique_ptr<extensions::NativeMessagingChannel> channel(
       new PipeMessagingChannel(std::move(input_read_file),
@@ -348,8 +358,9 @@ void Me2MeNativeMessagingHostTest::StartHost() {
 
   std::unique_ptr<ChromotingHostContext> context =
       ChromotingHostContext::Create(new remoting::AutoThreadTaskRunner(
-          host_task_runner_, base::Bind(&Me2MeNativeMessagingHostTest::StopHost,
-                                        base::Unretained(this))));
+          host_task_runner_,
+          base::BindOnce(&Me2MeNativeMessagingHostTest::StopHost,
+                         base::Unretained(this))));
 
   std::unique_ptr<remoting::Me2MeNativeMessagingHost> host(
       new Me2MeNativeMessagingHost(false, 0, std::move(context),
@@ -376,8 +387,9 @@ void Me2MeNativeMessagingHostTest::StopHost() {
 }
 
 void Me2MeNativeMessagingHostTest::ExitTest() {
-  if (!test_message_loop_->task_runner()->RunsTasksInCurrentSequence()) {
-    test_message_loop_->task_runner()->PostTask(
+  if (!task_environment_->GetMainThreadTaskRunner()
+           ->RunsTasksInCurrentSequence()) {
+    task_environment_->GetMainThreadTaskRunner()->PostTask(
         FROM_HERE, base::BindOnce(&Me2MeNativeMessagingHostTest::ExitTest,
                                   base::Unretained(this)));
     return;
@@ -391,7 +403,7 @@ void Me2MeNativeMessagingHostTest::TearDown() {
   input_write_file_.Close();
 
   // Start a new RunLoop and Wait until the host finishes shutting down.
-  test_run_loop_.reset(new base::RunLoop());
+  test_run_loop_ = std::make_unique<base::RunLoop>();
   test_run_loop_->Run();
 
   // Verify there are no more message in the output pipe.
@@ -415,7 +427,7 @@ Me2MeNativeMessagingHostTest::ReadMessageFromOutputPipe() {
 
     std::string message_json(length, '\0');
     read_result =
-        output_read_file_.ReadAtCurrentPos(base::data(message_json), length);
+        output_read_file_.ReadAtCurrentPos(std::data(message_json), length);
     if (read_result != static_cast<int>(length)) {
       return nullptr;
     }
@@ -450,7 +462,7 @@ void Me2MeNativeMessagingHostTest::WriteMessageToInputPipe(
 
 void Me2MeNativeMessagingHostTest::TestBadRequest(const base::Value& message) {
   base::DictionaryValue good_message;
-  good_message.SetString("type", "hello");
+  good_message.SetStringKey("type", "hello");
 
   // This test currently relies on synchronous processing of hello messages and
   // message parameters verification.
@@ -471,60 +483,60 @@ void Me2MeNativeMessagingHostTest::TestBadRequest(const base::Value& message) {
 TEST_F(Me2MeNativeMessagingHostTest, All) {
   int next_id = 0;
   base::DictionaryValue message;
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "hello");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "hello");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getHostName");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getHostName");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getPinHash");
-  message.SetString("hostId", "my_host");
-  message.SetString("pin", "1234");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getPinHash");
+  message.SetStringKey("hostId", "my_host");
+  message.SetStringKey("pin", "1234");
   WriteMessageToInputPipe(message);
 
-  message.Clear();
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "generateKeyPair");
+  message.DictClear();
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "generateKeyPair");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getDaemonConfig");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getDaemonConfig");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getUsageStatsConsent");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getUsageStatsConsent");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "stopDaemon");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "stopDaemon");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getDaemonState");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getDaemonState");
   WriteMessageToInputPipe(message);
 
   // Following messages require a "config" dictionary.
   base::DictionaryValue config;
-  config.SetBoolean("update", true);
+  config.SetBoolKey("update", true);
   message.Set("config", config.CreateDeepCopy());
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "updateDaemonConfig");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "updateDaemonConfig");
   WriteMessageToInputPipe(message);
 
-  config.Clear();
-  config.SetBoolean("start", true);
+  config.DictClear();
+  config.SetBoolKey("start", true);
   message.Set("config", config.CreateDeepCopy());
-  message.SetBoolean("consent", true);
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "startDaemon");
+  message.SetBoolKey("consent", true);
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "startDaemon");
   WriteMessageToInputPipe(message);
 
-  message.SetInteger("id", next_id++);
-  message.SetString("type", "getCredentialsFromAuthCode");
-  message.SetString("authorizationCode", "fake_auth_code");
+  message.SetIntKey("id", next_id++);
+  message.SetStringKey("type", "getCredentialsFromAuthCode");
+  message.SetStringKey("authorizationCode", "fake_auth_code");
   WriteMessageToInputPipe(message);
 
   void (*verify_routines[])(std::unique_ptr<base::DictionaryValue>) = {
@@ -540,7 +552,7 @@ TEST_F(Me2MeNativeMessagingHostTest, All) {
       &VerifyStartDaemonResponse,
       &VerifyGetCredentialsFromAuthCodeResponse,
   };
-  ASSERT_EQ(base::size(verify_routines), static_cast<size_t>(next_id));
+  ASSERT_EQ(std::size(verify_routines), static_cast<size_t>(next_id));
 
   // Read all responses from output pipe, and verify them.
   for (int i = 0; i < next_id; ++i) {
@@ -564,9 +576,9 @@ TEST_F(Me2MeNativeMessagingHostTest, All) {
 // Verify that response ID matches request ID.
 TEST_F(Me2MeNativeMessagingHostTest, Id) {
   base::DictionaryValue message;
-  message.SetString("type", "hello");
+  message.SetStringKey("type", "hello");
   WriteMessageToInputPipe(message);
-  message.SetString("id", "42");
+  message.SetStringKey("id", "42");
   WriteMessageToInputPipe(message);
 
   std::unique_ptr<base::DictionaryValue> response = ReadMessageFromOutputPipe();
@@ -595,47 +607,47 @@ TEST_F(Me2MeNativeMessagingHostTest, MissingType) {
 // Verify rejection if type is unrecognized.
 TEST_F(Me2MeNativeMessagingHostTest, InvalidType) {
   base::DictionaryValue message;
-  message.SetString("type", "xxx");
+  message.SetStringKey("type", "xxx");
   TestBadRequest(message);
 }
 
 // Verify rejection if getPinHash request has no hostId.
 TEST_F(Me2MeNativeMessagingHostTest, GetPinHashNoHostId) {
   base::DictionaryValue message;
-  message.SetString("type", "getPinHash");
-  message.SetString("pin", "1234");
+  message.SetStringKey("type", "getPinHash");
+  message.SetStringKey("pin", "1234");
   TestBadRequest(message);
 }
 
 // Verify rejection if getPinHash request has no pin.
 TEST_F(Me2MeNativeMessagingHostTest, GetPinHashNoPin) {
   base::DictionaryValue message;
-  message.SetString("type", "getPinHash");
-  message.SetString("hostId", "my_host");
+  message.SetStringKey("type", "getPinHash");
+  message.SetStringKey("hostId", "my_host");
   TestBadRequest(message);
 }
 
 // Verify rejection if updateDaemonConfig request has invalid config.
 TEST_F(Me2MeNativeMessagingHostTest, UpdateDaemonConfigInvalidConfig) {
   base::DictionaryValue message;
-  message.SetString("type", "updateDaemonConfig");
-  message.SetString("config", "xxx");
+  message.SetStringKey("type", "updateDaemonConfig");
+  message.SetStringKey("config", "xxx");
   TestBadRequest(message);
 }
 
 // Verify rejection if startDaemon request has invalid config.
 TEST_F(Me2MeNativeMessagingHostTest, StartDaemonInvalidConfig) {
   base::DictionaryValue message;
-  message.SetString("type", "startDaemon");
-  message.SetString("config", "xxx");
-  message.SetBoolean("consent", true);
+  message.SetStringKey("type", "startDaemon");
+  message.SetStringKey("config", "xxx");
+  message.SetBoolKey("consent", true);
   TestBadRequest(message);
 }
 
 // Verify rejection if startDaemon request has no "consent" parameter.
 TEST_F(Me2MeNativeMessagingHostTest, StartDaemonNoConsent) {
   base::DictionaryValue message;
-  message.SetString("type", "startDaemon");
+  message.SetStringKey("type", "startDaemon");
   message.Set("config", base::DictionaryValue().CreateDeepCopy());
   TestBadRequest(message);
 }
@@ -643,7 +655,7 @@ TEST_F(Me2MeNativeMessagingHostTest, StartDaemonNoConsent) {
 // Verify rejection if getCredentialsFromAuthCode has no auth code.
 TEST_F(Me2MeNativeMessagingHostTest, GetCredentialsFromAuthCodeNoAuthCode) {
   base::DictionaryValue message;
-  message.SetString("type", "getCredentialsFromAuthCode");
+  message.SetStringKey("type", "getCredentialsFromAuthCode");
   TestBadRequest(message);
 }
 

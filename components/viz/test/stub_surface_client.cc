@@ -2,24 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <vector>
+
 #include "components/viz/test/stub_surface_client.h"
 
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 
 namespace viz {
 
-StubSurfaceClient::StubSurfaceClient() {}
+StubSurfaceClient::StubSurfaceClient() = default;
 
 StubSurfaceClient::~StubSurfaceClient() = default;
 
-std::vector<std::unique_ptr<CopyOutputRequest>>
-StubSurfaceClient::TakeCopyOutputRequests(
+std::vector<PendingCopyOutputRequest> StubSurfaceClient::TakeCopyOutputRequests(
     const LocalSurfaceId& latest_surface_id) {
-  return std::vector<std::unique_ptr<CopyOutputRequest>>();
+  return std::vector<PendingCopyOutputRequest>();
 }
 
-bool StubSurfaceClient::NeedsSyncTokens() const {
-  return true;
+bool StubSurfaceClient::IsVideoCaptureStarted() {
+  return false;
+}
+
+base::flat_set<base::PlatformThreadId> StubSurfaceClient::GetThreadIds() {
+  return {};
 }
 
 }  // namespace viz

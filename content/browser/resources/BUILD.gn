@@ -2,13 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//ui/webui/webui_features.gni")
-
-if (closure_compile) {
-  group("closure_compile") {
-    deps = [
-      "histograms:closure_compile",
-      "process:closure_compile",
-    ]
-  }
+group("resources") {
+  public_deps = [ "quota:resources" ]
 }

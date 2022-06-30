@@ -19,8 +19,9 @@ import static org.chromium.net.CronetTestRule.getContext;
 
 import android.os.ConditionVariable;
 import android.os.Process;
-import android.support.test.filters.SmallTest;
 import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.filters.SmallTest;
 
 import org.junit.After;
 import org.junit.Before;
@@ -302,6 +303,33 @@ public class BidirectionalStreamTest {
         assertEquals("", callback.mResponseInfo.getAllHeaders().get("echo-empty").get(0));
         assertEquals(
                 "zebra", callback.mResponseInfo.getAllHeaders().get("echo-content-type").get(0));
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"Cronet"})
+    @OnlyRunNativeCronet
+    public void testSimpleGetWithCombinedHeader() throws Exception {
+        String url = Http2TestServer.getCombinedHeadersUrl();
+        TestBidirectionalStreamCallback callback = new TestBidirectionalStreamCallback();
+        TestRequestFinishedListener requestFinishedListener = new TestRequestFinishedListener();
+        mCronetEngine.addRequestFinishedListener(requestFinishedListener);
+        // Create stream.
+        BidirectionalStream stream =
+                mCronetEngine.newBidirectionalStreamBuilder(url, callback, callback.getExecutor())
+                        .setHttpMethod("GET")
+                        .build();
+        stream.start();
+        callback.blockForDone();
+        assertTrue(stream.isDone());
+        requestFinishedListener.blockUntilDone();
+        assertEquals(200, callback.mResponseInfo.getHttpStatusCode());
+        // Default method is 'GET'.
+        assertEquals("GET", callback.mResponseAsString);
+        assertEquals("bar", callback.mResponseInfo.getAllHeaders().get("foo").get(0));
+        assertEquals("bar2", callback.mResponseInfo.getAllHeaders().get("foo").get(1));
+        RequestFinishedInfo finishedInfo = requestFinishedListener.getRequestInfo();
+        assertTrue(finishedInfo.getAnnotations().isEmpty());
     }
 
     @Test
@@ -1124,6 +1152,8 @@ public class BidirectionalStreamTest {
     @Feature({"Cronet"})
     @OnlyRunNativeCronet
     public void testSimpleGetBufferUpdates() throws Exception {
+        TestRequestFinishedListener requestFinishedListener = new TestRequestFinishedListener();
+        mCronetEngine.addRequestFinishedListener(requestFinishedListener);
         TestBidirectionalStreamCallback callback = new TestBidirectionalStreamCallback();
         callback.setAutoAdvance(false);
         // Since the method is "GET", the expected response body is also "GET".
@@ -1204,6 +1234,12 @@ public class BidirectionalStreamTest {
         assertEquals(5, readBuffer.limit());
 
         assertEquals(ResponseStep.ON_SUCCEEDED, callback.mResponseStep);
+
+        // TestRequestFinishedListener expects a single call to onRequestFinished. Here we
+        // explicitly wait for the call to happen to avoid a race condition with the other
+        // TestRequestFinishedListener created within runSimpleGetWithExpectedReceivedByteCount.
+        requestFinishedListener.blockUntilDone();
+        mCronetEngine.removeRequestFinishedListener(requestFinishedListener);
 
         // Make sure there are no other pending messages, which would trigger
         // asserts in TestBidirectionalCallback.

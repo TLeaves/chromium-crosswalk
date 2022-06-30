@@ -7,14 +7,19 @@
 
 #include <stddef.h>
 
-#include "chrome/browser/ui/browser.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
+class Browser;
 class Profile;
+class SessionID;
 
-namespace contents {
+namespace content {
 class WebContents;
+}
+
+namespace tab_groups {
+class TabGroupId;
 }
 
 // Collection of functions to find Browsers based on various criteria.
@@ -58,6 +63,11 @@ Browser* FindBrowserWithActiveWindow();
 // |web_contents| must not be NULL.
 Browser* FindBrowserWithWebContents(const content::WebContents* web_contents);
 
+// Find the browser containing the group with ID |group| or nullptr if none is
+// found within the given |profile|. If the profile is not specified, find any
+// browser containing the group.
+Browser* FindBrowserWithGroup(tab_groups::TabGroupId group, Profile* profile);
+
 // Returns the Browser object owned by |profile| whose window was most recently
 // active. If no such Browsers exist, returns NULL.
 //
@@ -82,6 +92,14 @@ Browser* FindLastActive();
 size_t GetTotalBrowserCount();
 
 // Returns the number of browsers with the Profile |profile|.
+// Note that:
+// 1. A profile may have non-browser windows. These are not counted.
+// 2. A profile may have child profiles that have windows.  Those are not
+//    counted. Thus, for example, a Guest profile (which is never displayed
+//    directly) will return 0. (For a Guest profile, only the child off-the-
+//    record profile is visible.)  Likewise, a parent profile with off-the-
+//    record (Incognito) child profiles that have windows will not count those
+//    child windows.
 size_t GetBrowserCount(Profile* profile);
 
 // Returns the number of tabbed browsers with the Profile |profile|.

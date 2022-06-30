@@ -2,12 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {AsyncUtil} from '../../common/js/async_util.js';
+import {ProgressCenterItem, ProgressItemState} from '../../common/js/progress_center_common.js';
+import {getFilesAppIconURL} from '../../common/js/url_constants.js';
+import {str} from '../../common/js/util.js';
+import {xfm} from '../../common/js/xfm.js';
+import {ProgressCenter} from '../../externs/background/progress_center.js';
+import {ProgressCenterPanelInterface} from '../../externs/progress_center_panel.js';
+
 /**
  * Implementation of {ProgressCenter} at the background page.
  * @implements {ProgressCenter}
  * @final
  */
-class ProgressCenterImpl {
+export class ProgressCenterImpl {
   constructor() {
     /**
      * Current items managed by the progress center.
@@ -25,9 +33,26 @@ class ProgressCenterImpl {
 
     /**
      * List of panel UI managed by the progress center.
-     * @private @const {!Array<ProgressCenterPanel>}
+     * @private @const {!Array<ProgressCenterPanelInterface>}
      */
     this.panels_ = [];
+
+    /**
+     * Inhibit end of operation updates for testing.
+     * @private
+     */
+    this.neverNotifyCompleted_ = false;
+  }
+
+  /**
+   * Turns off sending updates when a file operation reaches 'completed' state.
+   * Used for testing UI that can be ephemeral otherwise.
+   * @public
+   */
+  neverNotifyCompleted() {
+    if (window.IN_TEST) {
+      this.neverNotifyCompleted_ = true;
+    }
   }
 
   /**
@@ -48,6 +73,10 @@ class ProgressCenterImpl {
     } else {
       // Error item is not removed until user explicitly dismiss it.
       if (item.state !== ProgressItemState.ERROR && index !== -1) {
+        if (this.neverNotifyCompleted_) {
+          item.state = ProgressItemState.PROGRESSING;
+          return;
+        }
         this.items_.splice(index, 1);
       }
     }
@@ -86,7 +115,7 @@ class ProgressCenterImpl {
 
   /**
    * Adds a panel UI to the notification center.
-   * @param {ProgressCenterPanel} panel Panel UI.
+   * @param {ProgressCenterPanelInterface} panel Panel UI.
    */
   addPanel(panel) {
     if (this.panels_.indexOf(panel) !== -1) {
@@ -110,7 +139,7 @@ class ProgressCenterImpl {
 
   /**
    * Removes a panel UI from the notification center.
-   * @param {ProgressCenterPanel} panel Panel UI.
+   * @param {ProgressCenterPanelInterface} panel Panel UI.
    */
   removePanel(panel) {
     const index = this.panels_.indexOf(panel);
@@ -211,9 +240,9 @@ ProgressCenterImpl.Notifications_ = class {
      */
     this.dismissCallback_ = dismissCallback;
 
-    chrome.notifications.onButtonClicked.addListener(
+    xfm.notifications.onButtonClicked.addListener(
         this.onButtonClicked_.bind(this));
-    chrome.notifications.onClosed.addListener(this.onClosed_.bind(this));
+    xfm.notifications.onClosed.addListener(this.onClosed_.bind(this));
   }
 
   /**
@@ -249,7 +278,7 @@ ProgressCenterImpl.Notifications_ = class {
           item.state === ProgressItemState.COMPLETED) {
         if (previousState === NotificationState.VISIBLE) {
           this.queue_.run(proceed => {
-            chrome.notifications.clear(item.id, proceed);
+            xfm.notifications.clear(item.id, proceed);
           });
         }
         return;
@@ -259,8 +288,8 @@ ProgressCenterImpl.Notifications_ = class {
     // Create/update the notification with the item.
     this.queue_.run(proceed => {
       const params = {
-        title: chrome.runtime.getManifest().name,
-        iconUrl: chrome.runtime.getURL('/common/images/icon96.png'),
+        title: str('FILEMANAGER_APP_NAME'),
+        iconUrl: getFilesAppIconURL().toString(),
         type: item.state === ProgressItemState.PROGRESSING ? 'progress' :
                                                              'basic',
         message: item.message,
@@ -273,9 +302,9 @@ ProgressCenterImpl.Notifications_ = class {
       };
 
       if (newlyAdded) {
-        chrome.notifications.create(item.id, params, proceed);
+        xfm.notifications.create(item.id, params, proceed);
       } else {
-        chrome.notifications.update(item.id, params, proceed);
+        xfm.notifications.update(item.id, params, proceed);
       }
     });
   }
@@ -292,7 +321,7 @@ ProgressCenterImpl.Notifications_ = class {
     delete this.ids_[id];
 
     this.queue_.run(proceed => {
-      chrome.notifications.clear(id, proceed);
+      xfm.notifications.clear(id, proceed);
     });
   }
 

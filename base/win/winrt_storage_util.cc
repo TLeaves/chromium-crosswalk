@@ -8,6 +8,8 @@
 #include <string.h>
 #include <wrl/client.h>
 
+#include <utility>
+
 #include "base/strings/string_util.h"
 #include "base/win/core_winrt_util.h"
 #include "base/win/scoped_hstring.h"
@@ -48,7 +50,7 @@ HRESULT CreateIBufferFromData(const uint8_t* data,
     return hr;
 
   Microsoft::WRL::ComPtr<IBuffer> internal_buffer;
-  hr = buffer_factory->Create(length, internal_buffer.GetAddressOf());
+  hr = buffer_factory->Create(length, &internal_buffer);
   if (FAILED(hr))
     return hr;
 

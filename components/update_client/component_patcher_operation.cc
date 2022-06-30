@@ -6,14 +6,14 @@
 
 #include <stdint.h>
 #include <utility>
-#include <vector>
 
 #include "base/bind.h"
+#include "base/check.h"
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/location.h"
+#include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/task/post_task.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "components/update_client/patcher.h"
 #include "components/update_client/update_client.h"
@@ -53,11 +53,9 @@ DeltaUpdateOp* CreateDeltaUpdateOp(const std::string& operation,
   return nullptr;
 }
 
-DeltaUpdateOp::DeltaUpdateOp() {
-}
+DeltaUpdateOp::DeltaUpdateOp() = default;
 
-DeltaUpdateOp::~DeltaUpdateOp() {
-}
+DeltaUpdateOp::~DeltaUpdateOp() = default;
 
 void DeltaUpdateOp::Run(const base::DictionaryValue* command_args,
                         const base::FilePath& input_dir,
@@ -65,15 +63,16 @@ void DeltaUpdateOp::Run(const base::DictionaryValue* command_args,
                         scoped_refptr<CrxInstaller> installer,
                         ComponentPatcher::Callback callback) {
   callback_ = std::move(callback);
-  std::string output_rel_path;
-  if (!command_args->GetString(kOutput, &output_rel_path) ||
-      !command_args->GetString(kSha256, &output_sha256_)) {
+  const std::string* output_rel_path = command_args->FindStringKey(kOutput);
+  const std::string* sha256_value = command_args->FindStringKey(kSha256);
+  if (!output_rel_path || !sha256_value) {
     DoneRunning(UnpackerError::kDeltaBadCommands, 0);
     return;
   }
+  output_sha256_ = *sha256_value;
 
   output_abs_path_ =
-      unpack_dir.Append(base::FilePath::FromUTF8Unsafe(output_rel_path));
+      unpack_dir.Append(base::FilePath::FromUTF8Unsafe(*output_rel_path));
   UnpackerError parse_result =
       DoParseArguments(command_args, input_dir, installer);
   if (parse_result != UnpackerError::kNone) {
@@ -108,21 +107,19 @@ UnpackerError DeltaUpdateOp::CheckHash() {
              : UnpackerError::kDeltaVerificationFailure;
 }
 
-DeltaUpdateOpCopy::DeltaUpdateOpCopy() {
-}
+DeltaUpdateOpCopy::DeltaUpdateOpCopy() = default;
 
-DeltaUpdateOpCopy::~DeltaUpdateOpCopy() {
-}
+DeltaUpdateOpCopy::~DeltaUpdateOpCopy() = default;
 
 UnpackerError DeltaUpdateOpCopy::DoParseArguments(
     const base::DictionaryValue* command_args,
     const base::FilePath& input_dir,
     scoped_refptr<CrxInstaller> installer) {
-  std::string input_rel_path;
-  if (!command_args->GetString(kInput, &input_rel_path))
+  const std::string* input_rel_path = command_args->FindStringKey(kInput);
+  if (!input_rel_path)
     return UnpackerError::kDeltaBadCommands;
 
-  if (!installer->GetInstalledFile(input_rel_path, &input_abs_path_))
+  if (!installer->GetInstalledFile(*input_rel_path, &input_abs_path_))
     return UnpackerError::kDeltaMissingExistingFile;
 
   return UnpackerError::kNone;
@@ -135,22 +132,20 @@ void DeltaUpdateOpCopy::DoRun(ComponentPatcher::Callback callback) {
     std::move(callback).Run(UnpackerError::kNone, 0);
 }
 
-DeltaUpdateOpCreate::DeltaUpdateOpCreate() {
-}
+DeltaUpdateOpCreate::DeltaUpdateOpCreate() = default;
 
-DeltaUpdateOpCreate::~DeltaUpdateOpCreate() {
-}
+DeltaUpdateOpCreate::~DeltaUpdateOpCreate() = default;
 
 UnpackerError DeltaUpdateOpCreate::DoParseArguments(
     const base::DictionaryValue* command_args,
     const base::FilePath& input_dir,
     scoped_refptr<CrxInstaller> installer) {
-  std::string patch_rel_path;
-  if (!command_args->GetString(kPatch, &patch_rel_path))
+  const std::string* patch_rel_path = command_args->FindStringKey(kPatch);
+  if (!patch_rel_path)
     return UnpackerError::kDeltaBadCommands;
 
   patch_abs_path_ =
-      input_dir.Append(base::FilePath::FromUTF8Unsafe(patch_rel_path));
+      input_dir.Append(base::FilePath::FromUTF8Unsafe(*patch_rel_path));
 
   return UnpackerError::kNone;
 }
@@ -168,24 +163,22 @@ DeltaUpdateOpPatch::DeltaUpdateOpPatch(const std::string& operation,
   DCHECK(operation == kBsdiff || operation == kCourgette);
 }
 
-DeltaUpdateOpPatch::~DeltaUpdateOpPatch() {
-}
+DeltaUpdateOpPatch::~DeltaUpdateOpPatch() = default;
 
 UnpackerError DeltaUpdateOpPatch::DoParseArguments(
     const base::DictionaryValue* command_args,
     const base::FilePath& input_dir,
     scoped_refptr<CrxInstaller> installer) {
-  std::string patch_rel_path;
-  std::string input_rel_path;
-  if (!command_args->GetString(kPatch, &patch_rel_path) ||
-      !command_args->GetString(kInput, &input_rel_path))
+  const std::string* patch_rel_path = command_args->FindStringKey(kPatch);
+  const std::string* input_rel_path = command_args->FindStringKey(kInput);
+  if (!patch_rel_path || !input_rel_path)
     return UnpackerError::kDeltaBadCommands;
 
-  if (!installer->GetInstalledFile(input_rel_path, &input_abs_path_))
+  if (!installer->GetInstalledFile(*input_rel_path, &input_abs_path_))
     return UnpackerError::kDeltaMissingExistingFile;
 
   patch_abs_path_ =
-      input_dir.Append(base::FilePath::FromUTF8Unsafe(patch_rel_path));
+      input_dir.Append(base::FilePath::FromUTF8Unsafe(*patch_rel_path));
 
   return UnpackerError::kNone;
 }

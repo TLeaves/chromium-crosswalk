@@ -4,7 +4,7 @@
 
 #include "remoting/client/input/keyboard_interpreter.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "remoting/client/input/keycode_map.h"
 #include "remoting/client/input/text_keyboard_input_strategy.h"
 #include "ui/events/keycodes/dom/dom_code.h"
@@ -58,7 +58,7 @@ void KeyboardInterpreter::HandleDeleteEvent(uint8_t modifiers) {
   }
 
   base::queue<KeyEvent> keys;
-  // TODO(nicholss): Handle modifers.
+  // TODO(nicholss): Handle modifiers.
   // Key press.
   keys.push({static_cast<uint32_t>(ui::DomCode::BACKSPACE), true});
 

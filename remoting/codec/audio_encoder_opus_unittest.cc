@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <cmath>
+#include <memory>
 #include <utility>
 
 #include "base/logging.h"
@@ -58,8 +59,9 @@ class OpusAudioEncoderTest : public testing::Test {
                                 double frequency_hz,
                                 double pos,
                                 int channel) {
-    double angle = pos * 2 * base::kPiDouble * frequency_hz / rate +
-                   kChannelPhaseShift * channel;
+    double angle =
+        pos * 2 * base::kPiDouble * frequency_hz / static_cast<double>(rate) +
+        kChannelPhaseShift * channel;
     return static_cast<int>(std::sin(angle) * kMaxSampleValue + 0.5);
   }
 
@@ -130,8 +132,8 @@ class OpusAudioEncoderTest : public testing::Test {
                           AudioPacket::SamplingRate rate) {
     const int kTotalTestSamples = 24000;
 
-    encoder_.reset(new AudioEncoderOpus());
-    decoder_.reset(new AudioDecoderOpus());
+    encoder_ = std::make_unique<AudioEncoderOpus>();
+    decoder_ = std::make_unique<AudioDecoderOpus>();
 
     std::vector<int16_t> received_data;
     int pos = 0;

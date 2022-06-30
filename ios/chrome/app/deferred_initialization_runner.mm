@@ -6,12 +6,13 @@
 
 #include <stdint.h>
 
-#include "base/logging.h"
-#include "base/mac/scoped_block.h"
+#include "base/check.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
+
+NSString* const kPrefObserverInit = @"PrefObserverInit";
 
 // An object encapsulating the deferred execution of a block of initialization
 // code.
@@ -69,8 +70,8 @@
   BOOL _isBlockScheduled;
 }
 
-// Schedule the next block to be run after |delay| it will automatically
-// schedule the next block after |delayBetweenBlocks|.
+// Schedule the next block to be run after `delay` it will automatically
+// schedule the next block after `delayBetweenBlocks`.
 - (void)scheduleNextBlockWithDelay:(NSTimeInterval)delay;
 
 // Time interval between two blocks. Default value is 200ms.

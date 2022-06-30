@@ -10,14 +10,14 @@ UScriptCode UScriptGetScript(UChar32 codepoint, UErrorCode* err) {
   return uscript_getScript(codepoint, err);
 }
 
-base::string16 FormatUrlForVr(const GURL& gurl, url::Parsed* new_parsed) {
+std::u16string FormatUrlForVr(const GURL& gurl, url::Parsed* new_parsed) {
   return url_formatter::FormatUrl(
       gurl,
 
       url_formatter::kFormatUrlOmitDefaults |
           url_formatter::kFormatUrlOmitHTTPS |
           url_formatter::kFormatUrlOmitTrivialSubdomains,
-      net::UnescapeRule::NORMAL, new_parsed, nullptr, nullptr);
+      base::UnescapeRule::NORMAL, new_parsed, nullptr, nullptr);
 }
 
 }  // namespace vr

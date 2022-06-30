@@ -8,7 +8,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/language/core/browser/language_prefs.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -35,15 +35,14 @@ using user_prefs::PrefRegistrySyncable;
 
 namespace {
 
-const char kBlacklistedSite[] = "http://blacklistedsite.com";
+const char kBlockedSite[] = "http://blockedsite.com";
 const char kLanguage1[] = "klingon";
 const char kLanguage2[] = "pirate";
 
 class TranslateTableViewControllerTest : public ChromeTableViewControllerTest {
  protected:
   TranslateTableViewControllerTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+      : task_environment_(base::test::TaskEnvironment::MainThreadType::UI) {}
 
   void SetUp() override {
     ChromeTableViewControllerTest::SetUp();
@@ -57,8 +56,8 @@ class TranslateTableViewControllerTest : public ChromeTableViewControllerTest {
 
   std::unique_ptr<PrefService> CreateLocalState() {
     scoped_refptr<PrefRegistrySyncable> registry = new PrefRegistrySyncable();
-    registry->RegisterBooleanPref(prefs::kOfferTranslateEnabled, false,
-                                  PrefRegistrySyncable::SYNCABLE_PREF);
+    registry->RegisterBooleanPref(translate::prefs::kOfferTranslateEnabled,
+                                  false, PrefRegistrySyncable::SYNCABLE_PREF);
     language::LanguagePrefs::RegisterProfilePrefs(registry.get());
     translate::TranslatePrefs::RegisterProfilePrefs(registry.get());
     base::FilePath path("TranslateTableViewControllerTest.pref");
@@ -67,7 +66,7 @@ class TranslateTableViewControllerTest : public ChromeTableViewControllerTest {
     return factory.Create(registry.get());
   }
 
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::TaskEnvironment task_environment_;
   std::unique_ptr<PrefService> pref_service_;
 };
 
@@ -82,7 +81,8 @@ TEST_F(TranslateTableViewControllerTest, TestModelTranslateOff) {
 
 TEST_F(TranslateTableViewControllerTest, TestModelTranslateOn) {
   BooleanPrefMember translateEnabled;
-  translateEnabled.Init(prefs::kOfferTranslateEnabled, pref_service_.get());
+  translateEnabled.Init(translate::prefs::kOfferTranslateEnabled,
+                        pref_service_.get());
   translateEnabled.SetValue(true);
   CreateController();
   EXPECT_EQ(1, NumberOfSections());
@@ -95,13 +95,13 @@ TEST_F(TranslateTableViewControllerTest, TestClearPreferences) {
   // Set some preferences.
   std::unique_ptr<translate::TranslatePrefs> translate_prefs(
       ChromeIOSTranslateClient::CreateTranslatePrefs(pref_service_.get()));
-  translate_prefs->BlacklistSite(kBlacklistedSite);
-  ASSERT_TRUE(translate_prefs->IsSiteBlacklisted(kBlacklistedSite));
+  translate_prefs->AddSiteToNeverPromptList(kBlockedSite);
+  ASSERT_TRUE(translate_prefs->IsSiteOnNeverPromptList(kBlockedSite));
   translate_prefs->AddToLanguageList(kLanguage1, /*force_blocked=*/true);
   ASSERT_TRUE(translate_prefs->IsBlockedLanguage(kLanguage1));
-  translate_prefs->WhitelistLanguagePair(kLanguage1, kLanguage2);
-  ASSERT_TRUE(
-      translate_prefs->IsLanguagePairWhitelisted(kLanguage1, kLanguage2));
+  translate_prefs->AddLanguagePairToAlwaysTranslateList(kLanguage1, kLanguage2);
+  ASSERT_TRUE(translate_prefs->IsLanguagePairOnAlwaysTranslateList(kLanguage1,
+                                                                   kLanguage2));
   // Reset the preferences through the UI.
   CreateController();
   TranslateTableViewController* controller =
@@ -110,10 +110,10 @@ TEST_F(TranslateTableViewControllerTest, TestClearPreferences) {
   [controller tableView:controller.tableView
       didSelectRowAtIndexPath:[NSIndexPath indexPathForItem:1 inSection:0]];
   // Check that preferences are gone.
-  EXPECT_FALSE(translate_prefs->IsSiteBlacklisted(kBlacklistedSite));
+  EXPECT_FALSE(translate_prefs->IsSiteOnNeverPromptList(kBlockedSite));
   EXPECT_FALSE(translate_prefs->IsBlockedLanguage(kLanguage1));
-  EXPECT_FALSE(
-      translate_prefs->IsLanguagePairWhitelisted(kLanguage1, kLanguage2));
+  EXPECT_FALSE(translate_prefs->IsLanguagePairOnAlwaysTranslateList(
+      kLanguage1, kLanguage2));
 }
 
 }  // namespace

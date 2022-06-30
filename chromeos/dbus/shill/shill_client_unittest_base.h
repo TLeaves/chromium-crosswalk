@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/test/scoped_task_environment.h"
-#include "chromeos/dbus/dbus_method_call_status.h"
+#include "base/test/task_environment.h"
+#include "chromeos/dbus/common/dbus_method_call_status.h"
 #include "chromeos/dbus/shill/shill_client_helper.h"
 #include "chromeos/dbus/shill/shill_property_changed_observer.h"
 #include "chromeos/dbus/shill/shill_third_party_vpn_observer.h"
@@ -21,6 +21,7 @@
 #include "dbus/mock_object_proxy.h"
 #include "dbus/object_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using ::testing::MakeMatcher;
 using ::testing::Matcher;
@@ -28,11 +29,8 @@ using ::testing::MatcherInterface;
 using ::testing::MatchResultListener;
 
 namespace base {
-
 class Value;
-class DictionaryValue;
-
-}  // namespace base
+}
 
 namespace dbus {
 
@@ -82,8 +80,8 @@ class ShillClientUnittestBase : public testing::Test {
 
  protected:
   // A callback to intercept and check the method call arguments.
-  typedef base::Callback<void(dbus::MessageReader* reader)>
-      ArgumentCheckCallback;
+  using ArgumentCheckCallback =
+      base::RepeatingCallback<void(dbus::MessageReader* reader)>;
 
   // Sets expectations for called method name and arguments, and sets response.
   void PrepareForMethodCall(const std::string& method_name,
@@ -124,32 +122,22 @@ class ShillClientUnittestBase : public testing::Test {
       const std::vector<std::string>& expected_strings,
       dbus::MessageReader* reader);
 
-  // Expects the reader to have a Value.
-  static void ExpectValueArgument(const base::Value* expected_value,
-                                  dbus::MessageReader* reader);
-
   // Expects the reader to have a string and a Value.
   static void ExpectStringAndValueArguments(const std::string& expected_string,
                                             const base::Value* expected_value,
                                             dbus::MessageReader* reader);
 
   // Expects the reader to have a string-to-variant dictionary.
-  static void ExpectDictionaryValueArgument(
-      const base::DictionaryValue* expected_dictionary,
+  static void ExpectValueDictionaryArgument(
+      const base::Value* expected_dictionary,
       bool string_valued,
       dbus::MessageReader* reader);
 
-  // Creates a DictionaryValue with example Service properties. The caller owns
-  // the result.
-  static base::DictionaryValue* CreateExampleServiceProperties();
+  // Creates a dictionary Value with example Service properties.
+  static base::Value CreateExampleServiceProperties();
 
   // Expects the call status to be SUCCESS.
   static void ExpectNoResultValue(bool result);
-
-  // Checks the result and expects the call status to be SUCCESS.
-  static void ExpectObjectPathResult(const dbus::ObjectPath& expected_result,
-                                     DBusMethodCallStatus call_status,
-                                     const dbus::ObjectPath& result);
 
   static void ExpectObjectPathResultWithoutStatus(
       const dbus::ObjectPath& expected_result,
@@ -162,18 +150,15 @@ class ShillClientUnittestBase : public testing::Test {
       const std::string& result);
 
   // Checks the result and expects the call status to be SUCCESS.
-  static void ExpectDictionaryValueResult(
-      const base::DictionaryValue* expected_result,
-      DBusMethodCallStatus call_status,
-      const base::DictionaryValue& result);
+  static void ExpectValueResult(const base::Value* expected_result,
+                                absl::optional<base::Value> result);
 
   // Expects the |expected_result| to match the |result|.
-  static void ExpectDictionaryValueResultWithoutStatus(
-      const base::DictionaryValue* expected_result,
-      const base::DictionaryValue& result);
+  static void ExpectValueResultWithoutStatus(const base::Value* expected_result,
+                                             base::Value result);
 
   // A message loop to emulate asynchronous behavior.
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::SingleThreadTaskEnvironment task_environment_;
   // The mock bus.
   scoped_refptr<dbus::MockBus> mock_bus_;
 
@@ -202,14 +187,15 @@ class ShillClientUnittestBase : public testing::Test {
       const dbus::ObjectProxy::SignalCallback& signal_callback,
       dbus::ObjectProxy::OnConnectedCallback* on_connected_callback);
 
-  // Checks the content of the method call and returns the response.
+  // These check the content of the method call and returns the response.
   // Used to implement the mock proxy.
   void OnCallMethod(dbus::MethodCall* method_call,
                     int timeout_ms,
                     dbus::ObjectProxy::ResponseCallback* response_callback);
-
-  // Checks the content of the method call and returns the response.
-  // Used to implement the mock proxy.
+  void OnCallMethodWithErrorResponse(
+      dbus::MethodCall* method_call,
+      int timeout_ms,
+      dbus::ObjectProxy::ResponseOrErrorCallback* response_callback);
   void OnCallMethodWithErrorCallback(
       dbus::MethodCall* method_call,
       int timeout_ms,

@@ -13,6 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_client_impl.h"
@@ -63,12 +64,12 @@ class FakeDevToolsClient : public StubDevToolsClient {
   // Overridden from DevToolsClient:
   Status ConnectIfNecessary() override { return listener_->OnConnected(this); }
 
-  Status SendCommandAndGetResult(
-      const std::string& method,
-      const base::DictionaryValue& params,
-      std::unique_ptr<base::DictionaryValue>* result) override {
+  Status SendCommandAndGetResult(const std::string& method,
+                                 const base::DictionaryValue& params,
+                                 base::Value* result) override {
     sent_commands_.push_back(
         std::make_unique<DevToolsCommand>(method, params.DeepCopy()));
+    *result = base::Value(base::Value::Type::DICTIONARY);
     return Status(kOk);
   }
 
@@ -83,7 +84,8 @@ class FakeDevToolsClient : public StubDevToolsClient {
   const std::string id_;  // WebView id.
   std::vector<std::unique_ptr<DevToolsCommand>>
       sent_commands_;                // Commands that were sent.
-  DevToolsEventListener* listener_;  // The fake allows only one event listener.
+  raw_ptr<DevToolsEventListener>
+      listener_;  // The fake allows only one event listener.
   size_t command_index_;
 };
 
@@ -131,21 +133,18 @@ bool FakeLog::Emptied() const {
 
 std::unique_ptr<base::DictionaryValue> ParseDictionary(
     const std::string& json) {
-  std::string error;
-  std::unique_ptr<base::Value> value =
-      base::JSONReader::ReadAndReturnErrorDeprecated(json, base::JSON_PARSE_RFC,
-                                                     nullptr, &error);
-  if (value == nullptr) {
+  auto parsed_json = base::JSONReader::ReadAndReturnValueWithError(json);
+  if (!parsed_json.has_value()) {
     SCOPED_TRACE(json.c_str());
-    SCOPED_TRACE(error.c_str());
+    SCOPED_TRACE(parsed_json.error().message.c_str());
     ADD_FAILURE();
-    return std::unique_ptr<base::DictionaryValue>();
+    return nullptr;
   }
   base::DictionaryValue* dict = nullptr;
-  if (!value->GetAsDictionary(&dict)) {
+  if (!parsed_json->GetAsDictionary(&dict)) {
     SCOPED_TRACE("JSON object is not a dictionary");
     ADD_FAILURE();
-    return std::unique_ptr<base::DictionaryValue>();
+    return nullptr;
   }
   return std::unique_ptr<base::DictionaryValue>(dict->DeepCopy());
 }
@@ -299,15 +298,13 @@ TEST(PerformanceLogger, TracingStartStop) {
   base::ListValue* categories;
   EXPECT_TRUE(cmd->params->GetList("traceConfig.includedCategories",
                                    &categories));
-  EXPECT_EQ(2u, categories->GetSize());
-  std::string category;
-  EXPECT_TRUE(categories->GetString(0, &category));
-  EXPECT_EQ("benchmark", category);
-  EXPECT_TRUE(categories->GetString(1, &category));
-  EXPECT_EQ("blink.console", category);
-  int expected_interval = 0;
-  EXPECT_TRUE(cmd->params->GetInteger("bufferUsageReportingInterval",
-                                      &expected_interval));
+  ASSERT_EQ(2u, categories->GetListDeprecated().size());
+  ASSERT_TRUE(categories->GetListDeprecated()[0].is_string());
+  EXPECT_EQ("benchmark", categories->GetListDeprecated()[0].GetString());
+  ASSERT_TRUE(categories->GetListDeprecated()[1].is_string());
+  EXPECT_EQ("blink.console", categories->GetListDeprecated()[1].GetString());
+  int expected_interval =
+      cmd->params->FindIntKey("bufferUsageReportingInterval").value_or(-1);
   EXPECT_GT(expected_interval, 0);
   ASSERT_FALSE(client.PopSentCommand(&cmd));
 
@@ -331,14 +328,14 @@ TEST(PerformanceLogger, RecordTraceEvents) {
   client.AddListener(&logger);
   logger.OnConnected(&client);
   base::DictionaryValue params;
-  auto trace_events = std::make_unique<base::ListValue>();
+  base::ListValue trace_events;
   auto event1 = std::make_unique<base::DictionaryValue>();
   event1->SetString("cat", "foo");
-  trace_events->GetList().push_back(event1->Clone());
+  trace_events.Append(event1->Clone());
   auto event2 = std::make_unique<base::DictionaryValue>();
   event2->SetString("cat", "bar");
-  trace_events->GetList().push_back(event2->Clone());
-  params.Set("value", std::move(trace_events));
+  trace_events.Append(event2->Clone());
+  params.SetKey("value", std::move(trace_events));
   ASSERT_EQ(kOk, client.TriggerEvent("Tracing.dataCollected", params).code());
 
   ASSERT_EQ(2u, log.GetEntries().size());
@@ -382,7 +379,7 @@ TEST(PerformanceLogger, WarnWhenTraceBufferFull) {
   client.AddListener(&logger);
   logger.OnConnected(&client);
   base::DictionaryValue params;
-  params.SetDouble("percentFull", 1.0);
+  params.SetDoubleKey("percentFull", 1.0);
   ASSERT_EQ(kOk, client.TriggerEvent("Tracing.bufferUsage", params).code());
 
   ASSERT_EQ(1u, log.GetEntries().size());
@@ -399,5 +396,5 @@ TEST(PerformanceLogger, WarnWhenTraceBufferFull) {
   EXPECT_EQ("Tracing.bufferUsage", method);
   base::DictionaryValue* actual_params;
   EXPECT_TRUE(message->GetDictionary("message.params", &actual_params));
-  EXPECT_TRUE(actual_params->HasKey("error"));
+  EXPECT_TRUE(actual_params->FindKey("error"));
 }

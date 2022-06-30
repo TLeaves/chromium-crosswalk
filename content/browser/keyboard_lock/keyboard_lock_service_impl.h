@@ -8,25 +8,26 @@
 #include <string>
 #include <vector>
 
-#include "content/common/content_export.h"
-#include "content/public/browser/frame_service_base.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
+#include "base/memory/raw_ptr.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
+#include "content/public/browser/document_service.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "third_party/blink/public/mojom/keyboard_lock/keyboard_lock.mojom.h"
 
 namespace content {
 
 class RenderFrameHost;
-class RenderFrameHostImpl;
 
-class CONTENT_EXPORT KeyboardLockServiceImpl final
-    : public FrameServiceBase<blink::mojom::KeyboardLockService> {
+class KeyboardLockServiceImpl final
+    : public DocumentService<blink::mojom::KeyboardLockService> {
  public:
-  KeyboardLockServiceImpl(RenderFrameHost* render_frame_host,
-                          blink::mojom::KeyboardLockServiceRequest request);
+  KeyboardLockServiceImpl(
+      RenderFrameHost* render_frame_host,
+      mojo::PendingReceiver<blink::mojom::KeyboardLockService> receiver);
 
   static void CreateMojoService(
       RenderFrameHost* render_frame_host,
-      blink::mojom::KeyboardLockServiceRequest request);
+      mojo::PendingReceiver<blink::mojom::KeyboardLockService> receiver);
 
   // blink::mojom::KeyboardLockService implementation.
   void RequestKeyboardLock(const std::vector<std::string>& key_codes,
@@ -35,10 +36,11 @@ class CONTENT_EXPORT KeyboardLockServiceImpl final
   void GetKeyboardLayoutMap(GetKeyboardLayoutMapCallback callback) override;
 
  private:
-  // |this| can only be destroyed by FrameServiceBase.
+  // |this| can only be destroyed by DocumentService.
   ~KeyboardLockServiceImpl() override;
 
-  RenderFrameHostImpl* const render_frame_host_;
+  const raw_ptr<RenderFrameHostImpl> render_frame_host_;
+  RenderFrameHostImpl::BackForwardCacheDisablingFeatureHandle feature_handle_;
 };
 
 }  // namespace content

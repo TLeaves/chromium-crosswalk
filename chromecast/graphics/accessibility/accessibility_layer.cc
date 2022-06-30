@@ -8,6 +8,7 @@
 #include "chromecast/graphics/accessibility/accessibility_layer.h"
 
 #include "ui/aura/window.h"
+#include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_animation_observer.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/paint_recorder.h"
@@ -39,7 +40,7 @@ void AccessibilityLayer::Set(aura::Window* root_window,
   layer_rect_ = bounds;
   gfx::Rect layer_bounds = bounds;
   int inset = -(GetInset());
-  layer_bounds.Inset(inset, inset, inset, inset);
+  layer_bounds.Inset(inset);
   CreateOrUpdateLayer(root_window, "AccessibilityLayer", layer_bounds);
 }
 
@@ -56,7 +57,7 @@ void AccessibilityLayer::CreateOrUpdateLayer(aura::Window* root_window,
     root_window_ = root_window;
     ui::Layer* root_layer = root_window->layer();
     layer_ = std::make_unique<ui::Layer>(ui::LAYER_TEXTURED);
-    layer_->set_name(layer_name);
+    layer_->SetName(layer_name);
     layer_->set_delegate(this);
     layer_->SetFillsBoundsOpaquely(false);
     root_layer->Add(layer_.get());

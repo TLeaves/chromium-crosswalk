@@ -6,9 +6,11 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/macros.h"
+#include "base/logging.h"
 #include "base/path_service.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
 #include "sql/test/scoped_error_expecter.h"
@@ -80,8 +82,10 @@ AffiliatedFacetsWithUpdateTime TestEquivalenceClass3() {
 
 class AffiliationDatabaseTest : public testing::Test {
  public:
-  AffiliationDatabaseTest() {}
-  ~AffiliationDatabaseTest() override {}
+  AffiliationDatabaseTest() = default;
+
+  AffiliationDatabaseTest(const AffiliationDatabaseTest&) = delete;
+  AffiliationDatabaseTest& operator=(const AffiliationDatabaseTest&) = delete;
 
   void SetUp() override {
     ASSERT_TRUE(temp_directory_.CreateUniqueTempDir());
@@ -89,7 +93,7 @@ class AffiliationDatabaseTest : public testing::Test {
   }
 
   void OpenDatabase() {
-    db_.reset(new AffiliationDatabase);
+    db_ = std::make_unique<AffiliationDatabase>();
     ASSERT_TRUE(db_->Init(db_path()));
   }
 
@@ -111,8 +115,6 @@ class AffiliationDatabaseTest : public testing::Test {
  private:
   base::ScopedTempDir temp_directory_;
   std::unique_ptr<AffiliationDatabase> db_;
-
-  DISALLOW_COPY_AND_ASSIGN(AffiliationDatabaseTest);
 };
 
 TEST_F(AffiliationDatabaseTest, Store) {
@@ -243,40 +245,6 @@ TEST_F(AffiliationDatabaseTest, StoreAndRemoveConflicting) {
   }
 }
 
-TEST_F(AffiliationDatabaseTest, DeleteAllAffiliationsAndBranding) {
-  db().DeleteAllAffiliationsAndBranding();
-
-  ASSERT_NO_FATAL_FAILURE(StoreInitialTestData());
-
-  db().DeleteAllAffiliationsAndBranding();
-
-  std::vector<AffiliatedFacetsWithUpdateTime> affiliations;
-  db().GetAllAffiliationsAndBranding(&affiliations);
-  ASSERT_EQ(0u, affiliations.size());
-}
-
-TEST_F(AffiliationDatabaseTest, DeleteAffiliationsAndBrandingOlderThan) {
-  db().DeleteAffiliationsAndBrandingOlderThan(base::Time::FromInternalValue(0));
-
-  ASSERT_NO_FATAL_FAILURE(StoreInitialTestData());
-
-  db().DeleteAffiliationsAndBrandingOlderThan(
-      base::Time::FromInternalValue(kTestTimeUs2));
-
-  std::vector<AffiliatedFacetsWithUpdateTime> affiliations;
-  db().GetAllAffiliationsAndBranding(&affiliations);
-  ASSERT_EQ(2u, affiliations.size());
-  ExpectEquivalenceClassesIncludingBrandingInfoAreEqual(TestEquivalenceClass2(),
-                                                        affiliations[0]);
-  ExpectEquivalenceClassesIncludingBrandingInfoAreEqual(TestEquivalenceClass3(),
-                                                        affiliations[1]);
-
-  db().DeleteAffiliationsAndBrandingOlderThan(base::Time::Max());
-
-  db().GetAllAffiliationsAndBranding(&affiliations);
-  ASSERT_EQ(0u, affiliations.size());
-}
-
 // Verify that an existing DB can be reopened, and data is retained.
 TEST_F(AffiliationDatabaseTest, DBRetainsDataAfterReopening) {
   ASSERT_NO_FATAL_FAILURE(StoreInitialTestData());
@@ -404,6 +372,27 @@ TEST_F(AffiliationDatabaseTest, InitializeFromVersion2) {
                                                         affiliations[2]);
   EXPECT_EQ(TestEquivalenceClass3().facets[0].branding_info,
             affiliations[2].facets[0].branding_info);
+}
+
+TEST_F(AffiliationDatabaseTest, ClearUnusedCache) {
+  ASSERT_NO_FATAL_FAILURE(StoreInitialTestData());
+
+  OpenDatabase();
+
+  std::vector<AffiliatedFacetsWithUpdateTime> affiliations;
+  db().GetAllAffiliationsAndBranding(&affiliations);
+  ASSERT_EQ(3u, affiliations.size());
+
+  db().RemoveMissingFacetURI({FacetURI::FromCanonicalSpec(kTestFacetURI1),
+                              FacetURI::FromCanonicalSpec(kTestFacetURI4)});
+
+  db().GetAllAffiliationsAndBranding(&affiliations);
+  ASSERT_EQ(2u, affiliations.size());
+
+  ExpectEquivalenceClassesIncludingBrandingInfoAreEqual(TestEquivalenceClass1(),
+                                                        affiliations[0]);
+  ExpectEquivalenceClassesIncludingBrandingInfoAreEqual(TestEquivalenceClass2(),
+                                                        affiliations[1]);
 }
 
 }  // namespace password_manager

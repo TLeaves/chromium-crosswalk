@@ -5,7 +5,6 @@
 #ifndef REMOTING_PROTOCOL_PAIRING_HOST_AUTHENTICATOR_H_
 #define REMOTING_PROTOCOL_PAIRING_HOST_AUTHENTICATOR_H_
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/protocol/pairing_authenticator_base.h"
 #include "remoting/protocol/pairing_registry.h"
@@ -21,13 +20,17 @@ class PairingHostAuthenticator : public PairingAuthenticatorBase {
       scoped_refptr<PairingRegistry> pairing_registry,
       const CreateBaseAuthenticatorCallback& create_base_authenticator_callback,
       const std::string& pin);
+
+  PairingHostAuthenticator(const PairingHostAuthenticator&) = delete;
+  PairingHostAuthenticator& operator=(const PairingHostAuthenticator&) = delete;
+
   ~PairingHostAuthenticator() override;
 
   // Initialize the authenticator with the given |client_id| in
   // |preferred_initial_state|.
   void Initialize(const std::string& client_id,
                   Authenticator::State preferred_initial_state,
-                  const base::Closure& resume_callback);
+                  base::OnceClosure resume_callback);
 
   // Authenticator interface.
   State state() const override;
@@ -37,12 +40,12 @@ class PairingHostAuthenticator : public PairingAuthenticatorBase {
   // PairingAuthenticatorBase overrides.
   void CreateSpakeAuthenticatorWithPin(
       State initial_state,
-      const base::Closure& resume_callback) override;
+      base::OnceClosure resume_callback) override;
 
   // Continue initializing once the pairing information for the client id has
   // been received.
   void InitializeWithPairing(Authenticator::State preferred_initial_state,
-                             const base::Closure& resume_callback,
+                             base::OnceClosure resume_callback,
                              PairingRegistry::Pairing pairing);
 
   // Protocol state.
@@ -52,12 +55,10 @@ class PairingHostAuthenticator : public PairingAuthenticatorBase {
   bool protocol_error_ = false;
   bool waiting_for_paired_secret_ = false;
 
-  base::WeakPtrFactory<PairingHostAuthenticator> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(PairingHostAuthenticator);
+  base::WeakPtrFactory<PairingHostAuthenticator> weak_factory_{this};
 };
 
 }  // namespace protocol
 }  // namespace remoting
 
-#endif  // REMOTING_PROTOCOL_PAIRING_AUTHENTICATOR_H_
+#endif  // REMOTING_PROTOCOL_PAIRING_HOST_AUTHENTICATOR_H_

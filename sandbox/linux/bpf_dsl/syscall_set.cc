@@ -6,8 +6,7 @@
 
 #include <stdint.h>
 
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/check.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/linux_syscall_ranges.h"
 

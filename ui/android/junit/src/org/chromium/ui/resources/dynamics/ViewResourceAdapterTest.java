@@ -19,14 +19,12 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.view.View;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.robolectric.annotation.Config;
 
-import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 
 import java.lang.ref.WeakReference;
@@ -60,15 +58,11 @@ public class ViewResourceAdapterTest {
              * Otherwise the GC-related tests would fail.
              */
             @Override
-            protected void capture(Canvas canvas) {}
+            protected boolean captureCommon(Canvas canvas, boolean drawWhileDetached) {
+                return true;
+            }
         };
 
-        RecordHistogram.setDisabledForTests(true);
-    }
-
-    @After
-    public void tearDown() {
-        RecordHistogram.setDisabledForTests(false);
     }
 
     @Test

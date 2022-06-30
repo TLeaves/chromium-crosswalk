@@ -5,7 +5,6 @@
 #ifndef IOS_CHROME_BROWSER_NET_CONNECTION_TYPE_OBSERVER_BRIDGE_H_
 #define IOS_CHROME_BROWSER_NET_CONNECTION_TYPE_OBSERVER_BRIDGE_H_
 
-#include "base/macros.h"
 #include "net/base/network_change_notifier.h"
 
 // Protocol mirroring net::NetworkChangeNotifier::ConnectionTypeObserver.
@@ -20,6 +19,11 @@ class ConnectionTypeObserverBridge
  public:
   explicit ConnectionTypeObserverBridge(
       id<CRConnectionTypeObserverBridge> delegate);
+
+  ConnectionTypeObserverBridge(const ConnectionTypeObserverBridge&) = delete;
+  ConnectionTypeObserverBridge& operator=(const ConnectionTypeObserverBridge&) =
+      delete;
+
   ~ConnectionTypeObserverBridge() override;
 
  private:
@@ -27,8 +31,7 @@ class ConnectionTypeObserverBridge
   void OnConnectionTypeChanged(
       net::NetworkChangeNotifier::ConnectionType type) override;
 
-  id<CRConnectionTypeObserverBridge> delegate_;  // Weak, owns this.
-  DISALLOW_COPY_AND_ASSIGN(ConnectionTypeObserverBridge);
+  __weak id<CRConnectionTypeObserverBridge> delegate_;
 };
 
 #endif  // IOS_CHROME_BROWSER_NET_CONNECTION_TYPE_OBSERVER_BRIDGE_H_

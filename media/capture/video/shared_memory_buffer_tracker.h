@@ -5,7 +5,6 @@
 #ifndef MEDIA_CAPTURE_VIDEO_SHARED_MEMORY_BUFFER_TRACKER_H_
 #define MEDIA_CAPTURE_VIDEO_SHARED_MEMORY_BUFFER_TRACKER_H_
 
-#include "media/capture/video/shared_memory_handle_provider.h"
 #include "media/capture/video/video_capture_buffer_handle.h"
 #include "media/capture/video/video_capture_buffer_tracker.h"
 
@@ -15,10 +14,17 @@ class Size;
 
 namespace media {
 
-// Tracker specifics for SharedMemory.
+// A tracker backed by unsafe shared memory. An unsafe region is necessary
+// because a buffer may be used multiple times in an output media::VideoFrame to
+// a decoder cross-process where it is written.
 class SharedMemoryBufferTracker final : public VideoCaptureBufferTracker {
  public:
   SharedMemoryBufferTracker();
+
+  SharedMemoryBufferTracker(const SharedMemoryBufferTracker&) = delete;
+  SharedMemoryBufferTracker& operator=(const SharedMemoryBufferTracker&) =
+      delete;
+
   ~SharedMemoryBufferTracker() override;
 
   // Implementation of VideoCaptureBufferTracker:
@@ -29,18 +35,15 @@ class SharedMemoryBufferTracker final : public VideoCaptureBufferTracker {
                            VideoPixelFormat format,
                            const mojom::PlaneStridesPtr& strides) override;
 
+  base::UnsafeSharedMemoryRegion DuplicateAsUnsafeRegion() override;
+  mojo::ScopedSharedBufferHandle DuplicateAsMojoBuffer() override;
   std::unique_ptr<VideoCaptureBufferHandle> GetMemoryMappedAccess() override;
-  mojo::ScopedSharedBufferHandle GetHandleForTransit(bool read_only) override;
-  base::SharedMemoryHandle GetNonOwnedSharedMemoryHandleForLegacyIPC() override;
-#if defined(OS_CHROMEOS)
   gfx::GpuMemoryBufferHandle GetGpuMemoryBufferHandle() override;
-#endif
   uint32_t GetMemorySizeInBytes() override;
 
  private:
-  SharedMemoryHandleProvider provider_;
-
-  DISALLOW_COPY_AND_ASSIGN(SharedMemoryBufferTracker);
+  base::UnsafeSharedMemoryRegion region_;
+  base::WritableSharedMemoryMapping mapping_;
 };
 
 }  // namespace media

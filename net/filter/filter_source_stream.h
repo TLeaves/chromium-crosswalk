@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/net_errors.h"
@@ -30,13 +29,17 @@ class NET_EXPORT_PRIVATE FilterSourceStream : public SourceStream {
   // |upstream| cannot be null.
   FilterSourceStream(SourceType type, std::unique_ptr<SourceStream> upstream);
 
+  FilterSourceStream(const FilterSourceStream&) = delete;
+  FilterSourceStream& operator=(const FilterSourceStream&) = delete;
+
   ~FilterSourceStream() override;
 
+  // SourceStream implementation.
   int Read(IOBuffer* read_buffer,
            int read_buffer_size,
            CompletionOnceCallback callback) override;
-
   std::string Description() const override;
+  bool MayHaveMoreBytes() const override;
 
   static SourceType ParseEncodingType(const std::string& encoding);
 
@@ -94,7 +97,7 @@ class NET_EXPORT_PRIVATE FilterSourceStream : public SourceStream {
   // |upstream_| to |this_|.
   std::unique_ptr<SourceStream> upstream_;
 
-  State next_state_;
+  State next_state_ = STATE_NONE;
 
   // Buffer for reading data out of |upstream_| and then for use by |this|
   // before the filtered data is returned through Read().
@@ -107,13 +110,11 @@ class NET_EXPORT_PRIVATE FilterSourceStream : public SourceStream {
 
   // Not null if there is a pending Read.
   scoped_refptr<IOBuffer> output_buffer_;
-  int output_buffer_size_;
+  int output_buffer_size_ = 0;
   CompletionOnceCallback callback_;
 
   // Reading from |upstream_| has returned 0 byte or an error code.
-  bool upstream_end_reached_;
-
-  DISALLOW_COPY_AND_ASSIGN(FilterSourceStream);
+  bool upstream_end_reached_ = false;
 };
 
 }  // namespace net

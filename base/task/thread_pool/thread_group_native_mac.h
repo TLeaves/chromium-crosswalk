@@ -10,6 +10,7 @@
 #include "base/base_export.h"
 #include "base/mac/scoped_dispatch_object.h"
 #include "base/task/thread_pool/thread_group_native.h"
+#include "base/threading/platform_thread.h"
 
 namespace base {
 namespace internal {
@@ -24,10 +25,18 @@ namespace internal {
 // https://developer.apple.com/library/archive/documentation/General/Conceptual/ConcurrencyProgrammingGuide/OperationQueues/OperationQueues.html
 class BASE_EXPORT ThreadGroupNativeMac : public ThreadGroupNative {
  public:
-  ThreadGroupNativeMac(TrackedRef<TaskTracker> task_tracker,
-                       TrackedRef<Delegate> delegate,
-                       ThreadGroup* predecessor_thread_group = nullptr);
+  // `io_thread_task_runner` is used to setup FileDescriptorWatcher on worker
+  // threads. `io_thread_task_runner` must refer to a Thread with
+  // MessgaePumpType::IO
+  ThreadGroupNativeMac(
+      ThreadPriority priority_hint,
+      scoped_refptr<SingleThreadTaskRunner> io_thread_task_runner,
+      TrackedRef<TaskTracker> task_tracker,
+      TrackedRef<Delegate> delegate,
+      ThreadGroup* predecessor_thread_group = nullptr);
 
+  ThreadGroupNativeMac(const ThreadGroupNativeMac&) = delete;
+  ThreadGroupNativeMac& operator=(const ThreadGroupNativeMac&) = delete;
   ~ThreadGroupNativeMac() override;
 
  private:
@@ -36,6 +45,8 @@ class BASE_EXPORT ThreadGroupNativeMac : public ThreadGroupNative {
   void StartImpl() override;
   void SubmitWork() override;
 
+  const ThreadPriority priority_hint_;
+
   // Dispatch queue on which work is scheduled. Backed by a shared thread pool
   // managed by libdispatch.
   ScopedDispatchObject<dispatch_queue_t> queue_;
@@ -43,7 +54,8 @@ class BASE_EXPORT ThreadGroupNativeMac : public ThreadGroupNative {
   // Dispatch group to enable synchronization.
   ScopedDispatchObject<dispatch_group_t> group_;
 
-  DISALLOW_COPY_AND_ASSIGN(ThreadGroupNativeMac);
+  // Service thread task runner.
+  scoped_refptr<SingleThreadTaskRunner> io_thread_task_runner_;
 };
 
 using ThreadGroupNativeImpl = ThreadGroupNativeMac;

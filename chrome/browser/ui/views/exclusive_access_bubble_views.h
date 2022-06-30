@@ -7,9 +7,8 @@
 
 #include <memory>
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
-#include "base/scoped_observer.h"
+#include "base/memory/raw_ptr.h"
+#include "base/scoped_observation.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble_hide_callback.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
@@ -41,6 +40,11 @@ class ExclusiveAccessBubbleViews : public ExclusiveAccessBubble,
       const GURL& url,
       ExclusiveAccessBubbleType bubble_type,
       ExclusiveAccessBubbleHideCallback bubble_first_hide_callback);
+
+  ExclusiveAccessBubbleViews(const ExclusiveAccessBubbleViews&) = delete;
+  ExclusiveAccessBubbleViews& operator=(const ExclusiveAccessBubbleViews&) =
+      delete;
+
   ~ExclusiveAccessBubbleViews() override;
 
   // |force_update| indicates the caller wishes to show the bubble contents
@@ -58,7 +62,12 @@ class ExclusiveAccessBubbleViews : public ExclusiveAccessBubble,
   // itself.
   void HideImmediately();
 
+  // Returns true if the popup is being shown (and not fully shown).
+  bool IsShowing() const;
+
   views::View* GetView();
+
+  gfx::SlideAnimation* animation_for_test() { return animation_.get(); }
 
  private:
   // Starts or stops polling the mouse location based on |popup_| and
@@ -94,9 +103,9 @@ class ExclusiveAccessBubbleViews : public ExclusiveAccessBubble,
 
   void RunHideCallbackIfNeeded(ExclusiveAccessBubbleHideReason reason);
 
-  ExclusiveAccessBubbleViewsContext* const bubble_view_context_;
+  const raw_ptr<ExclusiveAccessBubbleViewsContext> bubble_view_context_;
 
-  views::Widget* popup_;
+  raw_ptr<views::Widget> popup_;
 
   // Classic mode: Bubble may show & hide multiple times. The callback only runs
   // for the first hide.
@@ -107,13 +116,11 @@ class ExclusiveAccessBubbleViews : public ExclusiveAccessBubble,
   std::unique_ptr<gfx::SlideAnimation> animation_;
 
   // The contents of the popup.
-  SubtleNotificationView* view_;
-  base::string16 browser_fullscreen_exit_accelerator_;
+  raw_ptr<SubtleNotificationView> view_;
+  std::u16string browser_fullscreen_exit_accelerator_;
 
-  ScopedObserver<FullscreenController, FullscreenObserver> fullscreen_observer_{
-      this};
-
-  DISALLOW_COPY_AND_ASSIGN(ExclusiveAccessBubbleViews);
+  base::ScopedObservation<FullscreenController, FullscreenObserver>
+      fullscreen_observation_{this};
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_EXCLUSIVE_ACCESS_BUBBLE_VIEWS_H_

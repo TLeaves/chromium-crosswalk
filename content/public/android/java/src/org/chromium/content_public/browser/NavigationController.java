@@ -4,9 +4,7 @@
 
 package org.chromium.content_public.browser;
 
-import android.support.annotation.Nullable;
-
-import org.chromium.base.VisibleForTesting;
+import androidx.annotation.Nullable;
 
 /**
  * The NavigationController Java wrapper to allow communicating with the native
@@ -43,12 +41,12 @@ public interface NavigationController {
     void goToNavigationIndex(int index);
 
     /**
-     * Goes to the navigation entry before the current one.
+     * Goes to the first non-skippable navigation entry before the current.
      */
     void goBack();
 
     /**
-     * Goes to the navigation entry following the current one.
+     * Goes to the first non-skippable navigation entry following the current.
      */
     void goForward();
 
@@ -145,7 +143,6 @@ public interface NavigationController {
      * @param index Index to retrieve the NavigationEntry for.
      * @return Entry containing info about the navigation, null if the index is out of bounds.
      */
-    @VisibleForTesting
     public NavigationEntry getEntryAtIndex(int index);
 
     /**
@@ -171,6 +168,12 @@ public interface NavigationController {
      *         call discards any transient or pending entries.
      */
     public boolean removeEntryAtIndex(int index);
+
+    /**
+     * Discards any transient or pending entries, then discards all entries after the current entry
+     * index.
+     */
+    void pruneForwardEntries();
 
     /**
      * Gets extra data on the {@link NavigationEntry} at {@code index}.

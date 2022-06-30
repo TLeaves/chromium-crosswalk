@@ -6,343 +6,398 @@
  * @fileoverview
  * 'os-settings-page' is the settings page containing the actual OS settings.
  */
-Polymer({
-  is: 'os-settings-page',
 
-  behaviors: [
-    settings.MainPageBehavior,
-    settings.RouteObserverBehavior,
-    WebUIListenerBehavior,
-  ],
+import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
+import 'chrome://resources/cr_elements/hidden_style_css.m.js';
+import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/cr_elements/shared_vars_css.m.js';
+import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
+import './settings_idle_load.js';
+import '../os_apps_page/os_apps_page.js';
+import '../os_people_page/os_people_page.js';
+import '../os_privacy_page/os_privacy_page.js';
+import '../os_printing_page/os_printing_page.js';
+import '../os_search_page/os_search_page.js';
+import '../personalization_page/personalization_page.js';
+import '../../settings_page/settings_section.js';
+import '../../settings_page_styles.css.js';
+import '../bluetooth_page/bluetooth_page.js';
+import '../device_page/device_page.js';
+import '../internet_page/internet_page.js';
+import '../kerberos_page/kerberos_page.js';
+import '../multidevice_page/multidevice_page.js';
+import '../os_bluetooth_page/os_bluetooth_page.js';
+import '../os_icons.js';
 
-  properties: {
-    /** Preferences state. */
-    prefs: {
-      type: Object,
-      notify: true,
-    },
+import {assert} from 'chrome://resources/js/assert.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {WebUIListenerBehavior, WebUIListenerBehaviorInterface} from 'chrome://resources/js/web_ui_listener_behavior.m.js';
+import {beforeNextRender, html, microTask, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-    showApps: Boolean,
+import {Route, Router} from '../../router.js';
+import {AndroidAppsBrowserProxyImpl, AndroidAppsInfo} from '../os_apps_page/android_apps_browser_proxy.js';
+import {OSPageVisibility} from '../os_page_visibility.js';
+import {routes} from '../os_route.js';
+import {RouteObserverBehavior, RouteObserverBehaviorInterface} from '../route_observer_behavior.js';
 
-    showAndroidApps: Boolean,
+import {MainPageBehavior, MainPageBehaviorInterface} from './main_page_behavior.js';
 
-    showCrostini: Boolean,
+/**
+ * @constructor
+ * @extends {PolymerElement}
+ * @implements {MainPageBehaviorInterface}
+ * @implements {RouteObserverBehaviorInterface}
+ * @implements {WebUIListenerBehaviorInterface}
+ */
+const OsSettingsPageElementBase = mixinBehaviors(
+    [MainPageBehavior, RouteObserverBehavior, WebUIListenerBehavior],
+    PolymerElement);
 
-    allowCrostini_: Boolean,
+/** @polymer */
+class OsSettingsPageElement extends OsSettingsPageElementBase {
+  static get is() {
+    return 'os-settings-page';
+  }
 
-    havePlayStoreApp: Boolean,
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
-    /** @type {!AndroidAppsInfo|undefined} */
-    androidAppsInfo: Object,
-
-    /**
-     * Dictionary defining page visibility.
-     * @type {!PageVisibility}
-     */
-    pageVisibility: {
-      type: Object,
-      value: function() {
-        return {};
+  static get properties() {
+    return {
+      /** Preferences state. */
+      prefs: {
+        type: Object,
+        notify: true,
       },
-    },
 
-    advancedToggleExpanded: {
-      type: Boolean,
-      value: false,
-      notify: true,
-      observer: 'advancedToggleExpandedChanged_',
-    },
+      showAndroidApps: Boolean,
+
+      showArcvmManageUsb: Boolean,
+
+      showCrostini: Boolean,
+
+      showPluginVm: Boolean,
+
+      showReset: Boolean,
+
+      showStartup: Boolean,
+
+      showKerberosSection: Boolean,
+
+      allowCrostini_: Boolean,
+
+      havePlayStoreApp: Boolean,
+
+      /** @type {!AndroidAppsInfo|undefined} */
+      androidAppsInfo: Object,
+
+      /**
+       * Whether the user is in guest mode.
+       * @private {boolean}
+       */
+      isGuestMode_: {
+        type: Boolean,
+        value: loadTimeData.getBoolean('isGuest'),
+      },
+
+      /**
+       * Whether Accessibility OS Settings visibility improvements are enabled.
+       * @private{boolean}
+       */
+      isAccessibilityOSSettingsVisibilityEnabled_: {
+        type: Boolean,
+        readOnly: true,
+        value() {
+          return loadTimeData.getBoolean(
+              'isAccessibilityOSSettingsVisibilityEnabled');
+        }
+      },
+
+      /**
+       * Dictionary defining page visibility.
+       * @type {!OSPageVisibility}
+       */
+      pageVisibility: {
+        type: Object,
+        value() {
+          return {};
+        },
+      },
+
+      advancedToggleExpanded: {
+        type: Boolean,
+        value: false,
+        notify: true,
+        observer: 'advancedToggleExpandedChanged_',
+      },
+
+      /**
+       * True if a section is fully expanded to hide other sections beneath it.
+       * False otherwise (even while animating a section open/closed).
+       * @private {boolean}
+       */
+      hasExpandedSection_: {
+        type: Boolean,
+        value: false,
+      },
+
+      /**
+       * Whether the user is a secondary user. Computed so that it is calculated
+       * correctly after loadTimeData is available.
+       * @private
+       */
+      showSecondaryUserBanner_: {
+        type: Boolean,
+        computed: 'computeShowSecondaryUserBanner_(hasExpandedSection_)',
+      },
+
+      /**
+       * Whether to show banner indicating the user to return this device as an
+       * update is required as per policy but the device has reached end of
+       * life.
+       * @private
+       */
+      showUpdateRequiredEolBanner_: {
+        type: Boolean,
+        value: !!loadTimeData.getString('updateRequiredEolBannerText'),
+      },
+
+      /** @private {!Route|undefined} */
+      currentRoute_: Object,
+
+      /** @private */
+      isBluetoothRevampEnabled_: {
+        type: Boolean,
+        value() {
+          return loadTimeData.getBoolean('enableBluetoothRevamp');
+        }
+      },
+    };
+  }
+
+  constructor() {
+    super();
 
     /**
-     * True if a section is fully expanded to hide other sections beneath it.
-     * False otherwise (even while animating a section open/closed).
+     * Used to avoid handling a new toggle while currently toggling.
      * @private {boolean}
      */
-    hasExpandedSection_: {
-      type: Boolean,
-      value: false,
-    },
+    this.advancedTogglingInProgress_ = false;
+  }
 
-    /**
-     * Whether the user is a secondary user. Computed so that it is calculated
-     * correctly after loadTimeData is available.
-     * @private
-     */
-    showSecondaryUserBanner_: {
-      type: Boolean,
-      computed: 'computeShowSecondaryUserBanner_(hasExpandedSection_)',
-    },
+  ready() {
+    super.ready();
 
-    /** @private {!settings.Route|undefined} */
-    currentRoute_: Object,
-  },
+    this.setAttribute('role', 'main');
 
-  hostAttributes: {
-    role: 'main',
-  },
-
-  listeners: {
-    'subpage-expand': 'onSubpageExpanded_',
-  },
-
-  /**
-   * Used to avoid handling a new toggle while currently toggling.
-   * @private {boolean}
-   */
-  advancedTogglingInProgress_: false,
+    this.addEventListener('subpage-expand', this.onSubpageExpanded_);
+  }
 
   /** @override */
-  attached: function() {
-    this.currentRoute_ = settings.getCurrentRoute();
+  connectedCallback() {
+    super.connectedCallback();
+
+    this.currentRoute_ = Router.getInstance().getCurrentRoute();
 
     this.allowCrostini_ = loadTimeData.valueExists('allowCrostini') &&
         loadTimeData.getBoolean('allowCrostini');
 
-    if (settings.AndroidAppsBrowserProxyImpl) {
-      this.addWebUIListener(
-          'android-apps-info-update', this.androidAppsInfoUpdate_.bind(this));
-      settings.AndroidAppsBrowserProxyImpl.getInstance()
-          .requestAndroidAppsInfo();
-    }
-  },
+    this.addWebUIListener(
+        'android-apps-info-update', this.androidAppsInfoUpdate_.bind(this));
+    AndroidAppsBrowserProxyImpl.getInstance().requestAndroidAppsInfo();
+  }
 
   /**
-   * @param {!settings.Route} newRoute
-   * @param {settings.Route} oldRoute
+   * @param {!Route} newRoute
+   * @param {!Route=} oldRoute
    */
-  currentRouteChanged: function(newRoute, oldRoute) {
+  currentRouteChanged(newRoute, oldRoute) {
     this.currentRoute_ = newRoute;
 
-    if (settings.routes.ADVANCED &&
-        settings.routes.ADVANCED.contains(newRoute)) {
+    if (routes.ADVANCED && routes.ADVANCED.contains(newRoute)) {
       this.advancedToggleExpanded = true;
     }
 
     if (oldRoute && oldRoute.isSubpage()) {
       // If the new route isn't the same expanded section, reset
       // hasExpandedSection_ for the next transition.
-      if (!newRoute.isSubpage() || newRoute.section != oldRoute.section) {
+      if (!newRoute.isSubpage() || newRoute.section !== oldRoute.section) {
         this.hasExpandedSection_ = false;
       }
     } else {
       assert(!this.hasExpandedSection_);
     }
 
-    settings.MainPageBehavior.currentRouteChanged.call(
-        this, newRoute, oldRoute);
-  },
+    MainPageBehavior.currentRouteChanged.call(this, newRoute, oldRoute);
+  }
 
-  // Override settings.MainPageBehavior method.
-  containsRoute: function(route) {
-    return !route || settings.routes.BASIC.contains(route) ||
-        settings.routes.ADVANCED.contains(route);
-  },
+  // Override MainPageBehavior method.
+  containsRoute(route) {
+    return !route || routes.BASIC.contains(route) ||
+        routes.ADVANCED.contains(route);
+  }
 
   /**
    * @param {boolean|undefined} visibility
    * @return {boolean}
    * @private
    */
-  showPage_: function(visibility) {
+  showPage_(visibility) {
     return visibility !== false;
-  },
-
-  /**
-   * Queues a task to search the basic sections, then another for the advanced
-   * sections.
-   * @param {string} query The text to search for.
-   * @return {!Promise<!settings.SearchResult>} A signal indicating that
-   *     searching finished.
-   */
-  searchContents: function(query) {
-    const whenSearchDone = [
-      settings.getSearchManager().search(query, assert(this.$$('#basicPage'))),
-    ];
-
-    if (this.pageVisibility.advancedSettings !== false) {
-      whenSearchDone.push(
-          this.$$('#advancedPageTemplate').get().then(function(advancedPage) {
-            return settings.getSearchManager().search(query, advancedPage);
-          }));
-    }
-
-    return Promise.all(whenSearchDone).then(function(requests) {
-      // Combine the SearchRequests results to a single SearchResult object.
-      return {
-        canceled: requests.some(function(r) {
-          return r.canceled;
-        }),
-        didFindMatches: requests.some(function(r) {
-          return r.didFindMatches();
-        }),
-        // All requests correspond to the same user query, so only need to check
-        // one of them.
-        wasClearSearch: requests[0].isSame(''),
-      };
-    });
-  },
+  }
 
   /**
    * @return {boolean}
    * @private
    */
-  computeShowSecondaryUserBanner_: function() {
+  computeShowSecondaryUserBanner_() {
     return !this.hasExpandedSection_ &&
         loadTimeData.getBoolean('isSecondaryUser');
-  },
+  }
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  computeShowUpdateRequiredEolBanner_() {
+    return !this.hasExpandedSection_ && this.showUpdateRequiredEolBanner_;
+  }
 
   /**
    * @param {!AndroidAppsInfo} info
    * @private
    */
-  androidAppsInfoUpdate_: function(info) {
+  androidAppsInfoUpdate_(info) {
     this.androidAppsInfo = info;
-  },
+  }
 
   /**
-   * Returns true in case Android apps settings needs to be created. It is not
-   * created in case ARC++ is not allowed for the current profile.
-   * @return {boolean}
+   * Hides the update required EOL banner. It is shown again when Settings is
+   * re-opened.
    * @private
    */
-  shouldCreateAndroidAppsSection_: function() {
-    const visibility = /** @type {boolean|undefined} */ (
-        this.get('pageVisibility.androidApps'));
-    return this.showAndroidApps && this.showPage_(visibility);
-  },
-
-  /**
-   * Returns true in case Android apps settings should be shown. It is not
-   * shown in case we don't have the Play Store app and settings app is not
-   * yet available.
-   * @return {boolean}
-   * @private
-   */
-  shouldShowAndroidAppsSection_: function() {
-    if (this.havePlayStoreApp ||
-        (this.androidAppsInfo && this.androidAppsInfo.settingsAppAvailable)) {
-      return true;
-    }
-    return false;
-  },
+  onCloseEolBannerClicked_() {
+    this.showUpdateRequiredEolBanner_ = false;
+  }
 
   /**
    * Hides everything but the newly expanded subpage.
    * @private
    */
-  onSubpageExpanded_: function() {
+  onSubpageExpanded_() {
     this.hasExpandedSection_ = true;
-  },
+  }
 
   /**
    * Render the advanced page now (don't wait for idle).
    * @private
    */
-  advancedToggleExpandedChanged_: function() {
+  advancedToggleExpandedChanged_() {
     if (!this.advancedToggleExpanded) {
       return;
     }
 
     // In Polymer2, async() does not wait long enough for layout to complete.
-    // Polymer.RenderStatus.beforeNextRender() must be used instead.
-    Polymer.RenderStatus.beforeNextRender(this, () => {
-      this.$$('#advancedPageTemplate').get();
+    // beforeNextRender() must be used instead.
+    beforeNextRender(this, () => {
+      this.shadowRoot.querySelector('#advancedPageTemplate').get();
     });
-  },
+  }
 
-  advancedToggleClicked_: function() {
+  advancedToggleClicked_() {
     if (this.advancedTogglingInProgress_) {
       return;
     }
 
     this.advancedTogglingInProgress_ = true;
-    const toggle = this.$$('#toggleContainer');
+    const toggle = this.shadowRoot.querySelector('#toggleContainer');
     if (!this.advancedToggleExpanded) {
       this.advancedToggleExpanded = true;
-      this.async(() => {
-        this.$$('#advancedPageTemplate').get().then(() => {
-          this.fire('scroll-to-top', {
-            top: toggle.offsetTop,
-            callback: () => {
-              this.advancedTogglingInProgress_ = false;
-            }
-          });
-        });
+      microTask.run(() => {
+        this.shadowRoot.querySelector('#advancedPageTemplate')
+            .get()
+            .then(() => {
+              const event = new CustomEvent('scroll-to-top', {
+                bubbles: true,
+                composed: true,
+                detail: {
+                  top: toggle.offsetTop,
+                  callback: () => {
+                    this.advancedTogglingInProgress_ = false;
+                  }
+                }
+              });
+              this.dispatchEvent(event);
+            });
       });
     } else {
-      this.fire('scroll-to-bottom', {
-        bottom: toggle.offsetTop + toggle.offsetHeight + 24,
-        callback: () => {
-          this.advancedToggleExpanded = false;
-          this.advancedTogglingInProgress_ = false;
+      const event = new CustomEvent('scroll-to-bottom', {
+        bubbles: true,
+        composed: true,
+        detail: {
+          bottom: toggle.offsetTop + toggle.offsetHeight + 24,
+          callback: () => {
+            this.advancedToggleExpanded = false;
+            this.advancedTogglingInProgress_ = false;
+          }
         }
       });
+      this.dispatchEvent(event);
     }
-  },
+  }
 
   /**
-   * @param {boolean} inSearchMode
-   * @param {boolean} hasExpandedSection
-   * @return {boolean}
-   * @private
-   */
-  showAdvancedToggle_: function(inSearchMode, hasExpandedSection) {
-    return !inSearchMode && !hasExpandedSection;
-  },
-
-  /**
-   * @param {!settings.Route} currentRoute
-   * @param {boolean} inSearchMode
+   * @param {!Route} currentRoute
    * @param {boolean} hasExpandedSection
    * @return {boolean} Whether to show the basic page, taking into account
    *     both routing and search state.
    * @private
    */
-  showBasicPage_: function(currentRoute, inSearchMode, hasExpandedSection) {
-    return !hasExpandedSection || settings.routes.BASIC.contains(currentRoute);
-  },
+  showBasicPage_(currentRoute, hasExpandedSection) {
+    return !hasExpandedSection || routes.BASIC.contains(currentRoute);
+  }
 
   /**
-   * @param {!settings.Route} currentRoute
-   * @param {boolean} inSearchMode
+   * @param {!Route} currentRoute
    * @param {boolean} hasExpandedSection
    * @param {boolean} advancedToggleExpanded
    * @return {boolean} Whether to show the advanced page, taking into account
    *     both routing and search state.
    * @private
    */
-  showAdvancedPage_: function(
-      currentRoute, inSearchMode, hasExpandedSection, advancedToggleExpanded) {
+  showAdvancedPage_(currentRoute, hasExpandedSection, advancedToggleExpanded) {
     return hasExpandedSection ?
-        (settings.routes.ADVANCED &&
-         settings.routes.ADVANCED.contains(currentRoute)) :
-        advancedToggleExpanded || inSearchMode;
-  },
+        (routes.ADVANCED && routes.ADVANCED.contains(currentRoute)) :
+        advancedToggleExpanded;
+  }
 
   /**
    * @param {(boolean|undefined)} visibility
    * @return {boolean} True unless visibility is false.
    * @private
    */
-  showAdvancedSettings_: function(visibility) {
+  showAdvancedSettings_(visibility) {
     return visibility !== false;
-  },
+  }
 
   /**
    * @param {boolean} opened Whether the menu is expanded.
    * @return {string} Icon name.
    * @private
    */
-  getArrowIcon_: function(opened) {
+  getArrowIcon_(opened) {
     return opened ? 'cr:arrow-drop-up' : 'cr:arrow-drop-down';
-  },
+  }
 
   /**
    * @param {boolean} bool
    * @return {string}
    * @private
    */
-  boolToString_: function(bool) {
+  boolToString_(bool) {
     return bool.toString();
-  },
-});
+  }
+}
+
+customElements.define(OsSettingsPageElement.is, OsSettingsPageElement);

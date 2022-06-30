@@ -6,10 +6,9 @@
 #define CHROME_BROWSER_SECURITY_EVENTS_SECURITY_EVENT_RECORDER_IMPL_H_
 
 #include <memory>
-#include <string>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/time/clock.h"
 #include "chrome/browser/security_events/security_event_recorder.h"
 #include "chrome/browser/security_events/security_event_sync_bridge.h"
@@ -19,6 +18,11 @@ class SecurityEventRecorderImpl : public SecurityEventRecorder {
   SecurityEventRecorderImpl(
       std::unique_ptr<SecurityEventSyncBridge> security_event_sync_bridge,
       base::Clock* clock);
+
+  SecurityEventRecorderImpl(const SecurityEventRecorderImpl&) = delete;
+  SecurityEventRecorderImpl& operator=(const SecurityEventRecorderImpl&) =
+      delete;
+
   ~SecurityEventRecorderImpl() override;
 
   void RecordGaiaPasswordReuse(
@@ -32,9 +36,7 @@ class SecurityEventRecorderImpl : public SecurityEventRecorder {
 
  private:
   std::unique_ptr<SecurityEventSyncBridge> security_event_sync_bridge_;
-  base::Clock* clock_;
-
-  DISALLOW_COPY_AND_ASSIGN(SecurityEventRecorderImpl);
+  raw_ptr<base::Clock> clock_;
 };
 
 #endif  // CHROME_BROWSER_SECURITY_EVENTS_SECURITY_EVENT_RECORDER_IMPL_H_

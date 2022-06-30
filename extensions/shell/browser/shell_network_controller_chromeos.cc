@@ -5,10 +5,13 @@
 #include "extensions/shell/browser/shell_network_controller_chromeos.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/values.h"
+#include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_device_handler.h"
 #include "chromeos/network/network_handler.h"
@@ -26,8 +29,7 @@ namespace {
 // or when connected to a non-preferred network.
 const int kScanIntervalSec = 10;
 
-void HandleEnableWifiError(const std::string& error_name,
-                           std::unique_ptr<base::DictionaryValue> error_data) {
+void HandleEnableWifiError(const std::string& error_name) {
   LOG(WARNING) << "Unable to enable wifi: " << error_name;
 }
 
@@ -54,15 +56,13 @@ ShellNetworkController::ShellNetworkController(
     const std::string& preferred_network_name)
     : state_(STATE_IDLE),
       preferred_network_name_(preferred_network_name),
-      preferred_network_is_active_(false),
-      weak_ptr_factory_(this) {
+      preferred_network_is_active_(false) {
   chromeos::NetworkStateHandler* state_handler =
       chromeos::NetworkHandler::Get()->network_state_handler();
   state_handler->AddObserver(this, FROM_HERE);
   state_handler->SetTechnologyEnabled(
-      chromeos::NetworkTypePattern::Primitive(shill::kTypeWifi),
-      true,
-      base::Bind(&HandleEnableWifiError));
+      chromeos::NetworkTypePattern::Primitive(shill::kTypeWifi), true,
+      base::BindRepeating(&HandleEnableWifiError));
 
   // If we're unconnected, trigger a connection attempt and start scanning.
   NetworkConnectionStateChanged(NULL);
@@ -105,9 +105,21 @@ void ShellNetworkController::NetworkConnectionStateChanged(
 }
 
 void ShellNetworkController::SetCellularAllowRoaming(bool allow_roaming) {
-  chromeos::NetworkDeviceHandler* device_handler =
-      chromeos::NetworkHandler::Get()->network_device_handler();
-  device_handler->SetCellularAllowRoaming(allow_roaming);
+  chromeos::NetworkHandler* handler = chromeos::NetworkHandler::Get();
+  chromeos::NetworkStateHandler::NetworkStateList network_list;
+
+  base::DictionaryValue properties;
+  properties.SetKey(shill::kCellularAllowRoamingProperty,
+                    base::Value(allow_roaming));
+
+  handler->network_state_handler()->GetVisibleNetworkListByType(
+      chromeos::NetworkTypePattern::Cellular(), &network_list);
+
+  for (const chromeos::NetworkState* network : network_list) {
+    handler->network_configuration_handler()->SetShillProperties(
+        network->path(), properties, base::DoNothing(),
+        chromeos::network_handler::ErrorCallback());
+  }
 }
 
 const chromeos::NetworkState* ShellNetworkController::GetActiveWiFiNetwork() {
@@ -129,9 +141,7 @@ void ShellNetworkController::SetScanningEnabled(bool enabled) {
   VLOG(1) << (enabled ? "Starting" : "Stopping") << " scanning";
   if (enabled) {
     RequestScan();
-    scan_timer_.Start(FROM_HERE,
-                      base::TimeDelta::FromSeconds(kScanIntervalSec),
-                      this,
+    scan_timer_.Start(FROM_HERE, base::Seconds(kScanIntervalSec), this,
                       &ShellNetworkController::RequestScan);
   } else {
     scan_timer_.Stop();
@@ -195,10 +205,10 @@ void ShellNetworkController::ConnectIfUnconnected() {
                : STATE_WAITING_FOR_NON_PREFERRED_RESULT;
   handler->network_connection_handler()->ConnectToNetwork(
       best_network->path(),
-      base::Bind(&ShellNetworkController::HandleConnectionSuccess,
-                 weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&ShellNetworkController::HandleConnectionError,
-                 weak_ptr_factory_.GetWeakPtr()),
+      base::BindOnce(&ShellNetworkController::HandleConnectionSuccess,
+                     weak_ptr_factory_.GetWeakPtr()),
+      base::BindRepeating(&ShellNetworkController::HandleConnectionError,
+                          weak_ptr_factory_.GetWeakPtr()),
       false /* check_error_state */,
       chromeos::ConnectCallbackMode::ON_COMPLETED);
 }
@@ -209,8 +219,7 @@ void ShellNetworkController::HandleConnectionSuccess() {
 }
 
 void ShellNetworkController::HandleConnectionError(
-    const std::string& error_name,
-    std::unique_ptr<base::DictionaryValue> error_data) {
+    const std::string& error_name) {
   LOG(WARNING) << "Unable to connect to network: " << error_name;
   state_ = STATE_IDLE;
 }

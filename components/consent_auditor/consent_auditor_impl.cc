@@ -29,12 +29,12 @@ const char kLocalConsentVersionKey[] = "version";
 const char kLocalConsentLocaleKey[] = "locale";
 
 std::unique_ptr<sync_pb::UserConsentSpecifics> CreateUserConsentSpecifics(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const std::string& locale,
     base::Clock* clock) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       std::make_unique<sync_pb::UserConsentSpecifics>();
-  specifics->set_account_id(account_id);
+  specifics->set_account_id(account_id.ToString());
   specifics->set_client_consent_time_usec(
       clock->Now().since_origin().InMicroseconds());
   specifics->set_locale(locale);
@@ -69,7 +69,7 @@ void ConsentAuditorImpl::RegisterProfilePrefs(PrefRegistrySimple* registry) {
 }
 
 void ConsentAuditorImpl::RecordArcPlayConsent(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const ArcPlayTermsOfServiceConsent& consent) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       CreateUserConsentSpecifics(account_id, app_locale_, clock_);
@@ -81,7 +81,7 @@ void ConsentAuditorImpl::RecordArcPlayConsent(
 }
 
 void ConsentAuditorImpl::RecordArcGoogleLocationServiceConsent(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const UserConsentTypes::ArcGoogleLocationServiceConsent& consent) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       CreateUserConsentSpecifics(account_id, app_locale_, clock_);
@@ -94,7 +94,7 @@ void ConsentAuditorImpl::RecordArcGoogleLocationServiceConsent(
 }
 
 void ConsentAuditorImpl::RecordArcBackupAndRestoreConsent(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const UserConsentTypes::ArcBackupAndRestoreConsent& consent) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       CreateUserConsentSpecifics(account_id, app_locale_, clock_);
@@ -107,7 +107,7 @@ void ConsentAuditorImpl::RecordArcBackupAndRestoreConsent(
 }
 
 void ConsentAuditorImpl::RecordSyncConsent(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const UserConsentTypes::SyncConsent& consent) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       CreateUserConsentSpecifics(account_id, app_locale_, clock_);
@@ -119,7 +119,7 @@ void ConsentAuditorImpl::RecordSyncConsent(
 }
 
 void ConsentAuditorImpl::RecordAssistantActivityControlConsent(
-    const std::string& account_id,
+    const CoreAccountId& account_id,
     const sync_pb::UserConsentTypes::AssistantActivityControlConsent& consent) {
   std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
       CreateUserConsentSpecifics(account_id, app_locale_, clock_);
@@ -131,20 +131,30 @@ void ConsentAuditorImpl::RecordAssistantActivityControlConsent(
   consent_sync_bridge_->RecordConsent(std::move(specifics));
 }
 
+void ConsentAuditorImpl::RecordAccountPasswordsConsent(
+    const CoreAccountId& account_id,
+    const sync_pb::UserConsentTypes::AccountPasswordsConsent& consent) {
+  std::unique_ptr<sync_pb::UserConsentSpecifics> specifics =
+      CreateUserConsentSpecifics(account_id, app_locale_, clock_);
+  specifics->mutable_account_passwords_consent()->CopyFrom(consent);
+
+  consent_sync_bridge_->RecordConsent(std::move(specifics));
+}
+
 void ConsentAuditorImpl::RecordLocalConsent(
     const std::string& feature,
     const std::string& description_text,
     const std::string& confirmation_text) {
   DictionaryPrefUpdate consents_update(pref_service_,
                                        prefs::kLocalConsentsDictionary);
-  base::DictionaryValue* consents = consents_update.Get();
+  base::Value* consents = consents_update.Get();
   DCHECK(consents);
 
-  base::DictionaryValue record;
-  record.SetKey(kLocalConsentDescriptionKey, base::Value(description_text));
-  record.SetKey(kLocalConsentConfirmationKey, base::Value(confirmation_text));
-  record.SetKey(kLocalConsentVersionKey, base::Value(app_version_));
-  record.SetKey(kLocalConsentLocaleKey, base::Value(app_locale_));
+  base::Value record(base::Value::Type::DICTIONARY);
+  record.SetStringKey(kLocalConsentDescriptionKey, description_text);
+  record.SetStringKey(kLocalConsentConfirmationKey, confirmation_text);
+  record.SetStringKey(kLocalConsentVersionKey, app_version_);
+  record.SetStringKey(kLocalConsentLocaleKey, app_locale_);
 
   consents->SetKey(feature, std::move(record));
 }

@@ -31,22 +31,22 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <org.chromium.ui.widget.ChipView
+            <org.chromium.components.browser_ui.widget.chips.ChipView
                 android:id="@+id/cc_number"
                 android:gravity="center_vertical|start"
-                android:layout_marginBottom="@dimen/keyboard_accessory_sheet_padding"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 style="@style/InputChip" />
 
             <LinearLayout
+                android:id="@+id/exp_group"
                 android:gravity="center_vertical|start"
                 android:fillViewport="true"
-                android:layout_height="@dimen/keyboard_accessory_suggestion_height"
+                android:layout_height="wrap_content"
                 android:layout_width="match_parent"
                 android:orientation="horizontal">
 
-                <org.chromium.ui.widget.ChipView
+                <org.chromium.components.browser_ui.widget.chips.ChipView
                     android:id="@+id/exp_month"
                     android:gravity="center_vertical|start"
                     android:layout_width="wrap_content"
@@ -60,10 +60,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginStart="@dimen/keyboard_accessory_sheet_padding"
                     android:layout_marginEnd="@dimen/keyboard_accessory_sheet_padding"
-                    android:textAppearance="@style/TextAppearance.BlackHint1"
-                    />
+                    android:textAppearance="@style/TextAppearance.DividerText"/>
 
-                <org.chromium.ui.widget.ChipView
+                <org.chromium.components.browser_ui.widget.chips.ChipView
                     android:id="@+id/exp_year"
                     android:gravity="center_vertical|start"
                     android:layout_width="wrap_content"
@@ -73,20 +72,25 @@
             </LinearLayout>
 
 
-            <org.chromium.ui.widget.ChipView
+            <org.chromium.components.browser_ui.widget.chips.ChipView
                 android:id="@+id/cardholder"
                 android:gravity="center_vertical|start"
-                android:layout_marginTop="@dimen/keyboard_accessory_sheet_padding"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 style="@style/InputChip" />
 
+            <org.chromium.components.browser_ui.widget.chips.ChipView
+                android:id="@+id/cvc"
+                android:gravity="center_vertical|start"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                style="@style/InputChip" />
         </LinearLayout>
 
-        <!-- TODO(crbug.com/969708): Replace placeholder dimensions once icon is replaced -->
         <ImageView
             android:id="@+id/icon"
-            android:layout_width="@dimen/keyboard_accessory_suggestion_icon_size"
+            android:layout_marginTop="@dimen/keyboard_accessory_image_top_padding"
+            android:layout_width="@dimen/keyboard_accessory_bar_item_cc_icon_width"
             android:layout_height="@dimen/keyboard_accessory_suggestion_icon_size"
             android:layout_weight="0"
             android:importantForAccessibility="no"

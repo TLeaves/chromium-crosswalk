@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/url_data_source.h"
 #include "ui/base/layout.h"
@@ -27,14 +25,18 @@ namespace chromeos {
 class UserImageSource : public content::URLDataSource {
  public:
   UserImageSource();
+
+  UserImageSource(const UserImageSource&) = delete;
+  UserImageSource& operator=(const UserImageSource&) = delete;
+
   ~UserImageSource() override;
 
   // content::URLDataSource implementation.
   std::string GetSource() override;
   void StartDataRequest(
-      const std::string& path,
-      const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
-      const content::URLDataSource::GotDataCallback& callback) override;
+      const GURL& url,
+      const content::WebContents::Getter& wc_getter,
+      content::URLDataSource::GotDataCallback callback) override;
   std::string GetMimeType(const std::string& path) override;
 
   // Returns PNG encoded image for user with specified |account_id|. If there's
@@ -42,9 +44,6 @@ class UserImageSource : public content::URLDataSource {
   // the 100%-scale asset.
   static scoped_refptr<base::RefCountedMemory> GetUserImage(
       const AccountId& account_id);
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(UserImageSource);
 };
 
 }  // namespace chromeos

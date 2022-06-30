@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "remoting/base/buffered_socket_writer.h"
@@ -25,11 +25,15 @@ class ChannelMultiplexer : public StreamChannelFactory {
   // |factory| is used to create the channel upon which to multiplex.
   ChannelMultiplexer(StreamChannelFactory* factory,
                      const std::string& base_channel_name);
+
+  ChannelMultiplexer(const ChannelMultiplexer&) = delete;
+  ChannelMultiplexer& operator=(const ChannelMultiplexer&) = delete;
+
   ~ChannelMultiplexer() override;
 
   // StreamChannelFactory interface.
   void CreateChannel(const std::string& name,
-                     const ChannelCreatedCallback& callback) override;
+                     ChannelCreatedCallback callback) override;
   void CancelChannelCreation(const std::string& name) override;
 
  private:
@@ -64,7 +68,7 @@ class ChannelMultiplexer : public StreamChannelFactory {
 
   // Factory used to create |base_channel_|. Set to nullptr once creation is
   // finished or failed.
-  StreamChannelFactory* base_channel_factory_;
+  raw_ptr<StreamChannelFactory> base_channel_factory_;
 
   // Name of the underlying channel.
   std::string base_channel_name_;
@@ -85,9 +89,7 @@ class ChannelMultiplexer : public StreamChannelFactory {
   BufferedSocketWriter writer_;
   MessageReader reader_;
 
-  base::WeakPtrFactory<ChannelMultiplexer> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ChannelMultiplexer);
+  base::WeakPtrFactory<ChannelMultiplexer> weak_factory_{this};
 };
 
 }  // namespace protocol

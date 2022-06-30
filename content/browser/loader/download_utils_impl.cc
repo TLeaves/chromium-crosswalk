@@ -4,12 +4,36 @@
 
 #include "content/browser/loader/download_utils_impl.h"
 
+#include "build/build_config.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "net/http/http_content_disposition.h"
 #include "net/http/http_response_headers.h"
 #include "third_party/blink/public/common/mime_util/mime_util.h"
 #include "url/gurl.h"
+
+namespace {
+
+// Allow list to rendering mhtml.
+const char* const kAllowListSchemesToRenderingMhtml[] = {
+    url::kFileScheme,
+#if BUILDFLAG(IS_ANDROID)
+    url::kContentScheme,
+#endif  // BUILDFLAG(IS_ANDROID)
+};
+
+// Determins whether given url would render the mhtml as html according to
+// scheme.
+bool ShouldAlwaysRenderMhtmlAsHtml(const GURL& url) {
+  for (const char* scheme : kAllowListSchemesToRenderingMhtml) {
+    if (url.SchemeIs(scheme))
+      return true;
+  }
+
+  return false;
+}
+
+}  // namespace
 
 namespace content {
 namespace download_utils {
@@ -29,6 +53,10 @@ bool MustDownload(const GURL& url,
                                                                    mime_type))
       return true;
     if (mime_type == "multipart/related" || mime_type == "message/rfc822") {
+      // Always allow rendering mhtml for content:// (on Android) and file:///.
+      if (ShouldAlwaysRenderMhtmlAsHtml(url))
+        return false;
+
       // TODO(https://crbug.com/790734): retrieve the new NavigationUIData from
       // the request and and pass it to AllowRenderingMhtmlOverHttp().
       return !GetContentClient()->browser()->AllowRenderingMhtmlOverHttp(

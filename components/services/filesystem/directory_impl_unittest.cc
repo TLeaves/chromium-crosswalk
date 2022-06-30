@@ -8,22 +8,38 @@
 #include <map>
 #include <string>
 
-#include "base/stl_util.h"
-#include "components/services/filesystem/files_test_base.h"
+#include "base/test/task_environment.h"
+#include "components/services/filesystem/directory_test_helper.h"
 #include "components/services/filesystem/public/mojom/directory.mojom.h"
+#include "components/services/filesystem/public/mojom/file.mojom.h"
+#include "components/services/filesystem/public/mojom/types.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace filesystem {
 namespace {
 
-using DirectoryImplTest = FilesTestBase;
+class DirectoryImplTest : public testing::Test {
+ public:
+  DirectoryImplTest() = default;
+
+  DirectoryImplTest(const DirectoryImplTest&) = delete;
+  DirectoryImplTest& operator=(const DirectoryImplTest&) = delete;
+
+  mojo::Remote<mojom::Directory> CreateTempDir() {
+    return test_helper_.CreateTempDir();
+  }
+
+ private:
+  base::test::TaskEnvironment task_environment_;
+  DirectoryTestHelper test_helper_;
+};
 
 constexpr char kData[] = "one two three";
 
 TEST_F(DirectoryImplTest, Read) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Make some files.
@@ -34,7 +50,7 @@ TEST_F(DirectoryImplTest, Read) {
       {"my_file1", mojom::kFlagRead | mojom::kFlagWrite | mojom::kFlagCreate},
       {"my_file2", mojom::kFlagWrite | mojom::kFlagCreate},
       {"my_file3", mojom::kFlagAppend | mojom::kFlagCreate}};
-  for (size_t i = 0; i < base::size(files_to_create); i++) {
+  for (size_t i = 0; i < std::size(files_to_create); i++) {
     error = base::File::Error::FILE_ERROR_FAILED;
     bool handled =
         directory->OpenFile(files_to_create[i].name, mojo::NullReceiver(),
@@ -51,7 +67,7 @@ TEST_F(DirectoryImplTest, Read) {
   EXPECT_EQ(base::File::Error::FILE_OK, error);
 
   error = base::File::Error::FILE_ERROR_FAILED;
-  base::Optional<std::vector<mojom::DirectoryEntryPtr>> directory_contents;
+  absl::optional<std::vector<mojom::DirectoryEntryPtr>> directory_contents;
   handled = directory->Read(&error, &directory_contents);
   ASSERT_TRUE(handled);
   EXPECT_EQ(base::File::Error::FILE_OK, error);
@@ -79,8 +95,7 @@ TEST_F(DirectoryImplTest, Read) {
 // TODO(vtl): Properly test OpenFile() and OpenDirectory() (including flags).
 
 TEST_F(DirectoryImplTest, BasicRenameDelete) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -132,8 +147,7 @@ TEST_F(DirectoryImplTest, BasicRenameDelete) {
 }
 
 TEST_F(DirectoryImplTest, CantOpenDirectoriesAsFiles) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -165,9 +179,7 @@ TEST_F(DirectoryImplTest, Clone) {
   base::File::Error error;
 
   {
-    mojo::Remote<mojom::Directory> directory;
-    GetTemporaryRoot(&directory);
-
+    mojo::Remote<mojom::Directory> directory = CreateTempDir();
     directory->Clone(clone_one.BindNewPipeAndPassReceiver());
     directory->Clone(clone_two.BindNewPipeAndPassReceiver());
 
@@ -193,8 +205,7 @@ TEST_F(DirectoryImplTest, Clone) {
 }
 
 TEST_F(DirectoryImplTest, WriteFileReadFile) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   std::vector<uint8_t> data(kData, kData + strlen(kData));
@@ -215,8 +226,7 @@ TEST_F(DirectoryImplTest, WriteFileReadFile) {
 }
 
 TEST_F(DirectoryImplTest, ReadEmptyFileIsNotFoundError) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -229,8 +239,7 @@ TEST_F(DirectoryImplTest, ReadEmptyFileIsNotFoundError) {
 }
 
 TEST_F(DirectoryImplTest, CantReadEntireFileOnADirectory) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create a directory
@@ -254,8 +263,7 @@ TEST_F(DirectoryImplTest, CantReadEntireFileOnADirectory) {
 }
 
 TEST_F(DirectoryImplTest, CantWriteFileOnADirectory) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create a directory
@@ -278,8 +286,7 @@ TEST_F(DirectoryImplTest, CantWriteFileOnADirectory) {
 }
 
 TEST_F(DirectoryImplTest, Flush) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -288,8 +295,6 @@ TEST_F(DirectoryImplTest, Flush) {
     EXPECT_EQ(base::File::Error::FILE_OK, error);
   }
 }
-
-// TODO(vtl): Test delete flags.
 
 }  // namespace
 }  // namespace filesystem

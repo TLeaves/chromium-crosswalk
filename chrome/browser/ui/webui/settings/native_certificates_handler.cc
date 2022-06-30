@@ -5,9 +5,9 @@
 #include "chrome/browser/ui/webui/settings/native_certificates_handler.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/metrics/user_metrics.h"
-#include "chrome/browser/ui/webui/settings_utils.h"
+#include "chrome/browser/ui/webui/settings/settings_utils.h"
 #include "content/public/browser/web_ui.h"
 
 namespace settings {
@@ -25,7 +25,7 @@ void NativeCertificatesHandler::RegisterMessages() {
 }
 
 void NativeCertificatesHandler::HandleShowManageSSLCertificates(
-    const base::ListValue* args) {
+    const base::Value::List& args) {
   base::RecordAction(base::UserMetricsAction("Options_ManageSSLCertificates"));
   settings_utils::ShowManageSSLCertificates(web_ui()->GetWebContents());
 }

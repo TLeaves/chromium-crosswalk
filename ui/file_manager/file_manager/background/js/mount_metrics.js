@@ -2,34 +2,59 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/**
- * Records metrics for mount events.
- * @constructor
- * @struct
- */
-function MountMetrics() {
-  chrome.fileManagerPrivate.onMountCompleted.addListener(
-      this.onMountCompleted_.bind(this));
-}
+import {metrics} from '../../common/js/metrics.js';
+import {util} from '../../common/js/util.js';
 
 /**
- * Event handler called when some volume was mounted or unmounted.
- * @param {chrome.fileManagerPrivate.MountCompletedEvent} event Received event.
- * @private
+ * Records metrics for mount events.
  */
-MountMetrics.prototype.onMountCompleted_ = function(event) {
-  if (event.eventType === 'mount') {
-    if (event.status === 'success' && event.volumeMetadata) {
-      if (event.volumeMetadata.volumeType === 'provided') {
-        const providerUmaValue =
-            this.getFileSystemProviderForUma(event.volumeMetadata.providerId);
-        metrics.recordEnum(
-            'FileSystemProviderMounted', providerUmaValue,
-            Object.keys(MountMetrics.FileSystemProvidersForUMA).length + 1);
+export class MountMetrics {
+  constructor() {
+    // SWA version of Files app has no concept of background pages, avoid
+    // emitting UMA metrics if running in SWA.
+    if (!window.isSWA) {
+      chrome.fileManagerPrivate.onMountCompleted.addListener(
+          this.onMountCompleted_.bind(this));
+    }
+  }
+
+  /**
+   * Event handler called when some volume was mounted or unmounted.
+   * @param {chrome.fileManagerPrivate.MountCompletedEvent} event Received
+   *     event.
+   * @private
+   */
+  onMountCompleted_(event) {
+    // The SWA and Chrome app currently co-exist so the FilesSwa flag may be
+    // enabled but the Chrome app is running, exit early in this case as the
+    // event_router will be sending these metrics instead.
+    if (util.isSwaEnabled()) {
+      return;
+    }
+    if (event.eventType === 'mount') {
+      if (event.status === 'success' && event.volumeMetadata) {
+        if (event.volumeMetadata.volumeType === 'provided') {
+          const providerUmaValue =
+              this.getFileSystemProviderForUma(event.volumeMetadata.providerId);
+          metrics.recordEnum(
+              'FileSystemProviderMounted', providerUmaValue,
+              Object.keys(MountMetrics.FileSystemProvidersForUMA).length + 1);
+        }
       }
     }
   }
-};
+
+  /**
+   * Returns the UMA index for a provided file system type. Returns
+   * MountMetrics.FileSystemProvidersForUMA.UNKNOWN for unknown providers.
+   * @param {string|undefined} providerId The FSP provider ID.
+   * @return {MountMetrics.FileSystemProvidersForUMA}
+   */
+  getFileSystemProviderForUma(providerId) {
+    return MountMetrics.FileSystemProviders[providerId] ||
+        MountMetrics.FileSystemProvidersForUMA.UNKNOWN;
+  }
+}
 
 
 /**
@@ -58,7 +83,7 @@ MountMetrics.FileSystemProvidersForUMA = {
   WICKED_GOOD_UNARCHIVER: 12,
   NETWORK_FILE_SHARE_FOR_CHROMEOS: 13,
   LAN_FOLDER: 14,
-  ZIP_ARCHIVER: 15,
+  ZIP_PACKER: 15,
   SECURE_SHELL_APP: 16,
   NATIVE_NETWORK_SMB: 17,
 };
@@ -74,8 +99,6 @@ Object.freeze(MountMetrics.FileSystemProvidersForUMA);
  * @enum {MountMetrics.FileSystemProvidersForUMA<number>}
  */
 MountMetrics.FileSystemProviders = {
-  oedeeodfidgoollimchfdnbmhcpnklnd:
-      MountMetrics.FileSystemProvidersForUMA.ZIP_UNPACKER,
   hlffpaajmfllggclnjppbblobdhokjhe:
       MountMetrics.FileSystemProvidersForUMA.FILE_SYSTEM_FOR_DROPBOX,
   jbfdfcehgafdbfpniaimfbfomafoadgo:
@@ -101,9 +124,13 @@ MountMetrics.FileSystemProviders = {
       MountMetrics.FileSystemProvidersForUMA.NETWORK_FILE_SHARE_FOR_CHROMEOS,
   gmhmnhjihabohahcllfgjooaoecglhpi:
       MountMetrics.FileSystemProvidersForUMA.LAN_FOLDER,
-  dmboannefpncccogfdikhmhpmdnddgoe:
-      MountMetrics.FileSystemProvidersForUMA.ZIP_ARCHIVER,
   pnhechapfaindjhompbnflcldabbghjo:
+      MountMetrics.FileSystemProvidersForUMA.SECURE_SHELL_APP,
+  okddffdblfhhnmhodogpojmfkjmhinfp:
+      MountMetrics.FileSystemProvidersForUMA.SECURE_SHELL_APP,
+  iodihamcpbpeioajjeobimgagajmlibd:
+      MountMetrics.FileSystemProvidersForUMA.SECURE_SHELL_APP,
+  algkcnfjnajfhgimadimbjhmpaeohhln:
       MountMetrics.FileSystemProvidersForUMA.SECURE_SHELL_APP,
   /**
    * Native Providers.
@@ -111,14 +138,3 @@ MountMetrics.FileSystemProviders = {
   '@smb': MountMetrics.FileSystemProvidersForUMA.NATIVE_NETWORK_SMB,
 };
 Object.freeze(MountMetrics.FileSystemProviders);
-
-/**
- * Returns the UMA index for a provided file system type. Returns
- * MountMetrics.FileSystemProvidersForUMA.UNKNOWN for unknown providers.
- * @param {string|undefined} providerId The FSP provider ID.
- * @return {MountMetrics.FileSystemProvidersForUMA}
- */
-MountMetrics.prototype.getFileSystemProviderForUma = function(providerId) {
-  return MountMetrics.FileSystemProviders[providerId] ||
-      MountMetrics.FileSystemProvidersForUMA.UNKNOWN;
-};

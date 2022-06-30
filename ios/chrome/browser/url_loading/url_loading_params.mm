@@ -53,6 +53,14 @@ UrlLoadParams UrlLoadParams::InNewTab(const GURL& url) {
   return params;
 }
 
+UrlLoadParams UrlLoadParams::InNewTab(const GURL& url, int insertion_index) {
+  UrlLoadParams params = UrlLoadParams();
+  params.web_params = web::NavigationManager::WebLoadParams(url);
+  params.append_to = kSpecifiedIndex;
+  params.insertion_index = insertion_index;
+  return params;
+}
+
 UrlLoadParams UrlLoadParams::SwitchToTab(
     const web::NavigationManager::WebLoadParams& web_params) {
   UrlLoadParams params = UrlLoadParams();
@@ -70,7 +78,9 @@ UrlLoadParams::UrlLoadParams()
       from_chrome(false),
       user_initiated(true),
       should_focus_omnibox(false),
-      load_strategy(UrlLoadStrategy::NORMAL) {}
+      inherit_opener(false),
+      load_strategy(UrlLoadStrategy::NORMAL),
+      filtered_param_count(0) {}
 
 UrlLoadParams::UrlLoadParams(const UrlLoadParams& other)
     : web_params(other.web_params),
@@ -81,7 +91,9 @@ UrlLoadParams::UrlLoadParams(const UrlLoadParams& other)
       from_chrome(other.from_chrome),
       user_initiated(other.user_initiated),
       should_focus_omnibox(other.should_focus_omnibox),
-      load_strategy(other.load_strategy) {}
+      inherit_opener(other.inherit_opener),
+      load_strategy(other.load_strategy),
+      filtered_param_count(other.filtered_param_count) {}
 
 UrlLoadParams& UrlLoadParams::operator=(const UrlLoadParams& other) {
   web_params = other.web_params;
@@ -92,7 +104,9 @@ UrlLoadParams& UrlLoadParams::operator=(const UrlLoadParams& other) {
   from_chrome = other.from_chrome;
   user_initiated = other.user_initiated;
   should_focus_omnibox = other.should_focus_omnibox;
+  inherit_opener = other.inherit_opener;
   load_strategy = other.load_strategy;
+  filtered_param_count = other.filtered_param_count;
   return *this;
 }
 

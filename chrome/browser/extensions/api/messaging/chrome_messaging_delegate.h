@@ -13,6 +13,10 @@ namespace extensions {
 class ChromeMessagingDelegate : public MessagingDelegate {
  public:
   ChromeMessagingDelegate();
+
+  ChromeMessagingDelegate(const ChromeMessagingDelegate&) = delete;
+  ChromeMessagingDelegate& operator=(const ChromeMessagingDelegate&) = delete;
+
   ~ChromeMessagingDelegate() override;
 
   // MessagingDelegate:
@@ -29,7 +33,8 @@ class ChromeMessagingDelegate : public MessagingDelegate {
       const std::string& extension_id,
       const PortId& receiver_port_id,
       content::WebContents* receiver_contents,
-      int receiver_frame_id) override;
+      int receiver_frame_id,
+      const std::string& receiver_document_id) override;
   std::unique_ptr<MessagePort> CreateReceiverForNativeApp(
       content::BrowserContext* browser_context,
       base::WeakPtr<MessagePort::ChannelDelegate> channel_delegate,
@@ -44,10 +49,7 @@ class ChromeMessagingDelegate : public MessagingDelegate {
       const Extension* extension,
       content::WebContents* web_contents,
       const GURL& url,
-      const base::Callback<void(bool)>& callback) override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ChromeMessagingDelegate);
+      base::OnceCallback<void(bool)> callback) override;
 };
 
 }  // namespace extensions

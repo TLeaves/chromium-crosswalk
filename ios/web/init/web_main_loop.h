@@ -8,12 +8,10 @@
 #include <memory>
 
 #include "base/callback_helpers.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 
 namespace web {
 class CookieNotificationBridge;
-class ServiceManagerContext;
 class WebMainParts;
 class WebThreadImpl;
 class WebSubThread;
@@ -23,12 +21,16 @@ class WebSubThread;
 class WebMainLoop {
  public:
   explicit WebMainLoop();
+
+  WebMainLoop(const WebMainLoop&) = delete;
+  WebMainLoop& operator=(const WebMainLoop&) = delete;
+
   virtual ~WebMainLoop();
 
   void Init();
 
   void EarlyInitialization();
-  void MainMessageLoopStart();
+  void CreateMainMessageLoop();
 
   // Creates and starts running the tasks needed to complete startup.
   void CreateStartupTasks();
@@ -59,7 +61,7 @@ class WebMainLoop {
   // True if the non-UI threads were created.
   bool created_threads_;
 
-  // Members initialized in |MainMessageLoopStart()| ---------------------------
+  // Members initialized in |CreateMainMessageLoop()| --------------------------
   // The SingleThreadTaskExecutor and NetworkChangeNotifier are not owned by the
   // WebMainLoop but still need to be destroyed in correct order so use
   // ScopedClosureRunner.
@@ -79,9 +81,6 @@ class WebMainLoop {
 
   // Members initialized in |WebThreadsStarted()| --------------------------
   std::unique_ptr<CookieNotificationBridge> cookie_notification_bridge_;
-  std::unique_ptr<ServiceManagerContext> service_manager_context_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebMainLoop);
 };
 
 }  // namespace web

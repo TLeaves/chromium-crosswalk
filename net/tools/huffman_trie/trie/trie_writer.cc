@@ -5,13 +5,12 @@
 #include "net/tools/huffman_trie/trie/trie_writer.h"
 
 #include <algorithm>
+#include <ostream>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "net/tools/huffman_trie/trie/trie_bit_buffer.h"
 
-namespace net {
-
-namespace huffman_trie {
+namespace net::huffman_trie {
 
 namespace {
 
@@ -185,6 +184,4 @@ void TrieWriter::Flush() {
   buffer_.Flush();
 }
 
-}  // namespace huffman_trie
-
-}  // namespace net
+}  // namespace net::huffman_trie

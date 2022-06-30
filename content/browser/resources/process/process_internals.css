@@ -81,8 +81,14 @@ body {
   z-index: 1;
 }
 
-.tree-label {
-  user-select: text;
+@media(forced-colors) {
+  .content-header {
+    background: none;
+  }
+}
+
+html {
+  --cr-tree-label-user-select: text;
 }
 
 #isolated-origins-container {

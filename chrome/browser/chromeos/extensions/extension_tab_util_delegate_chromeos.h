@@ -5,18 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_EXTENSION_TAB_UTIL_DELEGATE_CHROMEOS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_EXTENSION_TAB_UTIL_DELEGATE_CHROMEOS_H_
 
-#include "base/macros.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-
-namespace api {
-namespace tabs {
-class Tab;
-}
-}
-
-namespace content {
-class WebContents;
-}
 
 namespace extensions {
 class Extension;
@@ -29,15 +18,17 @@ class Extension;
 class ExtensionTabUtilDelegateChromeOS : public ExtensionTabUtil::Delegate {
  public:
   ExtensionTabUtilDelegateChromeOS();
+
+  ExtensionTabUtilDelegateChromeOS(const ExtensionTabUtilDelegateChromeOS&) =
+      delete;
+  ExtensionTabUtilDelegateChromeOS& operator=(
+      const ExtensionTabUtilDelegateChromeOS&) = delete;
+
   ~ExtensionTabUtilDelegateChromeOS() override;
 
   // ExtensionTabUtil::Delegate
-  void ScrubTabForExtension(const Extension* extension,
-                            content::WebContents* contents,
-                            api::tabs::Tab* tab) override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ExtensionTabUtilDelegateChromeOS);
+  ExtensionTabUtil::ScrubTabBehaviorType GetScrubTabBehavior(
+      const Extension* extension) override;
 };
 
 }  // namespace extensions

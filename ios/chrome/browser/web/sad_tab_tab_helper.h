@@ -7,13 +7,11 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/macros.h"
 #include "base/timer/elapsed_timer.h"
-#import "ios/web/public/web_state/web_state_observer.h"
-#import "ios/web/public/web_state/web_state_user_data.h"
+#include "ios/web/public/web_state_observer.h"
+#import "ios/web/public/web_state_user_data.h"
 
 @protocol SadTabTabHelperDelegate;
-class ScopedFullscreenDisabler;
 
 // SadTabTabHelper listens to RenderProcessGone events and presents a
 // SadTabView view appropriately.
@@ -29,6 +27,9 @@ class SadTabTabHelper : public web::WebStateUserData<SadTabTabHelper>,
   // determining repeat failures.
   static void CreateForWebState(web::WebState* web_state,
                                 double repeat_failure_interval);
+
+  SadTabTabHelper(const SadTabTabHelper&) = delete;
+  SadTabTabHelper& operator=(const SadTabTabHelper&) = delete;
 
   ~SadTabTabHelper() override;
 
@@ -52,8 +53,12 @@ class SadTabTabHelper : public web::WebStateUserData<SadTabTabHelper>,
   // initial event.
   SadTabTabHelper(web::WebState* web_state, double repeat_failure_interval);
 
+  // Registers that a visible crash occurred for |url_causing_failure|. Updates
+  // |repeated_failure_|.
+  void OnVisibleCrash(const GURL& url_causing_failure);
+
   // Presents a new SadTabView via the web_state object.
-  void PresentSadTab(const GURL& url_causing_failure);
+  void PresentSadTab();
 
   // Called when the Sad Tab is added or removed from the WebState's content
   // area.
@@ -72,10 +77,6 @@ class SadTabTabHelper : public web::WebStateUserData<SadTabTabHelper>,
   void AddApplicationDidBecomeActiveObserver();
   // Removes UIApplicationDidBecomeActiveNotification observer.
   void RemoveApplicationDidBecomeActiveObserver();
-
-  // Creates or resets the fullscreen disabler depending on whether the sad tab
-  // is currently visible.
-  void UpdateFullscreenDisabler();
 
   // WebStateObserver:
   void WasShown(web::WebState* web_state) override;
@@ -109,9 +110,6 @@ class SadTabTabHelper : public web::WebStateUserData<SadTabTabHelper>,
   // true if Sad Tab is presented and presented for repeated load failure.
   bool repeated_failure_ = false;
 
-  // The fullscreen disabler for when the sad tab is visible.
-  std::unique_ptr<ScopedFullscreenDisabler> fullscreen_disabler_;
-
   // Stores the interval window in seconds during which a second
   // RenderProcessGone failure will be considered a repeat failure.
   double repeat_failure_interval_ = kDefaultRepeatFailureInterval;
@@ -129,8 +127,6 @@ class SadTabTabHelper : public web::WebStateUserData<SadTabTabHelper>,
   __strong id<NSObject> application_did_become_active_observer_ = nil;
 
   WEB_STATE_USER_DATA_KEY_DECL();
-
-  DISALLOW_COPY_AND_ASSIGN(SadTabTabHelper);
 };
 
 #endif  // IOS_CHROME_BROWSER_WEB_SAD_TAB_TAB_HELPER_H_

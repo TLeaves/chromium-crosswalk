@@ -26,26 +26,19 @@ void FidoTouchIdDiscovery::Start() {
     return;
   }
 
-  if (!TouchIdAuthenticator::IsAvailable(authenticator_config_)) {
+  TouchIdAuthenticator::IsAvailable(
+      authenticator_config_,
+      base::BindOnce(&FidoTouchIdDiscovery::OnAuthenticatorAvailable,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void FidoTouchIdDiscovery::OnAuthenticatorAvailable(bool is_available) {
+  if (!is_available) {
     observer()->DiscoveryStarted(this, /*success=*/false);
     return;
   }
-
-  observer()->DiscoveryStarted(this, /*success=*/true);
-
-  // Start() is currently invoked synchronously in the
-  // FidoRequestHandler ctor. Invoke AddAuthenticator() asynchronously
-  // to avoid hairpinning FidoRequestHandler::AuthenticatorAdded()
-  // before the request handler has an observer.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(&FidoTouchIdDiscovery::AddAuthenticator,
-                                weak_factory_.GetWeakPtr()));
-}
-
-void FidoTouchIdDiscovery::AddAuthenticator() {
-  DCHECK(TouchIdAuthenticator::IsAvailable(authenticator_config_));
   authenticator_ = TouchIdAuthenticator::Create(authenticator_config_);
-  observer()->AuthenticatorAdded(this, authenticator_.get());
+  observer()->DiscoveryStarted(this, /*success=*/true, {authenticator_.get()});
 }
 
 }  // namespace mac

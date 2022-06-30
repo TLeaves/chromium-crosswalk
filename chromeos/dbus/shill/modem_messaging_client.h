@@ -10,8 +10,7 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
-#include "chromeos/dbus/dbus_method_call_status.h"
+#include "chromeos/dbus/common/dbus_method_call_status.h"
 
 namespace dbus {
 class Bus;
@@ -26,9 +25,20 @@ namespace chromeos {
 // initializes the DBusThreadManager instance.
 class COMPONENT_EXPORT(SHILL_CLIENT) ModemMessagingClient {
  public:
-  typedef base::Callback<void(const dbus::ObjectPath& message_path,
-                              bool complete)>
-      SmsReceivedHandler;
+  using SmsReceivedHandler =
+      base::RepeatingCallback<void(const dbus::ObjectPath& message_path,
+                                   bool complete)>;
+
+  // Interface for performing modem messaging actions for testing.
+  // Accessed through GetTestInterface(), only implemented in the Stub Impl.
+  class TestInterface {
+   public:
+    virtual void ReceiveSms(const dbus::ObjectPath& object_path,
+                            const dbus::ObjectPath& sms_path) = 0;
+
+   protected:
+    virtual ~TestInterface() {}
+  };
 
   // Creates and initializes the global instance. |bus| must not be null.
   static void Initialize(dbus::Bus* bus);
@@ -41,6 +51,9 @@ class COMPONENT_EXPORT(SHILL_CLIENT) ModemMessagingClient {
 
   // Returns the global instance if initialized. May return null.
   static ModemMessagingClient* Get();
+
+  ModemMessagingClient(const ModemMessagingClient&) = delete;
+  ModemMessagingClient& operator=(const ModemMessagingClient&) = delete;
 
   // Sets SmsReceived signal handler.
   virtual void SetSmsReceivedHandler(const std::string& service_name,
@@ -63,15 +76,15 @@ class COMPONENT_EXPORT(SHILL_CLIENT) ModemMessagingClient {
                     const dbus::ObjectPath& object_path,
                     ListCallback callback) = 0;
 
+  // Returns an interface for testing (stub only), or returns null.
+  virtual TestInterface* GetTestInterface() = 0;
+
  protected:
   friend class ModemMessagingClientTest;
 
   // Initialize/Shutdown should be used instead.
   ModemMessagingClient();
   virtual ~ModemMessagingClient();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ModemMessagingClient);
 };
 
 }  // namespace chromeos

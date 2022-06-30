@@ -5,26 +5,29 @@
 #ifndef GOOGLE_APIS_GCM_ENGINE_GCM_REGISTRATION_REQUEST_HANDLER_H_
 #define GOOGLE_APIS_GCM_ENGINE_GCM_REGISTRATION_REQUEST_HANDLER_H_
 
-#include "base/macros.h"
 #include "google_apis/gcm/engine/registration_request.h"
 
 namespace gcm {
 
 // Used to obtain the registration ID for applications that want to use GCM.
-class GCM_EXPORT GCMRegistrationRequestHandler :
-    public RegistrationRequest::CustomRequestHandler {
+class GCM_EXPORT GCMRegistrationRequestHandler
+    : public RegistrationRequest::CustomRequestHandler {
  public:
   GCMRegistrationRequestHandler(const std::string& senders);
+
+  GCMRegistrationRequestHandler(const GCMRegistrationRequestHandler&) = delete;
+  GCMRegistrationRequestHandler& operator=(
+      const GCMRegistrationRequestHandler&) = delete;
+
   ~GCMRegistrationRequestHandler() override;
 
   // RegistrationRequest::RequestHandler overrides:
   void BuildRequestBody(std::string* body) override;
-  void ReportUMAs(RegistrationRequest::Status status) override;
+  void ReportStatusToUMA(RegistrationRequest::Status status) override;
+  void ReportNetErrorCodeToUMA(int net_error_code) override;
 
  private:
   std::string senders_;
-
-  DISALLOW_COPY_AND_ASSIGN(GCMRegistrationRequestHandler);
 };
 
 }  // namespace gcm

@@ -5,9 +5,10 @@
 #ifndef IOS_CHROME_BROWSER_UI_COLLECTION_VIEW_COLLECTION_VIEW_CONTROLLER_H_
 #define IOS_CHROME_BROWSER_UI_COLLECTION_VIEW_COLLECTION_VIEW_CONTROLLER_H_
 
+#import <MaterialComponents/MaterialCollections.h>
+
 #import "ios/chrome/browser/ui/collection_view/collection_view_model.h"
 #import "ios/chrome/browser/ui/material_components/app_bar_view_controller_presenting.h"
-#import "ios/third_party/material_components_ios/src/components/Collections/src/MaterialCollections.h"
 
 @class CollectionViewItem;
 
@@ -43,12 +44,12 @@ typedef NS_ENUM(NSInteger, CollectionViewControllerStyle) {
 // override this method in order to get a clean collectionViewModel.
 - (void)loadModel NS_REQUIRES_SUPER;
 
-// Reconfigures the cells corresponding to the given |items| by calling
-// |configureCell:| on each cell.
+// Reconfigures the cells corresponding to the given `items` by calling
+// `configureCell:` on each cell.
 - (void)reconfigureCellsForItems:(NSArray*)items;
 
-// Reconfigures the cells corresponding to the given |indexPaths| by calling
-// |configureCell:| on each cell.
+// Reconfigures the cells corresponding to the given `indexPaths` by calling
+// `configureCell:` on each cell.
 - (void)reconfigureCellsAtIndexPaths:(NSArray*)indexPaths;
 
 #pragma mark MDCCollectionViewEditingDelegate

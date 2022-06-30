@@ -9,20 +9,20 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/mobile_metrics/mobile_friendliness_checker.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/page/viewport_description.h"
 
 namespace blink {
 
 ViewportData::ViewportData(Document& document) : document_(document) {}
 
-void ViewportData::Trace(Visitor* visitor) {
+void ViewportData::Trace(Visitor* visitor) const {
   visitor->Trace(document_);
 }
 
 void ViewportData::Shutdown() {
-  // TODO(https://crbug.com/800641): Use InterfaceInvalidator once it works with
-  // associated interfaces.
   display_cutout_host_.reset();
 }
 
@@ -106,6 +106,8 @@ void ViewportData::UpdateViewportDescription() {
   if (document_->GetFrame()->IsMainFrame()) {
     document_->GetPage()->GetChromeClient().DispatchViewportPropertiesDidChange(
         GetViewportDescription());
+    if (auto* mf_checker = document_->View()->GetMobileFriendlinessChecker())
+      mf_checker->NotifyViewportUpdated(GetViewportDescription());
   }
 }
 

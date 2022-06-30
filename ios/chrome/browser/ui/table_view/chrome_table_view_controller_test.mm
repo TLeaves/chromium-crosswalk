@@ -4,8 +4,9 @@
 
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller_test.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #import "base/mac/foundation_util.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_info_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_item.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller.h"
@@ -18,9 +19,10 @@
 #endif
 
 // Add selectors to be tested in the helpers.
-@interface TableViewItem (DetailTextAddition)
+@interface TableViewItem (ItemAddition)
 - (NSString*)text;
 - (NSString*)detailText;
+- (NSString*)displayedURL;
 @end
 
 ChromeTableViewControllerTest::ChromeTableViewControllerTest() {}
@@ -90,7 +92,7 @@ void ChromeTableViewControllerTest::CheckTitleWithId(int expected_title_id) {
 void ChromeTableViewControllerTest::CheckSectionHeader(NSString* expected_text,
                                                        int section) {
   TableViewHeaderFooterItem* header =
-      [[controller_ tableViewModel] headerForSection:section];
+      [[controller_ tableViewModel] headerForSectionIndex:section];
   ASSERT_TRUE([header respondsToSelector:@selector(text)]);
   EXPECT_NSEQ(expected_text, [(id)header text]);
 }
@@ -104,7 +106,7 @@ void ChromeTableViewControllerTest::CheckSectionHeaderWithId(
 void ChromeTableViewControllerTest::CheckSectionFooter(NSString* expected_text,
                                                        int section) {
   TableViewHeaderFooterItem* footer =
-      [[controller_ tableViewModel] footerForSection:section];
+      [[controller_ tableViewModel] footerForSectionIndex:section];
   ASSERT_TRUE([footer respondsToSelector:@selector(text)]);
   EXPECT_NSEQ(expected_text, [(id)footer text]);
 }
@@ -115,15 +117,23 @@ void ChromeTableViewControllerTest::CheckSectionFooterWithId(
   CheckSectionFooter(l10n_util::GetNSString(expected_text_id), section);
 }
 
-// TODO(crbug.com/894800): There are some unittests that are using
-// CheckTextCellText to check Item with both "text" and "detailText". Change all
-// of them to CheckTextCellTextAndDetailText when the migration is finished.
 void ChromeTableViewControllerTest::CheckTextCellText(NSString* expected_text,
                                                       int section,
                                                       int item) {
   id cell = GetTableViewItem(section, item);
   ASSERT_TRUE([cell respondsToSelector:@selector(text)]);
   EXPECT_NSEQ(expected_text, [cell text]);
+}
+
+void ChromeTableViewControllerTest::CheckURLCellEmptyTitle(
+    NSString* expected_title,
+    int section,
+    int item) {
+  id cell = GetTableViewItem(section, item);
+  ASSERT_TRUE([cell respondsToSelector:@selector(title)]);
+  ASSERT_TRUE([cell respondsToSelector:@selector(displayedURL)]);
+  EXPECT_EQ(nil, [cell title]);
+  EXPECT_NSEQ(expected_title, [cell displayedURL]);
 }
 
 void ChromeTableViewControllerTest::CheckTextCellTextWithId(
@@ -142,6 +152,18 @@ void ChromeTableViewControllerTest::CheckTextCellTextAndDetailText(
   ASSERT_TRUE([cell respondsToSelector:@selector(text)]);
   ASSERT_TRUE([cell respondsToSelector:@selector(detailText)]);
   EXPECT_NSEQ(expected_text, [cell text]);
+  EXPECT_NSEQ(expected_detail_text, [cell detailText]);
+}
+
+void ChromeTableViewControllerTest::CheckURLCellTitleAndDetailText(
+    NSString* expected_title,
+    NSString* expected_detail_text,
+    int section,
+    int item) {
+  id cell = GetTableViewItem(section, item);
+  ASSERT_TRUE([cell respondsToSelector:@selector(title)]);
+  ASSERT_TRUE([cell respondsToSelector:@selector(detailText)]);
+  EXPECT_NSEQ(expected_title, [cell title]);
   EXPECT_NSEQ(expected_detail_text, [cell detailText]);
 }
 
@@ -177,6 +199,29 @@ void ChromeTableViewControllerTest::CheckSwitchCellStateAndTextWithId(
     int item) {
   CheckSwitchCellStateAndText(
       expected_state, l10n_util::GetNSString(expected_title_id), section, item);
+}
+
+void ChromeTableViewControllerTest::CheckInfoButtonCellStatusAndText(
+    NSString* expected_status_text,
+    NSString* expected_title,
+    int section,
+    int item) {
+  id info_button_item = base::mac::ObjCCastStrict<TableViewInfoButtonItem>(
+      GetTableViewItem(section, item));
+  EXPECT_TRUE([info_button_item respondsToSelector:@selector(text)]);
+  EXPECT_NSEQ(expected_title, [info_button_item text]);
+  EXPECT_TRUE([info_button_item respondsToSelector:@selector(statusText)]);
+  EXPECT_NSEQ(expected_status_text, [info_button_item statusText]);
+}
+
+void ChromeTableViewControllerTest::
+    CheckInfoButtonCellStatusWithIdAndTextWithId(int expected_status_text_id,
+                                                 int expected_title_id,
+                                                 int section,
+                                                 int item) {
+  CheckInfoButtonCellStatusAndText(
+      l10n_util::GetNSString(expected_status_text_id),
+      l10n_util::GetNSString(expected_title_id), section, item);
 }
 
 void ChromeTableViewControllerTest::CheckAccessoryType(
@@ -219,7 +264,7 @@ void ChromeTableViewControllerTest::DeleteItem(
     // Delete data in the model.
     TableViewModel* model = strong_controller.tableViewModel;
     NSInteger section_ID =
-        [model sectionIdentifierForSection:index_path.section];
+        [model sectionIdentifierForSectionIndex:index_path.section];
     NSInteger item_type = [model itemTypeForIndexPath:index_path];
     NSUInteger index = [model indexInItemTypeForIndexPath:index_path];
     [model removeItemWithType:item_type

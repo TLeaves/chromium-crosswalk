@@ -4,9 +4,11 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/event_router_factory.h"
 
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
+#include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/ash/drive/drive_integration_service.h"
+#include "chrome/browser/ash/file_manager/volume_manager_factory.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/arc/intent_helper/arc_intent_helper_bridge.h"
@@ -38,6 +40,7 @@ EventRouterFactory::EventRouterFactory()
       extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(VolumeManagerFactory::GetInstance());
   DependsOn(arc::ArcIntentHelperBridge::GetFactory());
+  DependsOn(apps::AppServiceProxyFactory::GetInstance());
 }
 
 EventRouterFactory::~EventRouterFactory() = default;

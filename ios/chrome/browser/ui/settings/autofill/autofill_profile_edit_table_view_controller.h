@@ -12,21 +12,16 @@ class AutofillProfile;
 class PersonalDataManager;
 }  // namespace autofill
 
-extern NSString* const kAutofillProfileEditTableViewId;
-
 // The table view for the Autofill profile edit settings.
 @interface AutofillProfileEditTableViewController
     : AutofillEditTableViewController
 
-// Creates a controller for |profile| and |dataManager| that cannot be null.
+// Creates a controller for `profile` and `dataManager` that cannot be null.
 + (instancetype)controllerWithProfile:(const autofill::AutofillProfile&)profile
                   personalDataManager:
                       (autofill::PersonalDataManager*)dataManager;
 
-- (instancetype)initWithTableViewStyle:(UITableViewStyle)style
-                           appBarStyle:
-                               (ChromeTableViewControllerStyle)appBarStyle
-    NS_UNAVAILABLE;
+- (instancetype)initWithStyle:(UITableViewStyle)style NS_UNAVAILABLE;
 
 @end
 

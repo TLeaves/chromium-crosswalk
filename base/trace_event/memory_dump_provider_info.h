@@ -9,6 +9,7 @@
 #include <set>
 
 #include "base/base_export.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/trace_event/memory_dump_provider.h"
 
@@ -58,18 +59,21 @@ struct BASE_EXPORT MemoryDumpProviderInfo
                          const char* name,
                          scoped_refptr<SequencedTaskRunner> task_runner,
                          const MemoryDumpProvider::Options& options,
-                         bool whitelisted_for_background_mode);
+                         bool allowed_in_background_mode);
+
+  MemoryDumpProviderInfo(const MemoryDumpProviderInfo&) = delete;
+  MemoryDumpProviderInfo& operator=(const MemoryDumpProviderInfo&) = delete;
 
   // It is safe to access the const fields below from any thread as they are
   // never mutated.
 
-  MemoryDumpProvider* const dump_provider;
+  const raw_ptr<MemoryDumpProvider, DanglingUntriaged> dump_provider;
 
   // The |options| arg passed to MDM::RegisterDumpProvider().
   const MemoryDumpProvider::Options options;
 
   // Human readable name, not unique (distinct MDP instances might have the same
-  // name). Used for debugging, testing and whitelisting for BACKGROUND mode.
+  // name). Used for debugging, testing and allowing for BACKGROUND mode.
   const char* const name;
 
   // The task runner on which the MDP::OnMemoryDump call should be posted onto.
@@ -77,8 +81,8 @@ struct BASE_EXPORT MemoryDumpProviderInfo
   // thread handled by MDM.
   const scoped_refptr<SequencedTaskRunner> task_runner;
 
-  // True if the dump provider is whitelisted for background mode.
-  const bool whitelisted_for_background_mode;
+  // True if the dump provider is allowed for background mode.
+  const bool allowed_in_background_mode;
 
   // These fields below, instead, are not thread safe and can be mutated only:
   // - On the |task_runner|, when not null (i.e. for thread-bound MDPS).
@@ -98,8 +102,6 @@ struct BASE_EXPORT MemoryDumpProviderInfo
  private:
   friend class base::RefCountedThreadSafe<MemoryDumpProviderInfo>;
   ~MemoryDumpProviderInfo();
-
-  DISALLOW_COPY_AND_ASSIGN(MemoryDumpProviderInfo);
 };
 
 }  // namespace trace_event

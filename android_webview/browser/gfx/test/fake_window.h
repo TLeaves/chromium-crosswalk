@@ -8,16 +8,15 @@
 #include <map>
 
 #include "android_webview/browser/gfx/hardware_renderer.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
 
 namespace base {
-class Thread;
 class WaitableEvent;
 }
 
@@ -47,6 +46,10 @@ class WindowHooks {
 class FakeWindow {
  public:
   FakeWindow(BrowserViewRenderer* view, WindowHooks* hooks, gfx::Rect location);
+
+  FakeWindow(const FakeWindow&) = delete;
+  FakeWindow& operator=(const FakeWindow&) = delete;
+
   ~FakeWindow();
 
   void Detach();
@@ -78,8 +81,8 @@ class FakeWindow {
   void CheckCurrentlyOnRT();
 
   // const so can be used on both threads.
-  BrowserViewRenderer* const view_;
-  WindowHooks* const hooks_;
+  const raw_ptr<BrowserViewRenderer> view_;
+  const raw_ptr<WindowHooks> hooks_;
   const gfx::Size surface_size_;
 
   // UI thread members.
@@ -88,16 +91,13 @@ class FakeWindow {
   base::SequenceChecker ui_checker_;
 
   // Render thread members.
-  std::unique_ptr<base::Thread> render_thread_;
   base::SequenceChecker rt_checker_;
   scoped_refptr<base::SingleThreadTaskRunner> render_thread_loop_;
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<gl::GLContext> context_;
   bool context_current_;
 
-  base::WeakPtrFactory<FakeWindow> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeWindow);
+  base::WeakPtrFactory<FakeWindow> weak_ptr_factory_{this};
 };
 
 class FakeFunctor {
@@ -120,7 +120,7 @@ class FakeFunctor {
   bool RequestInvokeGL(bool wait_for_completion);
   void ReleaseOnRT(base::OnceClosure callback);
 
-  FakeWindow* window_;
+  raw_ptr<FakeWindow> window_;
   std::unique_ptr<RenderThreadManager> render_thread_manager_;
   gfx::Rect committed_location_;
 };

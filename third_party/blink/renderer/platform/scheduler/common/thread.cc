@@ -5,8 +5,9 @@
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 
 #include "base/feature_list.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -14,30 +15,20 @@
 #include "third_party/blink/renderer/platform/scheduler/worker/compositor_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/compositor_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/worker_thread.h"
-#include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+#include "third_party/blink/renderer/platform/wtf/threading.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include <windows.h>
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 #include <unistd.h>
 #endif
 
 namespace blink {
 
 namespace {
-
-// Controls whether we use ThreadPriority::DISPLAY for compositor thread.
-const base::Feature kBlinkCompositorUseDisplayThreadPriority {
-  "BlinkCompositorUseDisplayThreadPriority",
-#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
 
 // Thread-local storage for "blink::Thread"s.
 Thread*& ThreadTLSSlot() {
@@ -63,7 +54,7 @@ void Thread::UpdateThreadTLS(Thread* thread) {
   ThreadTLSSlot() = thread;
 }
 
-ThreadCreationParams::ThreadCreationParams(WebThreadType thread_type)
+ThreadCreationParams::ThreadCreationParams(ThreadType thread_type)
     : thread_type(thread_type),
       name(GetNameForThreadType(thread_type)),
       frame_or_worker_scheduler(nullptr),
@@ -88,45 +79,41 @@ ThreadCreationParams& ThreadCreationParams::SetSupportsGC(bool gc_enabled) {
 
 std::unique_ptr<Thread> Thread::CreateThread(
     const ThreadCreationParams& params) {
+#if DCHECK_IS_ON()
+  WTF::WillCreateThread();
+#endif
   auto thread = std::make_unique<scheduler::WorkerThread>(params);
   thread->Init();
   return std::move(thread);
 }
 
-std::unique_ptr<Thread> Thread::CreateWebAudioThread() {
-  ThreadCreationParams params(WebThreadType::kAudioWorkletThread);
-  params.supports_gc = true;
-
-  // WebAudio uses a thread with |DISPLAY| priority to avoid glitch when the
-  // system is under the high pressure. Note that the main browser thread also
-  // runs with same priority. (see: crbug.com/734539)
-  params.thread_priority =
-      base::FeatureList::IsEnabled(features::kAudioWorkletRealtimeThread)
-          ? base::ThreadPriority::REALTIME_AUDIO
-          : base::ThreadPriority::DISPLAY;
-
-  return CreateThread(params);
-}
-
 void Thread::CreateAndSetCompositorThread() {
   DCHECK(!GetCompositorThread());
 
-  ThreadCreationParams params(WebThreadType::kCompositorThread);
-  if (base::FeatureList::IsEnabled(kBlinkCompositorUseDisplayThreadPriority))
+  ThreadCreationParams params(ThreadType::kCompositorThread);
+  if (base::FeatureList::IsEnabled(
+          features::kBlinkCompositorUseDisplayThreadPriority))
     params.thread_priority = base::ThreadPriority::DISPLAY;
 
   auto compositor_thread =
       std::make_unique<scheduler::CompositorThread>(params);
   compositor_thread->Init();
-  GetCompositorThread() = std::move(compositor_thread);
 
-  if (base::FeatureList::IsEnabled(kBlinkCompositorUseDisplayThreadPriority)) {
-    // Chrome OS moves tasks between control groups on thread priority changes.
-    // This is not possible inside the sandbox, so ask the browser to do it.
-    // TODO(spang): Check if we can remove this on non-Chrome OS builds.
-    Platform::Current()->SetDisplayThreadPriority(
-        GetCompositorThread()->ThreadId());
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+  if (base::FeatureList::IsEnabled(
+          features::kBlinkCompositorUseDisplayThreadPriority)) {
+    compositor_thread->GetTaskRunner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(&base::PlatformThread::CurrentId),
+        base::BindOnce([](base::PlatformThreadId compositor_thread_id) {
+          // Chrome OS moves tasks between control groups on thread priority
+          // changes. This is not possible inside the sandbox, so ask the
+          // browser to do it.
+          Platform::Current()->SetDisplayThreadPriority(compositor_thread_id);
+        }));
   }
+#endif
+
+  GetCompositorThread() = std::move(compositor_thread);
 }
 
 Thread* Thread::Current() {
@@ -166,10 +153,10 @@ void Thread::RemoveTaskObserver(TaskObserver* task_observer) {
   Scheduler()->RemoveTaskObserver(task_observer);
 }
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 static_assert(sizeof(blink::PlatformThreadId) >= sizeof(DWORD),
               "size of platform thread id is too small");
-#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 static_assert(sizeof(blink::PlatformThreadId) >= sizeof(pid_t),
               "size of platform thread id is too small");
 #else

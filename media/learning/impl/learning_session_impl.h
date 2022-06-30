@@ -9,7 +9,7 @@
 
 #include "base/component_export.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequence_bound.h"
 #include "media/learning/common/learning_session.h"
 #include "media/learning/common/learning_task_controller.h"
@@ -52,9 +52,12 @@ class COMPONENT_EXPORT(LEARNING_IMPL) LearningSessionImpl
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   // [task_name] = task controller.
-  using LearningTaskMap =
+  using LearningTaskControllerMap =
       std::map<std::string, base::SequenceBound<LearningTaskController>>;
-  LearningTaskMap task_map_;
+  LearningTaskControllerMap controller_map_;
+
+  // Used to fetch registered LearningTasks from their name.
+  std::map<std::string, LearningTask> task_map_;
 
   CreateTaskControllerCB controller_factory_;
 

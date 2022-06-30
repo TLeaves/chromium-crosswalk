@@ -7,44 +7,88 @@
 
 #include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/memory/raw_ptr.h"
 #include "content/public/browser/overlay_window.h"
+#include "ui/android/window_android.h"
+#include "ui/android/window_android_observer.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/views/widget/widget.h"
 
-class OverlayWindowAndroid : public content::OverlayWindow {
+namespace cc {
+class SurfaceLayer;
+}  // namespace cc
+
+namespace thin_webview {
+namespace android {
+class CompositorView;
+}  // namespace android
+}  // namespace thin_webview
+
+class OverlayWindowAndroid : public content::VideoOverlayWindow,
+                             public ui::WindowAndroidObserver {
  public:
   explicit OverlayWindowAndroid(
-      content::PictureInPictureWindowController* controller);
+      content::VideoPictureInPictureWindowController* controller);
   ~OverlayWindowAndroid() override;
 
-  void OnActivityStart(JNIEnv* env,
-                       const base::android::JavaParamRef<jobject>& obj);
-  void OnActivityDestroy(JNIEnv* env,
-                         const base::android::JavaParamRef<jobject>& obj);
+  void OnActivityStart(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& obj,
+      const base::android::JavaParamRef<jobject>& jwindow_android);
+  void Destroy(JNIEnv* env);
+  void Play(JNIEnv* env);
+  void CompositorViewCreated(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& compositor_view);
+  void OnViewSizeChanged(JNIEnv* env, jint width, jint height);
+  void OnBackToTab(JNIEnv* env);
 
+  // ui::WindowAndroidObserver implementation.
+  void OnCompositingDidCommit() override {}
+  void OnRootWindowVisibilityChanged(bool visible) override {}
+  void OnAttachCompositor() override;
+  void OnDetachCompositor() override;
+  void OnAnimate(base::TimeTicks frame_begin_time) override {}
+  void OnActivityStopped() override;
+  void OnActivityStarted() override {}
+
+  // OverlayWindow implementation.
   bool IsActive() override;
   void Close() override;
   void ShowInactive() override {}
   void Hide() override;
   bool IsVisible() override;
   bool IsAlwaysOnTop() override;
-  // Retrieves the window's current bounds, including its window.
   gfx::Rect GetBounds() override;
-  void UpdateVideoSize(const gfx::Size& natural_size) override {}
+  void UpdateNaturalSize(const gfx::Size& natural_size) override;
+
+  // VideoOverlayWindow implementation
   void SetPlaybackState(PlaybackState playback_state) override {}
-  void SetAlwaysHidePlayPauseButton(bool is_visible) override {}
-  void SetMutedState(MutedState muted_state) override {}
+  void SetPlayPauseButtonVisibility(bool is_visible) override;
   void SetSkipAdButtonVisibility(bool is_visible) override {}
   void SetNextTrackButtonVisibility(bool is_visible) override {}
   void SetPreviousTrackButtonVisibility(bool is_visible) override {}
-  void SetSurfaceId(const viz::SurfaceId& surface_id) override {}
+  void SetMicrophoneMuted(bool muted) override {}
+  void SetCameraState(bool turned_on) override {}
+  void SetToggleMicrophoneButtonVisibility(bool is_visible) override {}
+  void SetToggleCameraButtonVisibility(bool is_visible) override {}
+  void SetHangUpButtonVisibility(bool is_visible) override {}
+  void SetSurfaceId(const viz::SurfaceId& surface_id) override;
   cc::Layer* GetLayerForTesting() override;
 
  private:
+  void CloseInternal();
+
   // A weak reference to Java PictureInPictureActivity object.
   JavaObjectWeakGlobalRef java_ref_;
+  raw_ptr<ui::WindowAndroid> window_android_;
+  raw_ptr<thin_webview::android::CompositorView> compositor_view_;
+  scoped_refptr<cc::SurfaceLayer> surface_layer_;
+  gfx::Rect bounds_;
+  gfx::Size video_size_;
 
-  content::PictureInPictureWindowController* controller_;
+  bool is_play_pause_button_visible_ = false;
+
+  raw_ptr<content::VideoPictureInPictureWindowController> controller_;
 };
 
 #endif  // CHROME_BROWSER_UI_ANDROID_OVERLAY_OVERLAY_WINDOW_ANDROID_H_

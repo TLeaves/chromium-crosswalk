@@ -6,12 +6,14 @@
 
 #include <memory>
 
-#include "base/macros.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
+#include "base/test/task_environment.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_test_job.h"
@@ -24,15 +26,19 @@ namespace {
 
 class TestURLRequestInterceptor : public URLRequestInterceptor {
  public:
-  TestURLRequestInterceptor() : job_(nullptr) {}
+  TestURLRequestInterceptor() = default;
+
+  TestURLRequestInterceptor(const TestURLRequestInterceptor&) = delete;
+  TestURLRequestInterceptor& operator=(const TestURLRequestInterceptor&) =
+      delete;
+
   ~TestURLRequestInterceptor() override = default;
 
   // URLRequestInterceptor implementation:
-  URLRequestJob* MaybeInterceptRequest(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const override {
-    job_ = new URLRequestTestJob(request, network_delegate);
-    return job_;
+  std::unique_ptr<URLRequestJob> MaybeInterceptRequest(
+      URLRequest* request) const override {
+    job_ = new URLRequestTestJob(request);
+    return base::WrapUnique<URLRequestJob>(job_.get());
   }
 
   // Is |job| the URLRequestJob generated during interception?
@@ -41,24 +47,22 @@ class TestURLRequestInterceptor : public URLRequestInterceptor {
   }
 
  private:
-  mutable URLRequestTestJob* job_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestURLRequestInterceptor);
+  mutable raw_ptr<URLRequestTestJob> job_ = nullptr;
 };
 
 TEST(URLRequestFilter, BasicMatching) {
-  base::test::ScopedTaskEnvironment scoped_task_environment(
-      base::test::ScopedTaskEnvironment::MainThreadType::IO);
+  base::test::TaskEnvironment task_environment(
+      base::test::TaskEnvironment::MainThreadType::IO);
   TestDelegate delegate;
-  TestURLRequestContext request_context;
+  auto context = CreateTestURLRequestContextBuilder()->Build();
   URLRequestFilter* filter = URLRequestFilter::GetInstance();
 
   const GURL kUrl1("http://foo.com/");
-  std::unique_ptr<URLRequest> request1(request_context.CreateRequest(
+  std::unique_ptr<URLRequest> request1(context->CreateRequest(
       kUrl1, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
 
   const GURL kUrl2("http://bar.com/");
-  std::unique_ptr<URLRequest> request2(request_context.CreateRequest(
+  std::unique_ptr<URLRequest> request2(context->CreateRequest(
       kUrl2, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS));
 
   // Check AddUrlInterceptor checks for invalid URLs.
@@ -72,21 +76,19 @@ TEST(URLRequestFilter, BasicMatching) {
   EXPECT_TRUE(filter->AddUrlInterceptor(
       kUrl1, std::unique_ptr<URLRequestInterceptor>(interceptor)));
   {
-    std::unique_ptr<URLRequestJob> found(
-        filter->MaybeInterceptRequest(request1.get(), nullptr));
+    std::unique_ptr<URLRequestJob> found =
+        filter->MaybeInterceptRequest(request1.get());
     EXPECT_TRUE(interceptor->WasLastJobCreated(found.get()));
   }
   EXPECT_EQ(filter->hit_count(), 1);
 
   // Check we don't match other URLs.
-  EXPECT_TRUE(filter->MaybeInterceptRequest(request2.get(), nullptr) ==
-              nullptr);
+  EXPECT_FALSE(filter->MaybeInterceptRequest(request2.get()));
   EXPECT_EQ(1, filter->hit_count());
 
   // Check we can remove URL matching.
   filter->RemoveUrlHandler(kUrl1);
-  EXPECT_TRUE(filter->MaybeInterceptRequest(request1.get(), nullptr) ==
-              nullptr);
+  EXPECT_FALSE(filter->MaybeInterceptRequest(request1.get()));
   EXPECT_EQ(1, filter->hit_count());
 
   // Check hostname matching.
@@ -97,21 +99,19 @@ TEST(URLRequestFilter, BasicMatching) {
       kUrl1.scheme(), kUrl1.host(),
       std::unique_ptr<URLRequestInterceptor>(interceptor));
   {
-    std::unique_ptr<URLRequestJob> found(
-        filter->MaybeInterceptRequest(request1.get(), nullptr));
+    std::unique_ptr<URLRequestJob> found =
+        filter->MaybeInterceptRequest(request1.get());
     EXPECT_TRUE(interceptor->WasLastJobCreated(found.get()));
   }
   EXPECT_EQ(1, filter->hit_count());
 
   // Check we don't match other hostnames.
-  EXPECT_TRUE(filter->MaybeInterceptRequest(request2.get(), nullptr) ==
-              nullptr);
+  EXPECT_FALSE(filter->MaybeInterceptRequest(request2.get()));
   EXPECT_EQ(1, filter->hit_count());
 
   // Check we can remove hostname matching.
   filter->RemoveHostnameHandler(kUrl1.scheme(), kUrl1.host());
-  EXPECT_TRUE(filter->MaybeInterceptRequest(request1.get(), nullptr) ==
-              nullptr);
+  EXPECT_FALSE(filter->MaybeInterceptRequest(request1.get()));
   EXPECT_EQ(1, filter->hit_count());
 
   filter->ClearHandlers();

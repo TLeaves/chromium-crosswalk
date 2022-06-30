@@ -7,12 +7,10 @@
 
 #include <stdint.h>
 
-#include <memory>
-
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "net/base/network_delegate_impl.h"
+#include "net/cookies/same_party_context.h"
 
 class PrefService;
 
@@ -26,6 +24,10 @@ typedef PrefMember<bool> BooleanPrefMember;
 class IOSChromeNetworkDelegate : public net::NetworkDelegateImpl {
  public:
   IOSChromeNetworkDelegate();
+
+  IOSChromeNetworkDelegate(const IOSChromeNetworkDelegate&) = delete;
+  IOSChromeNetworkDelegate& operator=(const IOSChromeNetworkDelegate&) = delete;
+
   ~IOSChromeNetworkDelegate() override;
 
   // If |cookie_settings| is null or not set, all cookies are enabled,
@@ -50,21 +52,20 @@ class IOSChromeNetworkDelegate : public net::NetworkDelegateImpl {
   int OnBeforeURLRequest(net::URLRequest* request,
                          net::CompletionOnceCallback callback,
                          GURL* new_url) override;
-  void OnCompleted(net::URLRequest* request,
-                   bool started,
-                   int net_error) override;
-  bool OnCanGetCookies(const net::URLRequest& request,
-                       const net::CookieList& cookie_list,
-                       bool allowed_from_caller) override;
+  bool OnAnnotateAndMoveUserBlockedCookies(
+      const net::URLRequest& request,
+      net::CookieAccessResultList& maybe_included_cookies,
+      net::CookieAccessResultList& excluded_cookies,
+      bool allowed_from_caller) override;
   bool OnCanSetCookie(const net::URLRequest& request,
                       const net::CanonicalCookie& cookie,
                       net::CookieOptions* options,
                       bool allowed_from_caller) override;
-  bool OnCanAccessFile(const net::URLRequest& request,
-                       const base::FilePath& original_path,
-                       const base::FilePath& absolute_path) const override;
-  bool OnForcePrivacyMode(const GURL& url,
-                          const GURL& site_for_cookies) const override;
+  net::NetworkDelegate::PrivacySetting OnForcePrivacyMode(
+      const GURL& url,
+      const net::SiteForCookies& site_for_cookies,
+      const absl::optional<url::Origin>& top_frame_origin,
+      net::SamePartyContext::Type same_party_context_type) const override;
   bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       const net::URLRequest& request,
       const GURL& target_url,
@@ -74,8 +75,6 @@ class IOSChromeNetworkDelegate : public net::NetworkDelegateImpl {
 
   // Weak, owned by our owner.
   BooleanPrefMember* enable_do_not_track_;
-
-  DISALLOW_COPY_AND_ASSIGN(IOSChromeNetworkDelegate);
 };
 
 #endif  // IOS_CHROME_BROWSER_NET_IOS_CHROME_NETWORK_DELEGATE_H_

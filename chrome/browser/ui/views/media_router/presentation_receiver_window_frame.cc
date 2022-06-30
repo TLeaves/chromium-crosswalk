@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/media_router/presentation_receiver_window_frame.h"
 
+#include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -19,10 +20,15 @@ void PresentationReceiverWindowFrame::InitReceiverFrame(
   params.bounds = bounds;
   params.delegate = delegate.release();
 
-  Init(params);
+  Init(std::move(params));
 }
 
 const ui::ThemeProvider* PresentationReceiverWindowFrame::GetThemeProvider()
     const {
   return &ThemeService::GetThemeProviderForProfile(profile_);
+}
+
+ui::ColorProviderManager::ThemeInitializerSupplier*
+PresentationReceiverWindowFrame::GetCustomTheme() const {
+  return ThemeService::GetThemeSupplierForProfile(profile_);
 }

@@ -39,10 +39,6 @@ void ShellDevToolsFrontend::Activate() {
   frontend_shell_->ActivateContents(frontend_shell_->web_contents());
 }
 
-void ShellDevToolsFrontend::Focus() {
-  frontend_shell_->web_contents()->Focus();
-}
-
 void ShellDevToolsFrontend::InspectElementAt(int x, int y) {
   devtools_bindings_->InspectElementAt(x, y);
 }
@@ -51,7 +47,7 @@ void ShellDevToolsFrontend::Close() {
   frontend_shell_->Close();
 }
 
-void ShellDevToolsFrontend::DocumentAvailableInMainFrame() {
+void ShellDevToolsFrontend::PrimaryMainDocumentElementAvailable() {
   devtools_bindings_->Attach();
 }
 
@@ -69,5 +65,9 @@ ShellDevToolsFrontend::ShellDevToolsFrontend(Shell* frontend_shell,
                                     this)) {}
 
 ShellDevToolsFrontend::~ShellDevToolsFrontend() {}
+
+base::WeakPtr<ShellDevToolsFrontend> ShellDevToolsFrontend::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
 
 }  // namespace content

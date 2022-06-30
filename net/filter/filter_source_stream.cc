@@ -7,8 +7,9 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "net/base/io_buffer.h"
@@ -29,11 +30,7 @@ const size_t kBufferSize = 32 * 1024;
 
 FilterSourceStream::FilterSourceStream(SourceType type,
                                        std::unique_ptr<SourceStream> upstream)
-    : SourceStream(type),
-      upstream_(std::move(upstream)),
-      next_state_(STATE_NONE),
-      output_buffer_size_(0),
-      upstream_end_reached_(false) {
+    : SourceStream(type), upstream_(std::move(upstream)) {
   DCHECK(upstream_);
 }
 
@@ -73,16 +70,20 @@ std::string FilterSourceStream::Description() const {
   return next_type_string + "," + GetTypeAsString();
 }
 
+bool FilterSourceStream::MayHaveMoreBytes() const {
+  return !upstream_end_reached_;
+}
+
 FilterSourceStream::SourceType FilterSourceStream::ParseEncodingType(
     const std::string& encoding) {
   if (encoding.empty()) {
     return TYPE_NONE;
-  } else if (base::LowerCaseEqualsASCII(encoding, kBrotli)) {
+  } else if (base::EqualsCaseInsensitiveASCII(encoding, kBrotli)) {
     return TYPE_BROTLI;
-  } else if (base::LowerCaseEqualsASCII(encoding, kDeflate)) {
+  } else if (base::EqualsCaseInsensitiveASCII(encoding, kDeflate)) {
     return TYPE_DEFLATE;
-  } else if (base::LowerCaseEqualsASCII(encoding, kGZip) ||
-             base::LowerCaseEqualsASCII(encoding, kXGZip)) {
+  } else if (base::EqualsCaseInsensitiveASCII(encoding, kGZip) ||
+             base::EqualsCaseInsensitiveASCII(encoding, kXGZip)) {
     return TYPE_GZIP;
   } else {
     return TYPE_UNKNOWN;
@@ -124,9 +125,9 @@ int FilterSourceStream::DoReadData() {
 
   next_state_ = STATE_READ_DATA_COMPLETE;
   // Use base::Unretained here is safe because |this| owns |upstream_|.
-  int rv = upstream_->Read(
-      input_buffer_.get(), kBufferSize,
-      base::Bind(&FilterSourceStream::OnIOComplete, base::Unretained(this)));
+  int rv = upstream_->Read(input_buffer_.get(), kBufferSize,
+                           base::BindOnce(&FilterSourceStream::OnIOComplete,
+                                          base::Unretained(this)));
 
   return rv;
 }

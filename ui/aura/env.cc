@@ -5,10 +5,14 @@
 #include "ui/aura/env.h"
 
 #include "base/command_line.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
 #include "base/observer_list_types.h"
-#include "components/viz/common/features.h"
+#include "build/build_config.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env_input_state_controller.h"
 #include "ui/aura/env_observer.h"
@@ -16,11 +20,14 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher_observer.h"
 #include "ui/aura/window_occlusion_tracker.h"
-#include "ui/base/ui_base_features.h"
 #include "ui/events/event_observer.h"
 #include "ui/events/event_target_iterator.h"
 #include "ui/events/gestures/gesture_recognizer_impl.h"
 #include "ui/events/platform/platform_event_source.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "ui/base/win/win_cursor_factory.h"
+#endif
 
 #if defined(USE_OZONE)
 #include "ui/ozone/public/ozone_platform.h"
@@ -48,6 +55,9 @@ class EventObserverAdapter : public ui::EventHandler,
     target_->AddPreTargetHandler(this);
   }
 
+  EventObserverAdapter(const EventObserverAdapter&) = delete;
+  EventObserverAdapter& operator=(const EventObserverAdapter&) = delete;
+
   ~EventObserverAdapter() override { target_->RemovePreTargetHandler(this); }
 
   ui::EventObserver* observer() { return observer_; }
@@ -70,11 +80,9 @@ class EventObserverAdapter : public ui::EventHandler,
   }
 
  private:
-  ui::EventObserver* observer_;
-  ui::EventTarget* target_;
+  raw_ptr<ui::EventObserver> observer_;
+  raw_ptr<ui::EventTarget> target_;
   const std::set<ui::EventType> types_;
-
-  DISALLOW_COPY_AND_ASSIGN(EventObserverAdapter);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,8 +101,9 @@ std::unique_ptr<Env> Env::CreateInstance() {
   DCHECK(!g_primary_instance);
   // No make_unique as constructor is private.
   std::unique_ptr<Env> env(new Env());
+  if (!env->Init())
+    return {};
   g_primary_instance = env.get();
-  env->Init();
   return env;
 }
 
@@ -153,20 +162,11 @@ WindowOcclusionTracker* Env::GetWindowOcclusionTracker() {
 }
 
 void Env::PauseWindowOcclusionTracking() {
-  const bool was_paused = GetWindowOcclusionTracker();
   GetWindowOcclusionTracker()->Pause();
-  if (!was_paused) {
-    for (EnvObserver& observer : observers_)
-      observer.OnWindowOcclusionTrackingPaused();
-  }
 }
 
 void Env::UnpauseWindowOcclusionTracking() {
   GetWindowOcclusionTracker()->Unpause();
-  if (!GetWindowOcclusionTracker()->IsPaused()) {
-    for (EnvObserver& observer : observers_)
-      observer.OnWindowOcclusionTrackingResumed();
-  }
 }
 
 void Env::AddEventObserver(ui::EventObserver* observer,
@@ -206,26 +206,30 @@ bool Env::initial_throttle_input_on_resize_ = true;
 Env::Env()
     : env_controller_(std::make_unique<EnvInputStateController>(this)),
       gesture_recognizer_(std::make_unique<ui::GestureRecognizerImpl>()),
-      input_state_lookup_(InputStateLookup::Create()) {}
+      input_state_lookup_(InputStateLookup::Create()) {
+#if BUILDFLAG(IS_WIN)
+  cursor_factory_ = std::make_unique<ui::WinCursorFactory>();
+#endif
+}
 
-void Env::Init() {
+bool Env::Init() {
 #if defined(USE_OZONE)
   // The ozone platform can provide its own event source. So initialize the
-  // platform before creating the default event source. If running inside mus
-  // let the mus process initialize ozone instead.
+  // platform before creating the default event source
   ui::OzonePlatform::InitParams params;
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  // TODO(kylechar): Pass in single process information to Env::CreateInstance()
-  // instead of checking flags here.
+  // TODO(kylechar): Pass in single process information to
+  // Env::CreateInstance() instead of checking flags here.
   params.single_process = command_line->HasSwitch("single-process") ||
                           command_line->HasSwitch("in-process-gpu");
-  params.using_mojo = features::IsOzoneDrmMojo();
-  params.viz_display_compositor = features::IsVizDisplayCompositorEnabled();
-
-  ui::OzonePlatform::InitializeForUI(params);
+  if (!ui::OzonePlatform::InitializeForUI(params)) {
+    LOG(ERROR) << "The platform failed to initialize.  Exiting.";
+    return false;
+  }
 #endif
   if (!ui::PlatformEventSource::GetInstance())
     event_source_ = ui::PlatformEventSource::CreateDefault();
+  return true;
 }
 
 void Env::NotifyWindowInitialized(Window* window) {
@@ -234,8 +238,15 @@ void Env::NotifyWindowInitialized(Window* window) {
 }
 
 void Env::NotifyHostInitialized(WindowTreeHost* host) {
+  window_tree_hosts_.push_back(host);
   for (EnvObserver& observer : observers_)
     observer.OnHostInitialized(host);
+}
+
+void Env::NotifyHostDestroyed(WindowTreeHost* host) {
+  base::Erase(window_tree_hosts_, host);
+  for (EnvObserver& observer : observers_)
+    observer.OnHostDestroyed(host);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

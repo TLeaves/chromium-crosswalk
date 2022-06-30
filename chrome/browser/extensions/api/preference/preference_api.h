@@ -8,16 +8,26 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
-#include "chrome/browser/extensions/chrome_extension_function.h"
+#include "base/scoped_multi_source_observation.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_observer.h"
 #include "components/prefs/pref_change_registrar.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/api/content_settings/content_settings_store.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_prefs_scope.h"
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chromeos/crosapi/mojom/prefs.mojom-shared.h"
+#include "chromeos/crosapi/mojom/prefs.mojom.h"
+#include "chromeos/lacros/crosapi_pref_observer.h"
+#include "chromeos/lacros/lacros_service.h"
+#include "components/prefs/pref_service.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#endif
 
 class ExtensionPrefValueMap;
 class PrefService;
@@ -29,30 +39,60 @@ class Value;
 namespace extensions {
 class ExtensionPrefs;
 
-class PreferenceEventRouter : public content::NotificationObserver {
+class PreferenceEventRouter : public ProfileObserver {
  public:
   explicit PreferenceEventRouter(Profile* profile);
+
+  PreferenceEventRouter(const PreferenceEventRouter&) = delete;
+  PreferenceEventRouter& operator=(const PreferenceEventRouter&) = delete;
+
   ~PreferenceEventRouter() override;
 
  private:
   void OnPrefChanged(PrefService* pref_service,
                      const std::string& pref_key);
 
-  // content::NotificationObserver:
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) override;
+  // ProfileObserver:
+  void OnOffTheRecordProfileCreated(Profile* off_the_record) override;
+  void OnProfileWillBeDestroyed(Profile* profile) override;
 
-  void OnIncognitoProfileCreated(PrefService* prefs);
+  void ObserveOffTheRecordPrefs(PrefService* prefs);
 
-  content::NotificationRegistrar notification_registrar_;
   PrefChangeRegistrar registrar_;
   std::unique_ptr<PrefChangeRegistrar> incognito_registrar_;
 
-  // Weak, owns us (transitively via ExtensionService).
-  Profile* profile_;
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // Callback for extension-controlled prefs where the underlying pref lives
+  // in ash. An event fires when the value of the pref in ash changes.
+  void OnAshPrefChanged(crosapi::mojom::PrefPath pref_path,
+                        const std::string& extension_pref,
+                        const std::string& browser_pref,
+                        base::Value value);
 
-  DISALLOW_COPY_AND_ASSIGN(PreferenceEventRouter);
+  // Second callback to return additional detail about the extension-controlled
+  // pref.
+  void OnAshGetSuccess(const std::string& browser_pref,
+                       absl::optional<::base::Value> opt_value,
+                       crosapi::mojom::PrefControlState control_state);
+
+  // Callback for lacros version of the prefs, to update ash in the event that
+  // they are changed.
+  void OnControlledPrefChanged(PrefService* pref_service,
+                               const std::string& browser_pref);
+
+  std::vector<std::unique_ptr<crosapi::mojom::PrefObserver>>
+      extension_pref_observers_;
+#endif
+
+  // Weak, owns us (transitively via ExtensionService).
+  raw_ptr<Profile> profile_;
+
+  base::ScopedMultiSourceObservation<Profile, ProfileObserver>
+      observed_profiles_{this};
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  base::WeakPtrFactory<PreferenceEventRouter> weak_factory_{this};
+#endif
 };
 
 // The class containing the implementation for extension-controlled preference
@@ -106,6 +146,10 @@ class PreferenceAPI : public PreferenceAPIBase,
                       public ContentSettingsStore::Observer {
  public:
   explicit PreferenceAPI(content::BrowserContext* context);
+
+  PreferenceAPI(const PreferenceAPI&) = delete;
+  PreferenceAPI& operator=(const PreferenceAPI&) = delete;
+
   ~PreferenceAPI() override;
 
   // KeyedService implementation.
@@ -119,6 +163,9 @@ class PreferenceAPI : public PreferenceAPIBase,
 
   // EventRouter::Observer implementation.
   void OnListenerAdded(const EventListenerInfo& details) override;
+
+  // Ensures that a PreferenceEventRouter is created only once.
+  void EnsurePreferenceEventRouterCreated();
 
  private:
   friend class BrowserContextKeyedAPIFactory<PreferenceAPI>;
@@ -135,7 +182,7 @@ class PreferenceAPI : public PreferenceAPIBase,
   ExtensionPrefValueMap* extension_pref_value_map() override;
   scoped_refptr<ContentSettingsStore> content_settings_store() override;
 
-  Profile* profile_;
+  raw_ptr<Profile> profile_;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
@@ -146,13 +193,11 @@ class PreferenceAPI : public PreferenceAPIBase,
 
   // Created lazily upon OnListenerAdded.
   std::unique_ptr<PreferenceEventRouter> preference_event_router_;
-
-  DISALLOW_COPY_AND_ASSIGN(PreferenceAPI);
 };
 
 class PrefTransformerInterface {
  public:
-  virtual ~PrefTransformerInterface() {}
+  virtual ~PrefTransformerInterface() = default;
 
   // Converts the representation of a preference as seen by the extension
   // into a representation that is used in the pref stores of the browser.
@@ -170,12 +215,13 @@ class PrefTransformerInterface {
   // Returns the extension representation in case of success or NULL otherwise.
   // The ownership of the returned value is passed to the caller.
   virtual std::unique_ptr<base::Value> BrowserToExtensionPref(
-      const base::Value* browser_pref) = 0;
+      const base::Value* browser_pref,
+      bool is_incognito_profile) = 0;
 };
 
 // A base class to provide functionality common to the other *PreferenceFunction
 // classes.
-class PreferenceFunction : public UIThreadExtensionFunction {
+class PreferenceFunction : public ExtensionFunction {
  protected:
   enum PermissionType { PERMISSION_TYPE_READ, PERMISSION_TYPE_WRITE };
 
@@ -189,8 +235,26 @@ class GetPreferenceFunction : public PreferenceFunction {
  protected:
   ~GetPreferenceFunction() override;
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void OnLacrosGetSuccess(absl::optional<::base::Value> opt_value,
+                          crosapi::mojom::PrefControlState control_state);
+#endif
+
   // ExtensionFunction:
   ResponseAction Run() override;
+
+ private:
+  void ProduceGetResult(base::Value* result,
+                        const base::Value* pref_value,
+                        const std::string& level_of_control,
+                        const std::string& browser_pref,
+                        bool incognito);
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // The name of the Chrome preference being retrieved. Used to avoid a second
+  // lookup from the extension API preference name.
+  std::string cached_browser_pref_;
+#endif
 };
 
 class SetPreferenceFunction : public PreferenceFunction {
@@ -199,6 +263,10 @@ class SetPreferenceFunction : public PreferenceFunction {
 
  protected:
   ~SetPreferenceFunction() override;
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void OnLacrosSetSuccess();
+#endif
 
   // ExtensionFunction:
   ResponseAction Run() override;
@@ -211,6 +279,10 @@ class ClearPreferenceFunction : public PreferenceFunction {
 
  protected:
   ~ClearPreferenceFunction() override;
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void OnLacrosClearSuccess();
+#endif
 
   // ExtensionFunction:
   ResponseAction Run() override;

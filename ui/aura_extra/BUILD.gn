@@ -9,10 +9,8 @@ component("aura_extra") {
     "aura_extra_export.h",
     "image_window_delegate.cc",
     "image_window_delegate.h",
-    "window_occlusion_impl_win.cc",
-    "window_occlusion_impl_win.h",
-    "window_occlusion_win.cc",
-    "window_occlusion_win.h",
+    "window_position_in_root_monitor.cc",
+    "window_position_in_root_monitor.h",
   ]
 
   defines = [ "AURA_EXTRA_IMPLEMENTATION" ]
@@ -27,46 +25,24 @@ component("aura_extra") {
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
-}
 
-source_set("vector_resource") {
-  sources = [
-    "skia_vector_resource.cc",
-    "skia_vector_resource.h",
-  ]
-
-  deps = [
-    "//base",
-    "//cc/paint",
-    "//third_party/zlib/google:compression_utils",
-    "//ui/base",
-    "//ui/display",
-  ]
-}
-
-source_set("window_position_in_root_monitor") {
-  sources = [
-    "window_position_in_root_monitor.cc",
-    "window_position_in_root_monitor.h",
-  ]
-
-  deps = [
-    "//base",
-    "//ui/aura",
-  ]
+  if (is_win) {
+    sources += [
+      "window_occlusion_impl_win.cc",
+      "window_occlusion_impl_win.h",
+      "window_occlusion_win.cc",
+      "window_occlusion_win.h",
+    ]
+  }
 }
 
 source_set("tests") {
   testonly = true
 
-  sources = [
-    "window_occlusion_impl_unittest_win.cc",
-    "window_position_in_root_monitor_unittest.cc",
-  ]
+  sources = [ "window_position_in_root_monitor_unittest.cc" ]
 
   deps = [
     ":aura_extra",
-    ":window_position_in_root_monitor",
     "//base",
     "//base/test:test_support",
     "//testing/gtest",
@@ -75,4 +51,8 @@ source_set("tests") {
     "//ui/gfx/geometry",
     "//ui/platform_window",
   ]
+
+  if (is_win) {
+    sources += [ "window_occlusion_impl_unittest_win.cc" ]
+  }
 }

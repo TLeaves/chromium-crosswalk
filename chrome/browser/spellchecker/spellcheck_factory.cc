@@ -4,6 +4,7 @@
 
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 
+#include "build/build_config.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/grit/locale_settings.h"
@@ -14,7 +15,6 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_process_host.h"
-#include "services/service_manager/public/cpp/identity.h"
 #include "ui/base/l10n/l10n_util.h"
 
 // static
@@ -22,17 +22,6 @@ SpellcheckService* SpellcheckServiceFactory::GetForContext(
     content::BrowserContext* context) {
   return static_cast<SpellcheckService*>(
       GetInstance()->GetServiceForBrowserContext(context, true));
-}
-
-// static
-SpellcheckService* SpellcheckServiceFactory::GetForRenderer(
-    const service_manager::Identity& renderer_identity) {
-  content::BrowserContext* context =
-      content::BrowserContext::GetBrowserContextForServiceInstanceGroup(
-          renderer_identity.instance_group());
-  if (!context)
-    return nullptr;
-  return GetForContext(context);
 }
 
 // static
@@ -55,13 +44,6 @@ KeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
   // Many variables are initialized from the |context| in the SpellcheckService.
   SpellcheckService* spellcheck = new SpellcheckService(context);
 
-  PrefService* prefs = user_prefs::UserPrefs::Get(context);
-  DCHECK(prefs);
-
-  // Instantiates Metrics object for spellchecking for use.
-  spellcheck->StartRecordingMetrics(
-      prefs->GetBoolean(spellcheck::prefs::kSpellCheckEnable));
-
   return spellcheck;
 }
 
@@ -71,7 +53,7 @@ void SpellcheckServiceFactory::RegisterProfilePrefs(
   user_prefs->RegisterListPref(
       spellcheck::prefs::kSpellCheckForcedDictionaries);
   user_prefs->RegisterListPref(
-      spellcheck::prefs::kSpellCheckBlacklistedDictionaries);
+      spellcheck::prefs::kSpellCheckBlocklistedDictionaries);
   // Continue registering kSpellCheckDictionary for preference migration.
   // TODO(estade): remove: crbug.com/751275
   user_prefs->RegisterStringPref(
@@ -79,7 +61,7 @@ void SpellcheckServiceFactory::RegisterProfilePrefs(
       l10n_util::GetStringUTF8(IDS_SPELLCHECK_DICTIONARY));
   user_prefs->RegisterBooleanPref(
       spellcheck::prefs::kSpellCheckUseSpellingService, false);
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   uint32_t flags = PrefRegistry::NO_REGISTRATION_FLAGS;
 #else
   uint32_t flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;

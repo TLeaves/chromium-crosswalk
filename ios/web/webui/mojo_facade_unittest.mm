@@ -11,12 +11,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
-#include "ios/web/public/service/web_state_interface_provider.h"
-#import "ios/web/public/test/fakes/test_web_state.h"
+#import "ios/web/public/test/fakes/fake_web_frames_manager.h"
+#import "ios/web/public/test/fakes/fake_web_state.h"
 #include "ios/web/public/test/web_test.h"
+#import "ios/web/test/fakes/fake_web_frame_impl.h"
 #include "ios/web/test/mojo_test.mojom.h"
 #include "ios/web/web_state/web_state_impl.h"
-#include "mojo/public/cpp/bindings/binding_set.h"
 #import "testing/gtest_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -49,14 +49,28 @@ id GetObject(const std::string& json) {
                                            error:nil];
 }
 
-class FakeWebState : public TestWebState {
+class FakeWebStateWithInterfaceBinder : public FakeWebState {
  public:
+  InterfaceBinder* GetInterfaceBinderForMainFrame() override {
+    return &interface_binder_;
+  }
+
+ private:
+  InterfaceBinder interface_binder_{this};
+};
+
+class FakeWebFrameWithMojoFacade : public FakeWebFrameImpl {
+ public:
+  FakeWebFrameWithMojoFacade()
+      : FakeWebFrameImpl(kMainFakeFrameId, /*is_main_frame=*/true, GURL()) {}
+
   void SetWatchId(int watch_id) { watch_id_ = watch_id; }
 
   void SetFacade(MojoFacade* facade) { facade_ = facade; }
 
-  void ExecuteJavaScript(const base::string16& javascript) override {
-    TestWebState::ExecuteJavaScript(javascript);
+  bool ExecuteJavaScript(const std::u16string& javascript) override {
+    bool success = FakeWebFrameImpl::ExecuteJavaScript(javascript);
+
     // Cancel the watch immediately to ensure there are no additional
     // notifications.
     // NOTE: This must be done as a side effect of executing the JavaScript.
@@ -67,6 +81,8 @@ class FakeWebState : public TestWebState {
       },
     };
     EXPECT_TRUE(facade_->HandleMojoMessage(GetJson(cancel_watch)).empty());
+
+    return success;
   }
 
  private:
@@ -80,15 +96,19 @@ class FakeWebState : public TestWebState {
 class MojoFacadeTest : public WebTest {
  protected:
   MojoFacadeTest() {
-    interface_provider_ = std::make_unique<WebStateInterfaceProvider>();
-    interface_provider_->registry()->AddInterface(base::Bind(
-        &MojoFacadeTest::BindTestUIHandlerMojoRequest, base::Unretained(this)));
-    facade_ =
-        std::make_unique<MojoFacade>(interface_provider_.get(), &web_state_);
-    web_state_.SetFacade(facade_.get());
+    facade_ = std::make_unique<MojoFacade>(&web_state_);
+
+    auto web_frames_manager = std::make_unique<web::FakeWebFramesManager>();
+    frames_manager_ = web_frames_manager.get();
+    web_state_.SetWebFramesManager(std::move(web_frames_manager));
+
+    auto main_frame = std::make_unique<FakeWebFrameWithMojoFacade>();
+    main_frame->SetFacade(facade_.get());
+    main_frame_ = main_frame.get();
+    frames_manager_->AddWebFrame(std::move(main_frame));
   }
 
-  FakeWebState* web_state() { return &web_state_; }
+  FakeWebFrameWithMojoFacade* main_frame() { return main_frame_; }
   MojoFacade* facade() { return facade_.get(); }
 
   void CreateMessagePipe(uint32_t* handle0, uint32_t* handle1) {
@@ -120,10 +140,9 @@ class MojoFacadeTest : public WebTest {
   }
 
  private:
-  void BindTestUIHandlerMojoRequest(TestUIHandlerMojoRequest request) {}
-
-  std::unique_ptr<WebStateInterfaceProvider> interface_provider_;
-  FakeWebState web_state_;
+  FakeWebStateWithInterfaceBinder web_state_;
+  web::FakeWebFramesManager* frames_manager_;
+  FakeWebFrameWithMojoFacade* main_frame_;
   std::unique_ptr<MojoFacade> facade_;
 };
 
@@ -177,7 +196,7 @@ TEST_F(MojoFacadeTest, Watch) {
   int watch_id = 0;
   EXPECT_TRUE(base::StringToInt(watch_id_as_string, &watch_id));
 
-  web_state()->SetWatchId(watch_id);
+  main_frame()->SetWatchId(watch_id);
 
   // Write to the other end of the pipe.
   NSDictionary* write = @{
@@ -193,7 +212,7 @@ TEST_F(MojoFacadeTest, Watch) {
 
   EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForJSCompletionTimeout, ^bool {
     base::RunLoop().RunUntilIdle();
-    return !web_state()->GetLastExecutedJavascript().empty();
+    return !main_frame()->GetLastJavaScriptCall().empty();
   }));
 
   NSString* expected_script =
@@ -202,7 +221,7 @@ TEST_F(MojoFacadeTest, Watch) {
                     callback_id, MOJO_RESULT_OK];
 
   EXPECT_EQ(base::SysNSStringToUTF16(expected_script),
-            web_state()->GetLastExecutedJavascript());
+            main_frame()->GetLastJavaScriptCall());
 
   CloseHandle(handle0);
   CloseHandle(handle1);

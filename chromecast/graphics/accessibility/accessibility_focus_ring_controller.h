@@ -12,11 +12,10 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/macros.h"
-#include "base/optional.h"
 #include "base/time/time.h"
 #include "chromecast/graphics/accessibility/accessibility_focus_ring.h"
 #include "chromecast/graphics/accessibility/accessibility_layer.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -35,6 +34,12 @@ class AccessibilityHighlightLayer;
 class AccessibilityFocusRingController : public AccessibilityLayerDelegate {
  public:
   explicit AccessibilityFocusRingController(aura::Window* root_window);
+
+  AccessibilityFocusRingController(const AccessibilityFocusRingController&) =
+      delete;
+  AccessibilityFocusRingController& operator=(
+      const AccessibilityFocusRingController&) = delete;
+
   ~AccessibilityFocusRingController() override;
 
   void SetFocusRingColor(SkColor color);
@@ -118,7 +123,7 @@ class AccessibilityFocusRingController : public AccessibilityLayerDelegate {
   std::vector<std::unique_ptr<AccessibilityFocusRingLayer>> focus_layers_;
   FocusRingBehavior focus_ring_behavior_ =
       FocusRingBehavior::FADE_OUT_FOCUS_RING;
-  base::Optional<SkColor> focus_ring_color_;
+  absl::optional<SkColor> focus_ring_color_;
 
   LayerAnimationInfo caret_animation_info_;
   gfx::Point caret_location_;
@@ -128,8 +133,6 @@ class AccessibilityFocusRingController : public AccessibilityLayerDelegate {
   std::unique_ptr<AccessibilityHighlightLayer> highlight_layer_;
   SkColor highlight_color_ = SK_ColorBLACK;
   float highlight_opacity_ = 0.f;
-
-  DISALLOW_COPY_AND_ASSIGN(AccessibilityFocusRingController);
 };
 
 }  // namespace chromecast

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "net/cert/internal/parsed_certificate.h"
 #include "net/cert/internal/trust_store.h"
 #include "net/cert/internal/verify_certificate_chain.h"
@@ -41,7 +42,7 @@ struct PemBlockMapping {
   const char* block_name;
 
   // The destination where the read value should be written to.
-  std::string* value;
+  raw_ptr<std::string> value;
 
   // True to indicate that the block is not required to be present. If the
   // block is optional and is not present, then |value| will not be modified.
@@ -123,6 +124,11 @@ bool ReadVerifyCertChainTestFromFile(const std::string& file_path_ascii,
 // Reads a certificate chain from |file_path_ascii|
 bool ReadCertChainFromFile(const std::string& file_path_ascii,
                            ParsedCertificateList* chain);
+
+// Reads a certificate from |file_path_ascii|. Returns nullptr if the file
+// contained more that one certificate.
+scoped_refptr<ParsedCertificate> ReadCertFromFile(
+    const std::string& file_path_ascii);
 
 // Reads a data file relative to the src root directory.
 std::string ReadTestFileToString(const std::string& file_path_ascii);

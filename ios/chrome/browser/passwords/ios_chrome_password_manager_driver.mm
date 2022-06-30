@@ -4,8 +4,8 @@
 
 #import "ios/chrome/browser/passwords/ios_chrome_password_manager_driver.h"
 
-#include "base/strings/string16.h"
-#include "components/autofill/core/common/password_form.h"
+#include <string>
+
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/password_manager/core/browser/password_generation_frame_helper.h"
 #include "components/password_manager/core/browser/password_manager.h"
@@ -18,18 +18,25 @@ using password_manager::PasswordAutofillManager;
 using password_manager::PasswordManager;
 
 IOSChromePasswordManagerDriver::IOSChromePasswordManagerDriver(
-    id<PasswordManagerDriverDelegate> delegate)
-    : delegate_(delegate) {}
+    id<PasswordManagerDriverBridge> bridge,
+    password_manager::PasswordManager* password_manager)
+    : bridge_(bridge), password_manager_(password_manager) {}
 
 IOSChromePasswordManagerDriver::~IOSChromePasswordManagerDriver() = default;
 
-void IOSChromePasswordManagerDriver::FillPasswordForm(
-    const autofill::PasswordFormFillData& form_data) {
-  [delegate_ fillPasswordForm:form_data completionHandler:nil];
+int IOSChromePasswordManagerDriver::GetId() const {
+  // There is only one driver per tab on iOS so returning 0 is fine.
+  return 0;
 }
 
-void IOSChromePasswordManagerDriver::InformNoSavedCredentials() {
-  [delegate_ onNoSavedCredentials];
+void IOSChromePasswordManagerDriver::FillPasswordForm(
+    const autofill::PasswordFormFillData& form_data) {
+  [bridge_ fillPasswordForm:form_data completionHandler:nil];
+}
+
+void IOSChromePasswordManagerDriver::InformNoSavedCredentials(
+    bool should_show_popup_without_passwords) {
+  [bridge_ onNoSavedCredentials];
 }
 
 void IOSChromePasswordManagerDriver::FormEligibleForGenerationFound(
@@ -37,32 +44,26 @@ void IOSChromePasswordManagerDriver::FormEligibleForGenerationFound(
   if (GetPasswordGenerationHelper() &&
       GetPasswordGenerationHelper()->IsGenerationEnabled(
           /*log_debug_data*/ true)) {
-    [delegate_ formEligibleForGenerationFound:form];
+    [bridge_ formEligibleForGenerationFound:form];
   }
 }
 
 void IOSChromePasswordManagerDriver::GeneratedPasswordAccepted(
-    const base::string16& password) {
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
 
 void IOSChromePasswordManagerDriver::FillSuggestion(
-    const base::string16& username,
-    const base::string16& password) {
+    const std::u16string& username,
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
 
 void IOSChromePasswordManagerDriver::PreviewSuggestion(
-    const base::string16& username,
-    const base::string16& password) {
+    const std::u16string& username,
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
-
-// TODO(crbug.com/568713): This method should be given a non-trivial
-// implementation before launch of the fill-on-account password manager
-// experiment.
-void IOSChromePasswordManagerDriver::ShowInitialPasswordAccountSuggestions(
-    const autofill::PasswordFormFillData& form_data) {}
 
 void IOSChromePasswordManagerDriver::ClearPreviewedForm() {
   NOTIMPLEMENTED();
@@ -70,11 +71,11 @@ void IOSChromePasswordManagerDriver::ClearPreviewedForm() {
 
 password_manager::PasswordGenerationFrameHelper*
 IOSChromePasswordManagerDriver::GetPasswordGenerationHelper() {
-  return [delegate_ passwordGenerationHelper];
+  return [bridge_ passwordGenerationHelper];
 }
 
 PasswordManager* IOSChromePasswordManagerDriver::GetPasswordManager() {
-  return [delegate_ passwordManager];
+  return password_manager_;
 }
 
 PasswordAutofillManager*
@@ -84,16 +85,19 @@ IOSChromePasswordManagerDriver::GetPasswordAutofillManager() {
   return nullptr;
 }
 
-autofill::AutofillDriver* IOSChromePasswordManagerDriver::GetAutofillDriver() {
-  NOTIMPLEMENTED();
-  return nullptr;
-}
-
-bool IOSChromePasswordManagerDriver::IsMainFrame() const {
+bool IOSChromePasswordManagerDriver::IsInPrimaryMainFrame() const {
   // On IOS only processing of password forms in main frame is implemented.
   return true;
 }
 
+bool IOSChromePasswordManagerDriver::CanShowAutofillUi() const {
+  return true;
+}
+
+::ui::AXTreeID IOSChromePasswordManagerDriver::GetAxTreeId() const {
+  return {};
+}
+
 const GURL& IOSChromePasswordManagerDriver::GetLastCommittedURL() const {
-  return delegate_.lastCommittedURL;
+  return bridge_.lastCommittedURL;
 }

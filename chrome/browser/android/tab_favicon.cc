@@ -13,6 +13,7 @@
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_rep.h"
 
 using base::android::JavaParamRef;
 using base::android::ScopedJavaLocalRef;
@@ -64,7 +65,7 @@ ScopedJavaLocalRef<jobject> TabFavicon::GetFavicon(
           target_size_dip);
     }
 
-    bitmap = gfx::ConvertToJavaBitmap(&favicon);
+    bitmap = gfx::ConvertToJavaBitmap(favicon);
   }
   return bitmap;
 }
@@ -85,7 +86,7 @@ void TabFavicon::OnFaviconUpdated(favicon::FaviconDriver* favicon_driver,
 
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_TabFavicon_onFaviconAvailable(env, jobj_,
-                                     gfx::ConvertToJavaBitmap(&favicon));
+                                     gfx::ConvertToJavaBitmap(favicon));
 }
 
 static jlong JNI_TabFavicon_Init(JNIEnv* env,

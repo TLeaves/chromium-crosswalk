@@ -6,7 +6,6 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -20,6 +19,18 @@
 @protocol ShowProtocol<NSObject>
 - (void)show;
 - (void)showMore;
+@end
+
+@protocol HideProtocol
+- (void)hide;
+- (void)hideMore;
+@end
+
+@protocol CompositeProtocolWithMethods <HideProtocol>
+- (void)doCompositeThings;
+@end
+
+@protocol EmptyContainerProtocol <CompositeProtocolWithMethods, ShowProtocol>
 @end
 
 // A handler with methods that take no arguments.
@@ -343,6 +354,70 @@ TEST_F(CommandDispatcherTest, NoTargetRegisteredForSelector) {
   EXPECT_TRUE(exception_caught);
 }
 
+// Tests that an exception is not thrown when prepareForShutdown was called
+// before the target was removed.
+TEST_F(CommandDispatcherTest,
+       PrepareForShutdownLetsStopDispatchingForSelectorFailSilently) {
+  id dispatcher = [[CommandDispatcher alloc] init];
+  CommandDispatcherTestSimpleTarget* target =
+      [[CommandDispatcherTestSimpleTarget alloc] init];
+
+  // Check stopDispatchingForSelector:
+  [dispatcher startDispatchingToTarget:target forSelector:@selector(show)];
+  [dispatcher prepareForShutdown];
+  [dispatcher stopDispatchingForSelector:@selector(show)];
+  bool exception_caught = false;
+  @try {
+    [dispatcher show];
+  } @catch (NSException* exception) {
+    exception_caught = true;
+  }
+
+  EXPECT_FALSE(exception_caught);
+}
+
+TEST_F(CommandDispatcherTest,
+       PrepareForShutdownLetsStopDispatchingForProtocolFailSilently) {
+  id dispatcher = [[CommandDispatcher alloc] init];
+  CommandDispatcherTestSimpleTarget* target =
+      [[CommandDispatcherTestSimpleTarget alloc] init];
+
+  // Check stopDispatchingForProtocol:
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(HideProtocol)];
+  [dispatcher prepareForShutdown];
+  [dispatcher stopDispatchingForProtocol:@protocol(HideProtocol)];
+  bool exception_caught = false;
+  @try {
+    [dispatcher hide];
+  } @catch (NSException* exception) {
+    exception_caught = true;
+  }
+
+  EXPECT_FALSE(exception_caught);
+}
+
+TEST_F(CommandDispatcherTest,
+       PrepareForShutdownLetsStopDispatchingToTargetFailSilently) {
+  id dispatcher = [[CommandDispatcher alloc] init];
+  CommandDispatcherTestSimpleTarget* target =
+      [[CommandDispatcherTestSimpleTarget alloc] init];
+
+  // Check stopDispatchingToTarget:
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(HideProtocol)];
+  [dispatcher prepareForShutdown];
+  [dispatcher stopDispatchingToTarget:target];
+  bool exception_caught = false;
+  @try {
+    [dispatcher hide];
+  } @catch (NSException* exception) {
+    exception_caught = true;
+  }
+
+  EXPECT_FALSE(exception_caught);
+}
+
 // Tests that -respondsToSelector returns YES for methods once they are
 // dispatched for.
 // Tests handler methods with no arguments.
@@ -365,4 +440,62 @@ TEST_F(CommandDispatcherTest, RespondsToSelector) {
       respondsToSelector:@selector(startDispatchingToTarget:forSelector:)]);
   EXPECT_TRUE(
       [dispatcher respondsToSelector:@selector(stopDispatchingForSelector:)]);
+}
+
+TEST_F(CommandDispatcherTest, DispatchingForProtocol) {
+  id dispatcher = [[CommandDispatcher alloc] init];
+  NSObject* target = [[NSObject alloc] init];
+
+  // Check that -dispatchingForProtocol tracks simple stop/start.
+  EXPECT_FALSE([dispatcher dispatchingForProtocol:@protocol(HideProtocol)]);
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(HideProtocol)];
+  EXPECT_TRUE([dispatcher dispatchingForProtocol:@protocol(HideProtocol)]);
+  [dispatcher stopDispatchingForProtocol:@protocol(HideProtocol)];
+  EXPECT_FALSE([dispatcher dispatchingForProtocol:@protocol(HideProtocol)]);
+
+  // Check that -dispatchingForProtocol handles a conformed protocol.
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(CompositeProtocolWithMethods)];
+  EXPECT_FALSE([dispatcher
+      dispatchingForProtocol:@protocol(CompositeProtocolWithMethods)]);
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(HideProtocol)];
+  EXPECT_TRUE([dispatcher
+      dispatchingForProtocol:@protocol(CompositeProtocolWithMethods)]);
+
+  // Check that -dispatchingForProtocol doesn't have a problem with a protocol
+  // that also conforms to NSObject.
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(ShowProtocol)];
+  EXPECT_TRUE([dispatcher dispatchingForProtocol:@protocol(ShowProtocol)]);
+
+  // Check that conforming to all of the conformed protocols in a protocol with
+  // no methods is the same as conforming to that protocol.
+  EXPECT_TRUE(
+      [dispatcher dispatchingForProtocol:@protocol(EmptyContainerProtocol)]);
+
+  // Check that stopping dispatch to a protocol doesn't stop dispatch to its
+  // conformed protocols.
+  [dispatcher
+      stopDispatchingForProtocol:@protocol(CompositeProtocolWithMethods)];
+  EXPECT_TRUE([dispatcher dispatchingForProtocol:@protocol(HideProtocol)]);
+}
+
+TEST_F(CommandDispatcherTest, HandlerForProtocol) {
+  CommandDispatcher* dispatcher = [[CommandDispatcher alloc] init];
+  NSObject* target = [[NSObject alloc] init];
+
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(ShowProtocol)];
+  id<ShowProtocol> handler = HandlerForProtocol(dispatcher, ShowProtocol);
+  EXPECT_EQ(handler, dispatcher);
+
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(HideProtocol)];
+  [dispatcher startDispatchingToTarget:target
+                           forProtocol:@protocol(CompositeProtocolWithMethods)];
+  id<EmptyContainerProtocol> container_handler =
+      HandlerForProtocol(dispatcher, EmptyContainerProtocol);
+  EXPECT_EQ(container_handler, dispatcher);
 }

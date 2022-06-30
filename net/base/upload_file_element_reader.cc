@@ -4,11 +4,13 @@
 
 #include "net/base/upload_file_element_reader.h"
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
-#include "base/task_runner.h"
-#include "base/task_runner_util.h"
+#include "base/task/task_runner.h"
+#include "base/task/task_runner_util.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -34,11 +36,7 @@ UploadFileElementReader::UploadFileElementReader(
       path_(path),
       range_offset_(range_offset),
       range_length_(range_length),
-      expected_modification_time_(expected_modification_time),
-      content_length_(0),
-      bytes_remaining_(0),
-      next_state_(State::IDLE),
-      init_called_while_operation_pending_(false) {
+      expected_modification_time_(expected_modification_time) {
   DCHECK(file.IsValid());
   DCHECK(task_runner_.get());
   file_stream_ = std::make_unique<FileStream>(std::move(file), task_runner);
@@ -54,11 +52,7 @@ UploadFileElementReader::UploadFileElementReader(
       path_(path),
       range_offset_(range_offset),
       range_length_(range_length),
-      expected_modification_time_(expected_modification_time),
-      content_length_(0),
-      bytes_remaining_(0),
-      next_state_(State::IDLE),
-      init_called_while_operation_pending_(false) {
+      expected_modification_time_(expected_modification_time) {
   DCHECK(task_runner_.get());
 }
 
@@ -195,7 +189,7 @@ int UploadFileElementReader::DoOpen() {
 
   next_state_ = State::OPEN_COMPLETE;
 
-  file_stream_.reset(new FileStream(task_runner_.get()));
+  file_stream_ = std::make_unique<FileStream>(task_runner_.get());
   int result = file_stream_->Open(
       path_,
       base::File::FLAG_OPEN | base::File::FLAG_READ | base::File::FLAG_ASYNC,

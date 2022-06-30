@@ -6,9 +6,9 @@
 
 #include <array>
 #include <limits>
+#include <ostream>
 
-#include "base/logging.h"
-#include "base/no_destructor.h"
+#include "base/check.h"
 
 namespace remoting {
 
@@ -108,9 +108,9 @@ KeycodeMap CreateKeycodeMapFromMapEntries(const KeycodeMapEntry (&entries)[N]) {
 }
 
 const KeycodeMap& GetKeycodeMapQwerty() {
-  static const base::NoDestructor<KeycodeMap> map(
+  static const KeycodeMap map(
       CreateKeycodeMapFromMapEntries(kKeycodeMapEntriesQwerty));
-  return *map;
+  return map;
 }
 
 }  // namespace

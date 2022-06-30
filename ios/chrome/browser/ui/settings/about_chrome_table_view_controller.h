@@ -5,18 +5,20 @@
 #ifndef IOS_CHROME_BROWSER_UI_SETTINGS_ABOUT_CHROME_TABLE_VIEW_CONTROLLER_H_
 #define IOS_CHROME_BROWSER_UI_SETTINGS_ABOUT_CHROME_TABLE_VIEW_CONTROLLER_H_
 
+#import "ios/chrome/browser/ui/settings/settings_controller_protocol.h"
 #import "ios/chrome/browser/ui/settings/settings_root_table_view_controller.h"
 
 // Controller for the About Google Chrome Table View, which allows users to
 // view open source licenses, terms of service, etc.
-@interface AboutChromeTableViewController : SettingsRootTableViewController
+@interface AboutChromeTableViewController
+    : SettingsRootTableViewController <SettingsControllerProtocol>
+
+// TODO(crbug.com/1323778): This class needs to have an explicit
+// id<SnacbarCommands> handler property.
 
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
 
-- (instancetype)initWithTableViewStyle:(UITableViewStyle)style
-                           appBarStyle:
-                               (ChromeTableViewControllerStyle)appBarStyle
-    NS_UNAVAILABLE;
+- (instancetype)initWithStyle:(UITableViewStyle)style NS_UNAVAILABLE;
 
 @end
 

@@ -7,17 +7,22 @@
 
 #include <memory>
 #include "base/location.h"
-#include "base/message_loop/message_loop.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "third_party/blink/public/common/input/web_input_event.h"
+#include "third_party/blink/public/common/input/web_input_event_attribution.h"
+#include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
-#include "third_party/blink/public/platform/web_input_event.h"
-#include "third_party/blink/renderer/platform/scheduler/public/page_scheduler.h"
-#include "third_party/blink/renderer/platform/scheduler/public/pending_user_input_type.h"
+#include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace v8 {
 class Isolate;
+}
+
+namespace base {
+class TaskObserver;
 }
 
 namespace blink {
@@ -37,6 +42,10 @@ class PLATFORM_EXPORT ThreadScheduler {
 
   // Return the current thread's ThreadScheduler.
   static ThreadScheduler* Current();
+
+  // Returns compositor thread scheduler for the compositor thread
+  // of the current process.
+  static ThreadScheduler* CompositorThreadScheduler();
 
   virtual ~ThreadScheduler() = default;
 
@@ -86,14 +95,23 @@ class PLATFORM_EXPORT ThreadScheduler {
   // Returns a task runner for kV8 tasks. Can be called from any thread.
   virtual scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() = 0;
 
+  // Returns a task runner which does not generate system wakeups on its own.
+  // This means that if a delayed task is posted to it, it will run when
+  // the delay expires AND another task runs.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> NonWakingTaskRunner() = 0;
+
   // Returns a task runner for compositor tasks. This is intended only to be
   // used by specific animation and rendering related tasks (e.g. animated GIFS)
   // and should not generally be used.
   virtual scoped_refptr<base::SingleThreadTaskRunner>
   CompositorTaskRunner() = 0;
 
-  // Returns a task runner for handling IPC messages.
-  virtual scoped_refptr<base::SingleThreadTaskRunner> IPCTaskRunner() = 0;
+  // Returns a task runner for input-blocking tasks on the compositor thread.
+  // (For input tasks on the main thread, use WebWidgetScheduler instead.)
+  virtual scoped_refptr<base::SingleThreadTaskRunner> InputTaskRunner() {
+    NOTREACHED();
+    return nullptr;
+  }
 
   // Returns a default task runner. This is basically same as the default task
   // runner, but is explicitly allowed to run JavaScript. We plan to forbid V8
@@ -104,15 +122,22 @@ class PLATFORM_EXPORT ThreadScheduler {
   virtual scoped_refptr<base::SingleThreadTaskRunner>
   DeprecatedDefaultTaskRunner() = 0;
 
-  // Creates a new PageScheduler for a given Page. Must be called from the
-  // associated WebThread.
-  virtual std::unique_ptr<PageScheduler> CreatePageScheduler(
-      PageScheduler::Delegate*) = 0;
+  // Creates a AgentGroupScheduler implementation. Must be called from the
+  // main thread.
+  virtual std::unique_ptr<scheduler::WebAgentGroupScheduler>
+  CreateAgentGroupScheduler() = 0;
+
+  // The current active AgentGroupScheduler is set when the task gets
+  // started (i.e., OnTaskStarted) and unset when the task gets
+  // finished (i.e., OnTaskCompleted). GetCurrentAgentGroupScheduler()
+  // returns nullptr in task observers.
+  virtual scheduler::WebAgentGroupScheduler*
+  GetCurrentAgentGroupScheduler() = 0;
 
   // Pauses the scheduler. See WebThreadScheduler::PauseRenderer for
   // details. May only be called from the main thread.
-  virtual std::unique_ptr<RendererPauseHandle> PauseScheduler()
-      WARN_UNUSED_RESULT = 0;
+  [[nodiscard]] virtual std::unique_ptr<RendererPauseHandle>
+  PauseScheduler() = 0;
 
   // Returns the current time recognized by the scheduler, which may perhaps
   // be based on a real or virtual time domain. Used by Timer.
@@ -121,31 +146,43 @@ class PLATFORM_EXPORT ThreadScheduler {
   // Adds or removes a task observer from the scheduler. The observer will be
   // notified before and after every executed task. These functions can only be
   // called on the thread this scheduler was created on.
-  virtual void AddTaskObserver(
-      base::MessageLoop::TaskObserver* task_observer) = 0;
-  virtual void RemoveTaskObserver(
-      base::MessageLoop::TaskObserver* task_observer) = 0;
+  virtual void AddTaskObserver(base::TaskObserver* task_observer) = 0;
+  virtual void RemoveTaskObserver(base::TaskObserver* task_observer) = 0;
 
-  virtual scheduler::PendingUserInputInfo GetPendingUserInputInfo() const {
-    return scheduler::PendingUserInputInfo();
+  // Returns a list of all unique attributions that are marked for event
+  // dispatch. If |include_continuous| is true, include event types from
+  // "continuous" sources (see PendingUserInput::IsContinuousEventTypes).
+  virtual Vector<WebInputEventAttribution> GetPendingUserInputInfo(
+      bool include_continuous) const {
+    return {};
   }
 
   // Associates |isolate| to the scheduler.
   virtual void SetV8Isolate(v8::Isolate* isolate) = 0;
 
-  virtual void OnSafepointEntered() {}
-  virtual void OnSafepointExited() {}
+  // Returns the scheduler's TaskAttributionTracker is we're running on the main
+  // thread, or a nullptr otherwise.
+  virtual scheduler::TaskAttributionTracker* GetTaskAttributionTracker() {
+    return nullptr;
+  }
 
   // Test helpers.
+
+  virtual scheduler::NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() = 0;
+
+  virtual void InitializeTaskAttributionTracker(
+      std::unique_ptr<scheduler::TaskAttributionTracker>) {}
+
+ private:
+  // For GetWebMainThreadScheduler().
+  friend class scheduler::WebThreadScheduler;
 
   // Return a reference to an underlying main thread WebThreadScheduler object.
   // Can be null if there is no underlying main thread WebThreadScheduler
   // (e.g. worker threads).
-  virtual scheduler::WebThreadScheduler* GetWebMainThreadSchedulerForTest() {
+  virtual scheduler::WebThreadScheduler* GetWebMainThreadScheduler() {
     return nullptr;
   }
-
-  virtual scheduler::NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() = 0;
 };
 
 }  // namespace blink

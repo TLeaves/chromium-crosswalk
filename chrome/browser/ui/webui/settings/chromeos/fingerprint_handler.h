@@ -6,21 +6,15 @@
 #define CHROME_BROWSER_UI_WEBUI_SETTINGS_CHROMEOS_FINGERPRINT_HANDLER_H_
 
 #include "base/containers/flat_map.h"
-#include "base/scoped_observer.h"
+#include "base/scoped_observation.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
+#include "components/session_manager/core/session_manager.h"
 #include "components/session_manager/core/session_manager_observer.h"
-#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "services/device/public/mojom/fingerprint.mojom.h"
 
 class Profile;
-
-namespace base {
-class ListValue;
-}  // namespace base
-
-namespace session_manager {
-class SessionManager;
-}  // namespace session_manager
 
 namespace chromeos {
 namespace settings {
@@ -31,6 +25,10 @@ class FingerprintHandler : public ::settings::SettingsPageUIHandler,
                            public session_manager::SessionManagerObserver {
  public:
   explicit FingerprintHandler(Profile* profile);
+
+  FingerprintHandler(const FingerprintHandler&) = delete;
+  FingerprintHandler& operator=(const FingerprintHandler&) = delete;
+
   ~FingerprintHandler() override;
 
   // SettingsPageUIHandler overrides:
@@ -44,7 +42,7 @@ class FingerprintHandler : public ::settings::SettingsPageUIHandler,
                         bool enroll_session_complete,
                         int percent_complete) override;
   void OnAuthScanDone(
-      device::mojom::ScanResult scan_result,
+      const device::mojom::FingerprintMessagePtr msg,
       const base::flat_map<std::string, std::vector<std::string>>& matches)
       override;
   void OnSessionFailed() override;
@@ -53,15 +51,13 @@ class FingerprintHandler : public ::settings::SettingsPageUIHandler,
   void OnSessionStateChanged() override;
 
  private:
-  void HandleGetFingerprintsList(const base::ListValue* args);
-  void HandleGetNumFingerprints(const base::ListValue* args);
-  void HandleStartEnroll(const base::ListValue* args);
-  void HandleCancelCurrentEnroll(const base::ListValue* args);
-  void HandleGetEnrollmentLabel(const base::ListValue* args);
-  void HandleRemoveEnrollment(const base::ListValue* args);
-  void HandleChangeEnrollmentLabel(const base::ListValue* args);
-  void HandleStartAuthentication(const base::ListValue* args);
-  void HandleEndCurrentAuthentication(const base::ListValue* args);
+  void HandleGetFingerprintsList(const base::Value::List& args);
+  void HandleGetNumFingerprints(const base::Value::List& args);
+  void HandleStartEnroll(const base::Value::List& args);
+  void HandleCancelCurrentEnroll(const base::Value::List& args);
+  void HandleGetEnrollmentLabel(const base::Value::List& args);
+  void HandleRemoveEnrollment(const base::Value::List& args);
+  void HandleChangeEnrollmentLabel(const base::Value::List& args);
 
   void OnGetFingerprintsList(const std::string& callback_id,
                              const base::flat_map<std::string, std::string>&
@@ -79,15 +75,13 @@ class FingerprintHandler : public ::settings::SettingsPageUIHandler,
   std::vector<std::string> fingerprints_paths_;
   std::string user_id_;
 
-  device::mojom::FingerprintPtr fp_service_;
-  mojo::Binding<device::mojom::FingerprintObserver> binding_;
-  ScopedObserver<session_manager::SessionManager,
-                 session_manager::SessionManagerObserver>
-      session_observer_;
+  mojo::Remote<device::mojom::Fingerprint> fp_service_;
+  mojo::Receiver<device::mojom::FingerprintObserver> receiver_{this};
+  base::ScopedObservation<session_manager::SessionManager,
+                          session_manager::SessionManagerObserver>
+      session_observation_{this};
 
-  base::WeakPtrFactory<FingerprintHandler> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FingerprintHandler);
+  base::WeakPtrFactory<FingerprintHandler> weak_ptr_factory_{this};
 };
 
 }  // namespace settings

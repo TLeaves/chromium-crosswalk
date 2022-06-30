@@ -11,12 +11,11 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "chromeos/dbus/shill/shill_client_helper.h"
 
 namespace base {
-class DictionaryValue;
-}  // namespace base
+class Value;
+}
 
 namespace dbus {
 class Bus;
@@ -32,6 +31,9 @@ class ShillThirdPartyVpnObserver;
 // DBusThreadManager instance.
 class COMPONENT_EXPORT(SHILL_CLIENT) ShillThirdPartyVpnDriverClient {
  public:
+  using ErrorCallback = ShillClientHelper::ErrorCallback;
+  using StringCallback = ShillClientHelper::StringCallback;
+
   class TestInterface {
    public:
     virtual void OnPacketReceived(const std::string& object_path_value,
@@ -56,6 +58,11 @@ class COMPONENT_EXPORT(SHILL_CLIENT) ShillThirdPartyVpnDriverClient {
   // Returns the global instance if initialized. May return null.
   static ShillThirdPartyVpnDriverClient* Get();
 
+  ShillThirdPartyVpnDriverClient(const ShillThirdPartyVpnDriverClient&) =
+      delete;
+  ShillThirdPartyVpnDriverClient& operator=(
+      const ShillThirdPartyVpnDriverClient&) = delete;
+
   // Adds an |observer| for the third party vpn driver at |object_path_value|.
   virtual void AddShillThirdPartyVpnObserver(
       const std::string& object_path_value,
@@ -66,29 +73,27 @@ class COMPONENT_EXPORT(SHILL_CLIENT) ShillThirdPartyVpnDriverClient {
   virtual void RemoveShillThirdPartyVpnObserver(
       const std::string& object_path_value) = 0;
 
-  // Calls SetParameters method.
-  // |callback| is called after the method call succeeds.
-  virtual void SetParameters(
-      const std::string& object_path_value,
-      const base::DictionaryValue& parameters,
-      const ShillClientHelper::StringCallback& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) = 0;
+  // Calls the SetParameters DBus method for |object_path_value| with
+  // |parameters| which must be a dictionary Value. Invokes |callback| on
+  // success or |error_callback| on failure.
+  virtual void SetParameters(const std::string& object_path_value,
+                             const base::Value& parameters,
+                             StringCallback callback,
+                             ErrorCallback error_callback) = 0;
 
   // Calls UpdateConnectionState method.
   // |callback| is called after the method call succeeds.
-  virtual void UpdateConnectionState(
-      const std::string& object_path_value,
-      const uint32_t connection_state,
-      const base::Closure& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) = 0;
+  virtual void UpdateConnectionState(const std::string& object_path_value,
+                                     const uint32_t connection_state,
+                                     base::OnceClosure callback,
+                                     ErrorCallback error_callback) = 0;
 
   // Calls SendPacket method.
   // |callback| is called after the method call succeeds.
-  virtual void SendPacket(
-      const std::string& object_path_value,
-      const std::vector<char>& ip_packet,
-      const base::Closure& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) = 0;
+  virtual void SendPacket(const std::string& object_path_value,
+                          const std::vector<char>& ip_packet,
+                          base::OnceClosure callback,
+                          ErrorCallback error_callback) = 0;
 
   // Returns an interface for testing (stub only), or returns nullptr.
   virtual ShillThirdPartyVpnDriverClient::TestInterface* GetTestInterface() = 0;
@@ -99,9 +104,6 @@ class COMPONENT_EXPORT(SHILL_CLIENT) ShillThirdPartyVpnDriverClient {
   // Initialize/Shutdown should be used instead.
   ShillThirdPartyVpnDriverClient();
   virtual ~ShillThirdPartyVpnDriverClient();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ShillThirdPartyVpnDriverClient);
 };
 
 }  // namespace chromeos

@@ -17,12 +17,15 @@ class TextureImageFactory : public gpu::ImageFactory {
       gfx::GpuMemoryBufferHandle handle,
       const gfx::Size& size,
       gfx::BufferFormat format,
+      const gfx::ColorSpace& color_space,
+      gfx::BufferPlane plane,
       int client_id,
       SurfaceHandle surface_handle) override;
   bool SupportsCreateAnonymousImage() const override;
   scoped_refptr<gl::GLImage> CreateAnonymousImage(const gfx::Size& size,
                                                   gfx::BufferFormat format,
                                                   gfx::BufferUsage usage,
+                                                  SurfaceHandle surface_handle,
                                                   bool* is_cleared) override;
   unsigned RequiredTextureType() override;
   bool SupportsFormatRGB() override;

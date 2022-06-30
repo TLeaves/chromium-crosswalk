@@ -7,8 +7,7 @@
 
 #include <stdint.h>
 
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/check_op.h"
 
 namespace net {
 

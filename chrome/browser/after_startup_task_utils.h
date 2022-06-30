@@ -7,36 +7,22 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
-#include "base/task_runner.h"
 
 namespace android {
 class AfterStartupTaskUtilsJNI;
 }
 
+namespace base {
+class SequencedTaskRunner;
+}
+
 class AfterStartupTaskUtils {
  public:
-  // A helper TaskRunner which merely forwards to
-  // AfterStartupTaskUtils::PostTask(). Doesn't support tasks with a non-zero
-  // delay.
-  class Runner : public base::TaskRunner {
-   public:
-    explicit Runner(scoped_refptr<base::TaskRunner> destination_runner);
-
-    // Overrides from base::TaskRunner:
-    bool PostDelayedTask(const base::Location& from_here,
-                         base::OnceClosure task,
-                         base::TimeDelta delay) override;
-    bool RunsTasksInCurrentSequence() const override;
-
-   private:
-    ~Runner() override;
-
-    const scoped_refptr<base::TaskRunner> destination_runner_;
-
-    DISALLOW_COPY_AND_ASSIGN(Runner);
-  };
+  AfterStartupTaskUtils() = delete;
+  AfterStartupTaskUtils(const AfterStartupTaskUtils&) = delete;
+  AfterStartupTaskUtils& operator=(const AfterStartupTaskUtils&) = delete;
 
   // Observes startup and when complete runs tasks that have accrued.
   static void StartMonitoringStartup();
@@ -46,7 +32,7 @@ class AfterStartupTaskUtils {
   // Note: see browser_thread.h
   static void PostTask(
       const base::Location& from_here,
-      const scoped_refptr<base::TaskRunner>& destination_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& destination_runner,
       base::OnceClosure task);
 
   // Returns true if browser startup is complete. Only use this on a one-off
@@ -60,11 +46,6 @@ class AfterStartupTaskUtils {
 
   static void UnsafeResetForTesting();
 
-  // Normally on startup, some tasks are scheduled with a random delay. This is
-  // not desirable during testing where it adds non-determinism and slows down
-  // test execution.
-  static void DisableScheduleTaskDelayForTesting();
-
  private:
   // TODO(wkorman): Look into why Android calls
   // SetBrowserStartupIsComplete() directly. Ideally it would use
@@ -72,8 +53,6 @@ class AfterStartupTaskUtils {
   friend class android::AfterStartupTaskUtilsJNI;
 
   static void SetBrowserStartupIsComplete();
-
-  DISALLOW_IMPLICIT_CONSTRUCTORS(AfterStartupTaskUtils);
 };
 
 #endif  // CHROME_BROWSER_AFTER_STARTUP_TASK_UTILS_H_

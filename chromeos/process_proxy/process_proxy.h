@@ -13,7 +13,6 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/process/process.h"
 #include "chromeos/process_proxy/process_output_watcher.h"
@@ -35,10 +34,14 @@ namespace chromeos {
 // must be destroyed. This is done in Close.
 class ProcessProxy : public base::RefCountedThreadSafe<ProcessProxy> {
  public:
-  using OutputCallback = base::Callback<void(ProcessOutputType output_type,
-                                             const std::string& output_data)>;
+  using OutputCallback =
+      base::RepeatingCallback<void(ProcessOutputType output_type,
+                                   const std::string& output_data)>;
 
   ProcessProxy();
+
+  ProcessProxy(const ProcessProxy&) = delete;
+  ProcessProxy& operator=(const ProcessProxy&) = delete;
 
   // Opens a process using command |command| for the user with hash
   // |user_id_hash|.  Returns process ID on success, -1 on failure.
@@ -65,7 +68,7 @@ class ProcessProxy : public base::RefCountedThreadSafe<ProcessProxy> {
   void AckOutput();
 
   // Get the process handle for testing purposes.
-  base::ProcessHandle GetProcessHandleForTesting();
+  const base::Process* GetProcessForTesting();
 
  private:
   friend class base::RefCountedThreadSafe<ProcessProxy>;
@@ -91,10 +94,10 @@ class ProcessProxy : public base::RefCountedThreadSafe<ProcessProxy> {
   // handled.
   void OnProcessOutput(ProcessOutputType type,
                        const std::string& output,
-                       const base::Closure& callback);
+                       base::OnceClosure callback);
   void CallOnProcessOutputCallback(ProcessOutputType type,
                                    const std::string& output,
-                                   const base::Closure& callback);
+                                   base::OnceClosure callback);
 
   void StopWatching();
 
@@ -112,7 +115,7 @@ class ProcessProxy : public base::RefCountedThreadSafe<ProcessProxy> {
   OutputCallback callback_;
   // Callback received by process output watcher in |OnProcessOutput|.
   // Process output watcher will be paused until this is run.
-  base::Closure output_ack_callback_;
+  base::OnceClosure output_ack_callback_;
   scoped_refptr<base::TaskRunner> callback_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> watcher_runner_;
 
@@ -121,8 +124,6 @@ class ProcessProxy : public base::RefCountedThreadSafe<ProcessProxy> {
   base::Process process_;
 
   int pt_pair_[2];
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessProxy);
 };
 
 }  // namespace chromeos

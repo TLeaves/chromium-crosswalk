@@ -18,9 +18,42 @@ MockHidDelegate::~MockHidDelegate() = default;
 std::unique_ptr<HidChooser> MockHidDelegate::RunChooser(
     RenderFrameHost* frame,
     std::vector<blink::mojom::HidDeviceFilterPtr> filters,
+    std::vector<blink::mojom::HidDeviceFilterPtr> exclusion_filters,
     HidChooser::Callback callback) {
   std::move(callback).Run(RunChooserInternal());
   return nullptr;
+}
+
+void MockHidDelegate::AddObserver(BrowserContext* browser_context,
+                                  Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void MockHidDelegate::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+void MockHidDelegate::OnDeviceAdded(
+    const device::mojom::HidDeviceInfo& device) {
+  for (auto& observer : observer_list_)
+    observer.OnDeviceAdded(device);
+}
+
+void MockHidDelegate::OnDeviceRemoved(
+    const device::mojom::HidDeviceInfo& device) {
+  for (auto& observer : observer_list_)
+    observer.OnDeviceRemoved(device);
+}
+
+void MockHidDelegate::OnDeviceChanged(
+    const device::mojom::HidDeviceInfo& device) {
+  for (auto& observer : observer_list_)
+    observer.OnDeviceChanged(device);
+}
+
+void MockHidDelegate::OnPermissionRevoked(const url::Origin& origin) {
+  for (auto& observer : observer_list_)
+    observer.OnPermissionRevoked(origin);
 }
 
 HidTestContentBrowserClient::HidTestContentBrowserClient() = default;

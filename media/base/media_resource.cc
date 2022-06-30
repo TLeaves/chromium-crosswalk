@@ -4,15 +4,22 @@
 
 #include "media/base/media_resource.h"
 
+#include "base/no_destructor.h"
+#include "net/cookies/site_for_cookies.h"
+#include "url/gurl.h"
+#include "url/origin.h"
+
 namespace media {
 
 MediaResource::MediaResource() = default;
 
 MediaResource::~MediaResource() = default;
 
-MediaUrlParams MediaResource::GetMediaUrlParams() const {
+const MediaUrlParams& MediaResource::GetMediaUrlParams() const {
   NOTREACHED();
-  return MediaUrlParams{GURL(), GURL(), false, false};
+  static base::NoDestructor<MediaUrlParams> instance{
+      GURL(), net::SiteForCookies(), url::Origin(), false, false};
+  return *instance;
 }
 
 MediaResource::Type MediaResource::GetType() const {

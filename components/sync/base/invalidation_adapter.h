@@ -10,17 +10,17 @@
 #include <string>
 
 #include "components/invalidation/public/invalidation.h"
-#include "components/sync/base/invalidation_interface.h"
+#include "components/sync/base/sync_invalidation.h"
 
 namespace syncer {
 
-// Wraps a Invalidation in the InvalidationInterface.
-class InvalidationAdapter : public InvalidationInterface {
+// Wraps a Invalidation in the SyncInvalidation interface.
+class InvalidationAdapter : public SyncInvalidation {
  public:
-  explicit InvalidationAdapter(const Invalidation& invalidation);
+  explicit InvalidationAdapter(const invalidation::Invalidation& invalidation);
   ~InvalidationAdapter() override;
 
-  // Implementation of InvalidationInterface.
+  // Implementation of SyncInvalidation.
   bool IsUnknownVersion() const override;
   const std::string& GetPayload() const override;
   int64_t GetVersion() const override;
@@ -28,7 +28,7 @@ class InvalidationAdapter : public InvalidationInterface {
   void Drop() override;
 
  private:
-  Invalidation invalidation_;
+  invalidation::Invalidation invalidation_;
 };
 
 }  // namespace syncer

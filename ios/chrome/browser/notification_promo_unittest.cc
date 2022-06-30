@@ -13,7 +13,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/mock_entropy_provider.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "components/prefs/testing_pref_service.h"
@@ -30,7 +29,7 @@ namespace {
 const char kDateFormat[] = "dd MMM yyyy HH:mm:ss zzzz";
 
 bool YearFromNow(double* date_epoch, std::string* date_string) {
-  *date_epoch = (base::Time::Now() + base::TimeDelta::FromDays(365)).ToTimeT();
+  *date_epoch = (base::Time::Now() + base::Days(365)).ToTimeT();
 
   UErrorCode status = U_ZERO_ERROR;
   icu::SimpleDateFormat simple_formatter(icu::UnicodeString(kDateFormat),
@@ -51,8 +50,6 @@ class NotificationPromoTest : public PlatformTest {
  public:
   NotificationPromoTest()
       : notification_promo_(&local_state_),
-        field_trial_list_(std::make_unique<base::FieldTrialList>(
-            std::make_unique<base::MockEntropyProvider>())),
         received_notification_(false),
         start_(0.0),
         end_(0.0),
@@ -81,7 +78,7 @@ class NotificationPromoTest : public PlatformTest {
 
     std::string json_with_end_date(
         base::ReplaceStringPlaceholders(json, replacements, NULL));
-    base::Optional<base::Value> value =
+    absl::optional<base::Value> value =
         base::JSONReader::Read(json_with_end_date);
     ASSERT_TRUE(value.has_value());
     ASSERT_TRUE(value.value().is_dict());
@@ -105,14 +102,15 @@ class NotificationPromoTest : public PlatformTest {
     ASSERT_TRUE(payload);
     ASSERT_TRUE(payload->is_dict());
 
-    for (const auto& pair : payload->DictItems()) {
+    for (const auto pair : payload->DictItems()) {
       field_trial_params[pair.first] =
           pair.second.is_string() ? pair.second.GetString() : std::string();
     }
 
-    variations::AssociateVariationParams("IOSNTPPromotion", "Group1",
-                                         field_trial_params);
-    base::FieldTrialList::CreateFieldTrial("IOSNTPPromotion", "Group1");
+    variations::AssociateVariationParams(ios::kNTPPromoFinchExperiment,
+                                         "Group1", field_trial_params);
+    base::FieldTrialList::CreateFieldTrial(ios::kNTPPromoFinchExperiment,
+                                           "Group1");
 
     promo_text_ = promo_text;
 
@@ -293,7 +291,6 @@ class NotificationPromoTest : public PlatformTest {
 
  private:
   NotificationPromo notification_promo_;
-  std::unique_ptr<base::FieldTrialList> field_trial_list_;
   bool received_notification_;
   base::Value test_json_;
 

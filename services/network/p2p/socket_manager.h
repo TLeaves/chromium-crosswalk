@@ -15,14 +15,18 @@
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/unique_ptr_adapters.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner.h"
-#include "mojo/public/cpp/bindings/binding.h"
+#include "base/task/sequenced_task_runner.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_change_notifier.h"
+#include "net/base/network_isolation_key.h"
 #include "services/network/p2p/socket.h"
 #include "services/network/p2p/socket_throttler.h"
 #include "services/network/public/cpp/p2p_socket_type.h"
@@ -55,16 +59,26 @@ class P2PSocketManager
   // P2PSocketManager. The P2PSocketManager must be destroyed before the
   // |url_request_context|.
   P2PSocketManager(
-      mojom::P2PTrustedSocketManagerClientPtr trusted_socket_manager_client,
-      mojom::P2PTrustedSocketManagerRequest trusted_socket_manager_request,
-      mojom::P2PSocketManagerRequest socket_manager_request,
+      const net::NetworkIsolationKey& network_isolation_key,
+      mojo::PendingRemote<mojom::P2PTrustedSocketManagerClient>
+          trusted_socket_manager_client,
+      mojo::PendingReceiver<mojom::P2PTrustedSocketManager>
+          trusted_socket_manager_receiver,
+      mojo::PendingReceiver<mojom::P2PSocketManager> socket_manager_receiver,
       DeleteCallback delete_callback,
       net::URLRequestContext* url_request_context);
+
+  P2PSocketManager(const P2PSocketManager&) = delete;
+  P2PSocketManager& operator=(const P2PSocketManager&) = delete;
+
   ~P2PSocketManager() override;
 
   // net::NetworkChangeNotifier::NetworkChangeObserver overrides.
   void OnNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType type) override;
+
+  void PauseNetworkChangeNotifications() override;
+  void ResumeNetworkChangeNotifications() override;
 
  private:
   class DnsRequest;
@@ -84,7 +98,7 @@ class P2PSocketManager
 
   // mojom::P2PSocketManager overrides:
   void StartNetworkNotifications(
-      mojom::P2PNetworkNotificationClientPtr client) override;
+      mojo::PendingRemote<mojom::P2PNetworkNotificationClient> client) override;
   void GetHostAddress(
       const std::string& host_name,
       bool enable_mdns,
@@ -93,8 +107,8 @@ class P2PSocketManager
                     const net::IPEndPoint& local_address,
                     const P2PPortRange& port_range,
                     const P2PHostAndIPEndPoint& remote_address,
-                    mojom::P2PSocketClientPtr client,
-                    mojom::P2PSocketRequest request) override;
+                    mojo::PendingRemote<mojom::P2PSocketClient> client,
+                    mojo::PendingReceiver<mojom::P2PSocket> receiver) override;
 
   // mojom::P2PTrustedSocketManager overrides:
   void StartRtpDump(bool incoming, bool outgoing) override;
@@ -115,7 +129,8 @@ class P2PSocketManager
   void OnConnectionError();
 
   DeleteCallback delete_callback_;
-  net::URLRequestContext* url_request_context_;
+  raw_ptr<net::URLRequestContext> url_request_context_;
+  const net::NetworkIsolationKey network_isolation_key_;
 
   std::unique_ptr<ProxyResolvingClientSocketFactory>
       proxy_resolving_socket_factory_;
@@ -129,19 +144,23 @@ class P2PSocketManager
   bool dump_incoming_rtp_packet_ = false;
   bool dump_outgoing_rtp_packet_ = false;
 
+  bool notifications_paused_ = false;
+  bool pending_network_change_notification_ = false;
+
   // Used to call DoGetNetworkList, which may briefly block since getting the
   // default local address involves creating a dummy socket.
   const scoped_refptr<base::SequencedTaskRunner> network_list_task_runner_;
 
-  mojom::P2PTrustedSocketManagerClientPtr trusted_socket_manager_client_;
-  mojo::Binding<mojom::P2PTrustedSocketManager> trusted_socket_manager_binding_;
-  mojo::Binding<mojom::P2PSocketManager> socket_manager_binding_;
+  mojo::Remote<mojom::P2PTrustedSocketManagerClient>
+      trusted_socket_manager_client_;
+  mojo::Receiver<mojom::P2PTrustedSocketManager>
+      trusted_socket_manager_receiver_;
+  mojo::Receiver<mojom::P2PSocketManager> socket_manager_receiver_;
 
-  mojom::P2PNetworkNotificationClientPtr network_notification_client_;
+  mojo::Remote<mojom::P2PNetworkNotificationClient>
+      network_notification_client_;
 
   base::WeakPtrFactory<P2PSocketManager> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(P2PSocketManager);
 };
 
 }  // namespace network

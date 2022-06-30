@@ -4,12 +4,12 @@
 
 #include "components/autofill/core/browser/logging/log_router.h"
 
-#include "base/stl_util.h"
+#include "base/observer_list.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_split.h"
-#include "components/autofill/core/browser/logging/log_buffer.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/logging/log_receiver.h"
-#include "net/base/escape.h"
+#include "components/autofill/core/common/logging/log_buffer.h"
 
 namespace autofill {
 
@@ -36,7 +36,7 @@ void LogRouter::ProcessLog(const std::string& text) {
 void LogRouter::ProcessLog(base::Value&& node) {
   // This may not be called when there are no receivers (i.e., the router is
   // inactive), because in that case the logs cannot be displayed.
-  DCHECK(receivers_.might_have_observers());
+  DCHECK(!receivers_.empty());
   accumulated_logs_.emplace_back(std::move(node));
   for (LogReceiver& receiver : receivers_)
     receiver.LogEntry(accumulated_logs_.back());
@@ -45,7 +45,7 @@ void LogRouter::ProcessLog(base::Value&& node) {
 bool LogRouter::RegisterManager(LogManager* manager) {
   DCHECK(manager);
   managers_.AddObserver(manager);
-  return receivers_.might_have_observers();
+  return !receivers_.empty();
 }
 
 void LogRouter::UnregisterManager(LogManager* manager) {
@@ -56,9 +56,9 @@ void LogRouter::UnregisterManager(LogManager* manager) {
 const std::vector<base::Value>& LogRouter::RegisterReceiver(
     LogReceiver* receiver) {
   DCHECK(receiver);
-  DCHECK(accumulated_logs_.empty() || receivers_.might_have_observers());
+  DCHECK(accumulated_logs_.empty() || !receivers_.empty());
 
-  if (!receivers_.might_have_observers()) {
+  if (receivers_.empty()) {
     for (LogManager& manager : managers_)
       manager.OnLogRouterAvailabilityChanged(true);
   }
@@ -69,7 +69,7 @@ const std::vector<base::Value>& LogRouter::RegisterReceiver(
 void LogRouter::UnregisterReceiver(LogReceiver* receiver) {
   DCHECK(receivers_.HasObserver(receiver));
   receivers_.RemoveObserver(receiver);
-  if (!receivers_.might_have_observers()) {
+  if (receivers_.empty()) {
     // |accumulated_logs_| can become very long; use the swap instead of clear()
     // to ensure that the memory is freed.
     std::vector<base::Value>().swap(accumulated_logs_);

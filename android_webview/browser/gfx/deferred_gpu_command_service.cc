@@ -4,19 +4,9 @@
 
 #include "android_webview/browser/gfx/deferred_gpu_command_service.h"
 
-#include "android_webview/browser/gfx/render_thread_manager.h"
+#include "android_webview/browser/gfx/gpu_service_webview.h"
 #include "android_webview/browser/gfx/task_forwarding_sequence.h"
-#include "android_webview/browser/gfx/task_queue_web_view.h"
-#include "base/no_destructor.h"
-#include "base/strings/string_number_conversions.h"
-#include "content/public/browser/gpu_data_manager.h"
-#include "content/public/browser/gpu_utils.h"
-#include "content/public/common/content_switches.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/mailbox_manager_factory.h"
-#include "gpu/command_buffer/service/sync_point_manager.h"
-#include "gpu/config/gpu_info.h"
-#include "gpu/config/gpu_util.h"
+#include "android_webview/browser/gfx/task_queue_webview.h"
 #include "ui/gl/gl_share_group.h"
 
 namespace android_webview {
@@ -41,10 +31,8 @@ DeferredGpuCommandService::DeferredGpuCommandService(
                                      gpu_service->gpu_feature_info(),
                                      gpu_service->sync_point_manager(),
                                      gpu_service->mailbox_manager(),
-                                     nullptr,
                                      gl::GLSurfaceFormat(),
                                      gpu_service->shared_image_manager(),
-                                     nullptr,
                                      nullptr),
       task_queue_(task_queue),
       gpu_service_(gpu_service) {}
@@ -80,8 +68,15 @@ bool DeferredGpuCommandService::ShouldCreateMemoryTracker() const {
   return false;
 }
 
-bool DeferredGpuCommandService::CanSupportThreadedTextureMailbox() const {
-  return gpu_info().can_support_threaded_texture_mailbox;
+scoped_refptr<gpu::SharedContextState>
+DeferredGpuCommandService::GetSharedContextState() {
+  return nullptr;
+}
+
+scoped_refptr<gl::GLShareGroup> DeferredGpuCommandService::GetShareGroup() {
+  if (!share_group_)
+    share_group_ = base::MakeRefCounted<gl::GLShareGroup>();
+  return share_group_;
 }
 
 }  // namespace android_webview

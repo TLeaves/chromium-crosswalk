@@ -6,12 +6,16 @@
 #define IOS_CHROME_BROWSER_SIGNIN_AUTHENTICATION_SERVICE_DELEGATE_H_
 
 #import "base/ios/block_types.h"
-#include "base/macros.h"
 
 // Delegate for AuthenticationService.
 class AuthenticationServiceDelegate {
  public:
   AuthenticationServiceDelegate() = default;
+
+  AuthenticationServiceDelegate(const AuthenticationServiceDelegate&) = delete;
+  AuthenticationServiceDelegate& operator=(
+      const AuthenticationServiceDelegate&) = delete;
+
   virtual ~AuthenticationServiceDelegate() = default;
 
   // Invoked by AuthenticationService after the user has signed out. All the
@@ -19,7 +23,10 @@ class AuthenticationServiceDelegate {
   virtual void ClearBrowsingData(ProceduralBlock completion) = 0;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(AuthenticationServiceDelegate);
+  friend class AuthenticationServiceTest;
+  friend class AuthenticationServiceDelegateFake;
+
+  int clear_browsing_data_counter_ = 0;
 };
 
 #endif  // IOS_CHROME_BROWSER_SIGNIN_AUTHENTICATION_SERVICE_DELEGATE_H_

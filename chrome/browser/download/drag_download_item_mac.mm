@@ -35,7 +35,7 @@ id<NSDraggingSource> GetDraggingSource() {
 }
 
 void DragDownloadItem(const download::DownloadItem* download,
-                      gfx::Image* icon,
+                      const gfx::Image* icon,
                       gfx::NativeView native_view) {
   DCHECK_EQ(download::DownloadItem::COMPLETE, download->GetState());
   NSView* view = native_view.GetNativeNSView();
@@ -68,9 +68,9 @@ void DragDownloadItem(const download::DownloadItem* download,
   // Synthesize a drag event, since we don't have access to the actual event
   // that initiated a drag (possibly consumed by the Web UI, for example).
   NSEvent* dragEvent =
-      [NSEvent mouseEventWithType:NSLeftMouseDragged
+      [NSEvent mouseEventWithType:NSEventTypeLeftMouseDragged
                          location:current_position
-                    modifierFlags:NSLeftMouseDraggedMask
+                    modifierFlags:0
                         timestamp:[[NSApp currentEvent] timestamp]
                      windowNumber:[[view window] windowNumber]
                           context:nil

@@ -5,8 +5,8 @@
 #ifndef CONTENT_BROWSER_MIME_REGISTRY_IMPL_H_
 #define CONTENT_BROWSER_MIME_REGISTRY_IMPL_H_
 
-#include "base/macros.h"
 #include "base/sequence_checker.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "third_party/blink/public/mojom/mime/mime_registry.mojom.h"
 
 namespace content {
@@ -14,9 +14,14 @@ namespace content {
 class MimeRegistryImpl : public blink::mojom::MimeRegistry {
  public:
   MimeRegistryImpl();
+
+  MimeRegistryImpl(const MimeRegistryImpl&) = delete;
+  MimeRegistryImpl& operator=(const MimeRegistryImpl&) = delete;
+
   ~MimeRegistryImpl() override;
 
-  static void Create(blink::mojom::MimeRegistryRequest request);
+  static void Create(
+      mojo::PendingReceiver<blink::mojom::MimeRegistry> receiver);
 
  private:
   void GetMimeTypeFromExtension(
@@ -24,8 +29,6 @@ class MimeRegistryImpl : public blink::mojom::MimeRegistry {
       GetMimeTypeFromExtensionCallback callback) override;
 
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(MimeRegistryImpl);
 };
 
 }  // namespace content

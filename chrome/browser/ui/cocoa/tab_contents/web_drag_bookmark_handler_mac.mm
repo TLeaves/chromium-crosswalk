@@ -13,9 +13,7 @@
 using content::WebContents;
 
 WebDragBookmarkHandlerMac::WebDragBookmarkHandlerMac()
-    : bookmark_tab_helper_(NULL),
-      web_contents_(NULL) {
-}
+    : bookmark_tab_helper_(nullptr), web_contents_(nullptr) {}
 
 WebDragBookmarkHandlerMac::~WebDragBookmarkHandlerMac() {}
 
@@ -24,7 +22,7 @@ void WebDragBookmarkHandlerMac::DragInitialize(WebContents* contents) {
   if (!bookmark_tab_helper_)
     bookmark_tab_helper_ = BookmarkTabHelper::FromWebContents(contents);
 
-  bookmark_drag_data_.ReadFromClipboard(ui::ClipboardType::kDrag);
+  bookmark_drag_data_.ReadFromClipboard(ui::ClipboardBuffer::kDrag);
 }
 
 void WebDragBookmarkHandlerMac::OnDragOver() {

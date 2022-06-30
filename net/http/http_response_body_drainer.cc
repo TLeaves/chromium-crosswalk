@@ -5,9 +5,10 @@
 #include "net/http/http_response_body_drainer.h"
 
 #include "base/bind.h"
+#include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
@@ -19,10 +20,7 @@ const int HttpResponseBodyDrainer::kDrainBodyBufferSize;
 const int HttpResponseBodyDrainer::kTimeoutInSeconds;
 
 HttpResponseBodyDrainer::HttpResponseBodyDrainer(HttpStream* stream)
-    : stream_(stream),
-      next_state_(STATE_NONE),
-      total_read_(0),
-      session_(nullptr) {}
+    : stream_(stream) {}
 
 HttpResponseBodyDrainer::~HttpResponseBodyDrainer() = default;
 
@@ -32,9 +30,7 @@ void HttpResponseBodyDrainer::Start(HttpNetworkSession* session) {
   int rv = DoLoop(OK);
 
   if (rv == ERR_IO_PENDING) {
-    timer_.Start(FROM_HERE,
-                 base::TimeDelta::FromSeconds(kTimeoutInSeconds),
-                 this,
+    timer_.Start(FROM_HERE, base::Seconds(kTimeoutInSeconds), this,
                  &HttpResponseBodyDrainer::OnTimerFired);
     session_ = session;
     session->AddResponseDrainer(base::WrapUnique(this));
@@ -73,10 +69,9 @@ int HttpResponseBodyDrainer::DoDrainResponseBody() {
   next_state_ = STATE_DRAIN_RESPONSE_BODY_COMPLETE;
 
   return stream_->ReadResponseBody(
-      read_buf_.get(),
-      kDrainBodyBufferSize - total_read_,
-      base::Bind(&HttpResponseBodyDrainer::OnIOComplete,
-                 base::Unretained(this)));
+      read_buf_.get(), kDrainBodyBufferSize - total_read_,
+      base::BindOnce(&HttpResponseBodyDrainer::OnIOComplete,
+                     base::Unretained(this)));
 }
 
 int HttpResponseBodyDrainer::DoDrainResponseBodyComplete(int result) {

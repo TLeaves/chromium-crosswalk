@@ -12,14 +12,12 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/location.h"
-#include "base/logging.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
-#include "base/stl_util.h"
 #include "base/threading/thread_checker.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "components/crx_file/crx_verifier.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/update_client/configurator.h"
 #include "components/update_client/crx_update_item.h"
@@ -37,16 +35,19 @@
 
 namespace update_client {
 
+CrxInstaller::InstallParams::InstallParams(
+    const std::string& run,
+    const std::string& arguments,
+    const std::string& server_install_data)
+    : run(run),
+      arguments(arguments),
+      server_install_data(server_install_data) {}
+
 CrxUpdateItem::CrxUpdateItem() : state(ComponentState::kNew) {}
 CrxUpdateItem::~CrxUpdateItem() = default;
 CrxUpdateItem::CrxUpdateItem(const CrxUpdateItem& other) = default;
 
-CrxComponent::CrxComponent()
-    : allows_background_download(true),
-      requires_network_encryption(true),
-      crx_format_requirement(
-          crx_file::VerifierFormat::CRX3_WITH_PUBLISHER_PROOF),
-      supports_group_policy_enable_component_updates(false) {}
+CrxComponent::CrxComponent() = default;
 CrxComponent::CrxComponent(const CrxComponent& other) = default;
 CrxComponent::~CrxComponent() = default;
 
@@ -59,18 +60,15 @@ CrxComponent::~CrxComponent() = default;
 UpdateClientImpl::UpdateClientImpl(
     scoped_refptr<Configurator> config,
     scoped_refptr<PingManager> ping_manager,
-    UpdateChecker::Factory update_checker_factory,
-    CrxDownloader::Factory crx_downloader_factory)
-    : is_stopped_(false),
-      config_(config),
+    UpdateChecker::Factory update_checker_factory)
+    : config_(config),
       ping_manager_(ping_manager),
       update_engine_(base::MakeRefCounted<UpdateEngine>(
           config,
           update_checker_factory,
-          crx_downloader_factory,
           ping_manager_.get(),
-          base::Bind(&UpdateClientImpl::NotifyObservers,
-                     base::Unretained(this)))) {}
+          base::BindRepeating(&UpdateClientImpl::NotifyObservers,
+                              base::Unretained(this)))) {}
 
 UpdateClientImpl::~UpdateClientImpl() {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -83,6 +81,7 @@ UpdateClientImpl::~UpdateClientImpl() {
 
 void UpdateClientImpl::Install(const std::string& id,
                                CrxDataCallback crx_data_callback,
+                               CrxStateChangeCallback crx_state_change_callback,
                                Callback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -96,20 +95,25 @@ void UpdateClientImpl::Install(const std::string& id,
   // Install tasks are run concurrently and never queued up. They are always
   // considered foreground tasks.
   constexpr bool kIsForeground = true;
+  constexpr bool kIsInstall = true;
   RunTask(base::MakeRefCounted<TaskUpdate>(
-      update_engine_.get(), kIsForeground, ids, std::move(crx_data_callback),
+      update_engine_.get(), kIsForeground, kIsInstall, ids,
+      std::move(crx_data_callback), crx_state_change_callback,
       base::BindOnce(&UpdateClientImpl::OnTaskComplete, this,
                      std::move(callback))));
 }
 
 void UpdateClientImpl::Update(const std::vector<std::string>& ids,
                               CrxDataCallback crx_data_callback,
+                              CrxStateChangeCallback crx_state_change_callback,
                               bool is_foreground,
                               Callback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
+  constexpr bool kIsInstall = false;
   auto task = base::MakeRefCounted<TaskUpdate>(
-      update_engine_.get(), is_foreground, ids, std::move(crx_data_callback),
+      update_engine_.get(), is_foreground, kIsInstall, ids,
+      std::move(crx_data_callback), crx_state_change_callback,
       base::BindOnce(&UpdateClientImpl::OnTaskComplete, this,
                      std::move(callback)));
 
@@ -140,6 +144,7 @@ void UpdateClientImpl::OnTaskComplete(Callback callback,
 
   // Remove the task from the set of the running tasks. Only tasks handled by
   // the update engine can be in this data structure.
+  DCHECK_EQ(1u, tasks_.count(task));
   tasks_.erase(task);
 
   if (is_stopped_)
@@ -148,9 +153,9 @@ void UpdateClientImpl::OnTaskComplete(Callback callback,
   // Pick up a task from the queue if the queue has pending tasks and no other
   // task is running.
   if (tasks_.empty() && !task_queue_.empty()) {
-    auto task = task_queue_.front();
+    auto queued_task = task_queue_.front();
     task_queue_.pop_front();
-    RunTask(task);
+    RunTask(queued_task);
   }
 }
 
@@ -179,14 +184,14 @@ bool UpdateClientImpl::GetCrxUpdateState(const std::string& id,
 bool UpdateClientImpl::IsUpdating(const std::string& id) const {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  for (const auto task : tasks_) {
+  for (const auto& task : tasks_) {
     const auto ids = task->GetIds();
     if (base::Contains(ids, id)) {
       return true;
     }
   }
 
-  for (const auto task : task_queue_) {
+  for (const auto& task : task_queue_) {
     const auto ids = task->GetIds();
     if (base::Contains(ids, id)) {
       return true;
@@ -221,23 +226,22 @@ void UpdateClientImpl::Stop() {
   }
 }
 
-void UpdateClientImpl::SendUninstallPing(const std::string& id,
-                                         const base::Version& version,
+void UpdateClientImpl::SendUninstallPing(const CrxComponent& crx_component,
                                          int reason,
                                          Callback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   RunTask(base::MakeRefCounted<TaskSendUninstallPing>(
-      update_engine_.get(), id, version, reason,
-      base::BindOnce(&UpdateClientImpl::OnTaskComplete, base::Unretained(this),
+      update_engine_.get(), crx_component, reason,
+      base::BindOnce(&UpdateClientImpl::OnTaskComplete, this,
                      std::move(callback))));
 }
 
 scoped_refptr<UpdateClient> UpdateClientFactory(
     scoped_refptr<Configurator> config) {
   return base::MakeRefCounted<UpdateClientImpl>(
-      config, base::MakeRefCounted<PingManager>(config), &UpdateChecker::Create,
-      &CrxDownloader::Create);
+      config, base::MakeRefCounted<PingManager>(config),
+      &UpdateChecker::Create);
 }
 
 void RegisterPrefs(PrefRegistrySimple* registry) {

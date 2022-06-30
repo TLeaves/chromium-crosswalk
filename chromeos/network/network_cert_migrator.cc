@@ -9,11 +9,13 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "chromeos/ash/components/network/client_cert_util.h"
 #include "chromeos/dbus/shill/shill_service_client.h"
-#include "chromeos/network/client_cert_util.h"
+#include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -55,74 +57,78 @@ class NetworkCertMigrator::MigrationTask
       // Defer migration of user networks to when the user certificate database
       // has finished loading.
       if (!CorrespondingCertificateDatabaseLoaded(network)) {
-        VLOG(2) << "Skipping network cert migration of network "
-                << service_path
+        VLOG(2) << "Skipping network cert migration of network " << service_path
                 << " until the corresponding certificate database is loaded.";
         continue;
       }
 
       ShillServiceClient::Get()->GetProperties(
           dbus::ObjectPath(service_path),
-          base::Bind(&network_handler::GetPropertiesCallback,
-                     base::Bind(&MigrationTask::MigrateNetwork, this),
-                     network_handler::ErrorCallback(), service_path));
+          base::BindOnce(&MigrationTask::MigrateNetwork, this, service_path));
     }
   }
 
   void MigrateNetwork(const std::string& service_path,
-                      const base::DictionaryValue& properties) {
+                      absl::optional<base::Value> properties) {
     if (!cert_migrator_) {
       VLOG(2) << "NetworkCertMigrator already destroyed. Aborting migration.";
       return;
     }
 
-    base::DictionaryValue new_properties;
-    MigrateClientCertProperties(service_path, properties, &new_properties);
+    if (!properties) {
+      NET_LOG(ERROR) << "GetProperties failed: " << NetworkPathId(service_path);
+      return;
+    }
 
-    if (new_properties.empty())
+    base::Value new_properties =
+        MigrateClientCertProperties(service_path, *properties);
+    if (new_properties.DictEmpty())
       return;
     SendPropertiesToShill(service_path, new_properties);
   }
 
-  void MigrateClientCertProperties(const std::string& service_path,
-                                   const base::DictionaryValue& properties,
-                                   base::DictionaryValue* new_properties) {
+  base::Value MigrateClientCertProperties(const std::string& service_path,
+                                          const base::Value& properties) {
+    base::Value result(base::Value::Type::DICTIONARY);
+
     int configured_slot_id = -1;
     std::string pkcs11_id;
     chromeos::client_cert::ConfigType config_type =
-        chromeos::client_cert::CONFIG_TYPE_NONE;
+        chromeos::client_cert::ConfigType::kNone;
     chromeos::client_cert::GetClientCertFromShillProperties(
-        properties, &config_type, &configured_slot_id, &pkcs11_id);
-    if (config_type == chromeos::client_cert::CONFIG_TYPE_NONE ||
+        properties.GetDict(), &config_type, &configured_slot_id, &pkcs11_id);
+    if (config_type == chromeos::client_cert::ConfigType::kNone ||
         pkcs11_id.empty()) {
-      return;
+      return result;
     }
 
     // OpenVPN configuration doesn't have a slot id to migrate.
-    if (config_type == chromeos::client_cert::CONFIG_TYPE_OPENVPN)
-      return;
+    if (config_type == chromeos::client_cert::ConfigType::kOpenVpn)
+      return result;
 
     int real_slot_id = -1;
     CERTCertificate* cert =
         FindCertificateWithPkcs11Id(pkcs11_id, &real_slot_id);
     if (!cert) {
       LOG(WARNING) << "No matching cert found, removing the certificate "
-                      "configuration from network " << service_path;
+                      "configuration from network "
+                   << service_path;
       chromeos::client_cert::SetEmptyShillProperties(config_type,
-                                                     new_properties);
-      return;
+                                                     result.GetDict());
+      return result;
     }
     if (real_slot_id == -1) {
       LOG(WARNING) << "Found a certificate without slot id.";
-      return;
+      return result;
     }
 
     if (cert && real_slot_id != configured_slot_id) {
       VLOG(1) << "Network " << service_path
               << " is configured with no or an incorrect slot id.";
-      chromeos::client_cert::SetShillProperties(
-          config_type, real_slot_id, pkcs11_id, new_properties);
+      chromeos::client_cert::SetShillProperties(config_type, real_slot_id,
+                                                pkcs11_id, result.GetDict());
     }
+    return result;
   }
 
   CERTCertificate* FindCertificateWithPkcs11Id(const std::string& pkcs11_id,
@@ -142,21 +148,18 @@ class NetworkCertMigrator::MigrationTask
   }
 
   void SendPropertiesToShill(const std::string& service_path,
-                             const base::DictionaryValue& properties) {
+                             const base::Value& properties) {
     ShillServiceClient::Get()->SetProperties(
         dbus::ObjectPath(service_path), properties, base::DoNothing(),
-        base::Bind(&LogError, service_path));
+        base::BindOnce(&LogError, service_path));
   }
 
   static void LogError(const std::string& service_path,
                        const std::string& error_name,
                        const std::string& error_message) {
     network_handler::ShillErrorCallbackFunction(
-        "MigrationTask.SetProperties failed",
-        service_path,
-        network_handler::ErrorCallback(),
-        error_name,
-        error_message);
+        "MigrationTask.SetProperties failed", service_path,
+        network_handler::ErrorCallback(), error_name, error_message);
   }
 
  private:
@@ -173,13 +176,9 @@ class NetworkCertMigrator::MigrationTask
   base::WeakPtr<NetworkCertMigrator> cert_migrator_;
 };
 
-NetworkCertMigrator::NetworkCertMigrator()
-    : network_state_handler_(nullptr),
-      weak_ptr_factory_(this) {
-}
+NetworkCertMigrator::NetworkCertMigrator() : network_state_handler_(nullptr) {}
 
 NetworkCertMigrator::~NetworkCertMigrator() {
-  network_state_handler_->RemoveObserver(this, FROM_HERE);
   if (NetworkCertLoader::IsInitialized())
     NetworkCertLoader::Get()->RemoveObserver(this);
 }
@@ -187,7 +186,7 @@ NetworkCertMigrator::~NetworkCertMigrator() {
 void NetworkCertMigrator::Init(NetworkStateHandler* network_state_handler) {
   DCHECK(network_state_handler);
   network_state_handler_ = network_state_handler;
-  network_state_handler_->AddObserver(this, FROM_HERE);
+  network_state_handler_observer_.Observe(network_state_handler_);
 
   DCHECK(NetworkCertLoader::IsInitialized());
   NetworkCertLoader::Get()->AddObserver(this);

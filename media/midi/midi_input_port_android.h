@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "base/android/scoped_java_ref.h"
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 
 namespace midi {
@@ -33,7 +34,6 @@ class MidiInputPortAndroid final {
 
   // Called by the Java world.
   void OnData(JNIEnv* env,
-              const base::android::JavaParamRef<jobject>& caller,
               const base::android::JavaParamRef<jbyteArray>& data,
               jint offset,
               jint size,
@@ -41,7 +41,7 @@ class MidiInputPortAndroid final {
 
  private:
   base::android::ScopedJavaGlobalRef<jobject> raw_port_;
-  Delegate* const delegate_;
+  const raw_ptr<Delegate> delegate_;
 };
 
 }  // namespace midi

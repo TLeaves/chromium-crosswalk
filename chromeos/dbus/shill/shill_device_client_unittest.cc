@@ -83,14 +83,15 @@ TEST_F(ShillDeviceClientTest, PropertyChanged) {
   dbus::Signal signal(shill::kFlimflamDeviceInterface,
                       shill::kMonitorPropertyChanged);
   dbus::MessageWriter writer(&signal);
-  writer.AppendString(shill::kCellularAllowRoamingProperty);
+  writer.AppendString(shill::kCellularPolicyAllowRoamingProperty);
   writer.AppendVariantOfBool(kValue);
 
   // Set expectations.
   const base::Value value(kValue);
   MockPropertyChangeObserver observer;
-  EXPECT_CALL(observer, OnPropertyChanged(shill::kCellularAllowRoamingProperty,
-                                          ValueEq(ByRef(value))))
+  EXPECT_CALL(observer,
+              OnPropertyChanged(shill::kCellularPolicyAllowRoamingProperty,
+                                ValueEq(ByRef(value))))
       .Times(1);
 
   // Add the observer
@@ -104,8 +105,9 @@ TEST_F(ShillDeviceClientTest, PropertyChanged) {
   client_->RemovePropertyChangedObserver(dbus::ObjectPath(kExampleDevicePath),
                                          &observer);
 
-  EXPECT_CALL(observer, OnPropertyChanged(shill::kCellularAllowRoamingProperty,
-                                          ValueEq(ByRef(value))))
+  EXPECT_CALL(observer,
+              OnPropertyChanged(shill::kCellularPolicyAllowRoamingProperty,
+                                ValueEq(ByRef(value))))
       .Times(0);
 
   // Run the signal callback again and make sure the observer isn't called.
@@ -121,19 +123,19 @@ TEST_F(ShillDeviceClientTest, GetProperties) {
   writer.OpenArray("{sv}", &array_writer);
   dbus::MessageWriter entry_writer(NULL);
   array_writer.OpenDictEntry(&entry_writer);
-  entry_writer.AppendString(shill::kCellularAllowRoamingProperty);
+  entry_writer.AppendString(shill::kCellularPolicyAllowRoamingProperty);
   entry_writer.AppendVariantOfBool(kValue);
   array_writer.CloseContainer(&entry_writer);
   writer.CloseContainer(&array_writer);
 
   // Set expectations.
-  base::DictionaryValue value;
-  value.SetKey(shill::kCellularAllowRoamingProperty, base::Value(kValue));
+  base::Value value(base::Value::Type::DICTIONARY);
+  value.SetKey(shill::kCellularPolicyAllowRoamingProperty, base::Value(kValue));
   PrepareForMethodCall(shill::kGetPropertiesFunction,
-                       base::Bind(&ExpectNoArgument), response.get());
+                       base::BindRepeating(&ExpectNoArgument), response.get());
   // Call method.
   client_->GetProperties(dbus::ObjectPath(kExampleDevicePath),
-                         base::Bind(&ExpectDictionaryValueResult, &value));
+                         base::BindOnce(&ExpectValueResult, &value));
   // Run the message loop.
   base::RunLoop().RunUntilIdle();
 }
@@ -145,15 +147,16 @@ TEST_F(ShillDeviceClientTest, SetProperty) {
 
   // Set expectations.
   const base::Value value(kValue);
-  PrepareForMethodCall(shill::kSetPropertyFunction,
-                       base::Bind(&ExpectStringAndValueArguments,
-                                  shill::kCellularAllowRoamingProperty, &value),
-                       response.get());
+  PrepareForMethodCall(
+      shill::kSetPropertyFunction,
+      base::BindRepeating(&ExpectStringAndValueArguments,
+                          shill::kCellularPolicyAllowRoamingProperty, &value),
+      response.get());
   // Call method.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
   client_->SetProperty(dbus::ObjectPath(kExampleDevicePath),
-                       shill::kCellularAllowRoamingProperty, value,
+                       shill::kCellularPolicyAllowRoamingProperty, value,
                        mock_closure.Get(), mock_error_callback.Get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
@@ -169,11 +172,12 @@ TEST_F(ShillDeviceClientTest, ClearProperty) {
   // Set expectations.
   PrepareForMethodCall(
       shill::kClearPropertyFunction,
-      base::Bind(&ExpectStringArgument, shill::kCellularAllowRoamingProperty),
+      base::BindRepeating(&ExpectStringArgument,
+                          shill::kCellularPolicyAllowRoamingProperty),
       response.get());
   // Call method.
   client_->ClearProperty(dbus::ObjectPath(kExampleDevicePath),
-                         shill::kCellularAllowRoamingProperty,
+                         shill::kCellularPolicyAllowRoamingProperty,
                          base::BindOnce(&ExpectNoResultValue));
   // Run the message loop.
   base::RunLoop().RunUntilIdle();
@@ -186,11 +190,11 @@ TEST_F(ShillDeviceClientTest, RequirePin) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
   PrepareForMethodCall(
       shill::kRequirePinFunction,
-      base::Bind(&ExpectStringAndBoolArguments, kPin, kRequired),
+      base::BindRepeating(&ExpectStringAndBoolArguments, kPin, kRequired),
       response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
@@ -207,10 +211,11 @@ TEST_F(ShillDeviceClientTest, EnterPin) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
   PrepareForMethodCall(shill::kEnterPinFunction,
-                       base::Bind(&ExpectStringArgument, kPin), response.get());
+                       base::BindRepeating(&ExpectStringArgument, kPin),
+                       response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
 
@@ -228,11 +233,12 @@ TEST_F(ShillDeviceClientTest, UnblockPin) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
-  PrepareForMethodCall(shill::kUnblockPinFunction,
-                       base::Bind(&ExpectTwoStringArguments, kPuk, kPin),
-                       response.get());
+  PrepareForMethodCall(
+      shill::kUnblockPinFunction,
+      base::BindRepeating(&ExpectTwoStringArguments, kPuk, kPin),
+      response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
 
@@ -250,11 +256,12 @@ TEST_F(ShillDeviceClientTest, ChangePin) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
-  PrepareForMethodCall(shill::kChangePinFunction,
-                       base::Bind(&ExpectTwoStringArguments, kOldPin, kNewPin),
-                       response.get());
+  PrepareForMethodCall(
+      shill::kChangePinFunction,
+      base::BindRepeating(&ExpectTwoStringArguments, kOldPin, kNewPin),
+      response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
 
@@ -271,10 +278,10 @@ TEST_F(ShillDeviceClientTest, Register) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
   PrepareForMethodCall(shill::kRegisterFunction,
-                       base::Bind(&ExpectStringArgument, kNetworkId),
+                       base::BindRepeating(&ExpectStringArgument, kNetworkId),
                        response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
@@ -291,10 +298,10 @@ TEST_F(ShillDeviceClientTest, Reset) {
   std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  base::MockCallback<base::Closure> mock_closure;
+  base::MockCallback<base::OnceClosure> mock_closure;
   base::MockCallback<ShillDeviceClient::ErrorCallback> mock_error_callback;
-  PrepareForMethodCall(shill::kResetFunction, base::Bind(&ExpectNoArgument),
-                       response.get());
+  PrepareForMethodCall(shill::kResetFunction,
+                       base::BindRepeating(&ExpectNoArgument), response.get());
   EXPECT_CALL(mock_closure, Run()).Times(1);
   // Call method.
   client_->Reset(dbus::ObjectPath(kExampleDevicePath), mock_closure.Get(),

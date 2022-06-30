@@ -5,18 +5,27 @@
 #ifndef IOS_CHROME_BROWSER_UI_WEBUI_FLAGS_UI_H_
 #define IOS_CHROME_BROWSER_UI_WEBUI_FLAGS_UI_H_
 
-#include "base/macros.h"
+#include <string>
+
 #include "base/memory/weak_ptr.h"
 #include "ios/web/public/webui/web_ui_ios_controller.h"
 
+namespace web {
+class WebUIIOSDataSource;
+}
+
 class FlagsUI : public web::WebUIIOSController {
  public:
-  explicit FlagsUI(web::WebUIIOS* web_ui);
+  explicit FlagsUI(web::WebUIIOS* web_ui, const std::string& host);
+
+  FlagsUI(const FlagsUI&) = delete;
+  FlagsUI& operator=(const FlagsUI&) = delete;
+
   ~FlagsUI() override;
+  static void AddFlagsIOSStrings(web::WebUIIOSDataSource* source);
 
  private:
   base::WeakPtrFactory<FlagsUI> weak_factory_;
-  DISALLOW_COPY_AND_ASSIGN(FlagsUI);
 };
 
 #endif  // IOS_CHROME_BROWSER_UI_WEBUI_FLAGS_UI_H_

@@ -8,15 +8,14 @@
 // Object to navigate different views in manual fallback's passwords list.
 @protocol PasswordListNavigator
 
-// Dismisses the presented view controller and continues as pop over on iPads
-// or above the keyboard elsewhere.
-- (void)dismissPresentedViewController;
-
 // Requests to open the list of all passwords.
 - (void)openAllPasswordsList;
 
 // Opens passwords settings.
 - (void)openPasswordSettings;
+
+// Opens password suggestion.
+- (void)openPasswordSuggestion;
 
 @end
 

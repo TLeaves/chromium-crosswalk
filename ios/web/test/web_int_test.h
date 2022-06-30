@@ -7,20 +7,22 @@
 
 #import <WebKit/WebKit.h>
 
-#include "base/compiler_specific.h"
 #import "base/ios/block_types.h"
-#include "base/macros.h"
 #import "ios/web/public/navigation/navigation_manager.h"
-#import "ios/web/public/test/fakes/test_web_state_delegate.h"
+#import "ios/web/public/test/fakes/fake_web_state_delegate.h"
 #include "ios/web/public/test/web_test.h"
-#import "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state.h"
 
 class GURL;
 
 namespace web {
 
-// A test fixture for integration tests that need to bring up the HttpServer.
+// A test fixture for integration tests that need a WebState which loads pages.
 class WebIntTest : public WebTest {
+ public:
+  WebIntTest(const WebIntTest&) = delete;
+  WebIntTest& operator=(const WebIntTest&) = delete;
+
  protected:
   WebIntTest();
   ~WebIntTest() override;
@@ -40,21 +42,17 @@ class WebIntTest : public WebTest {
     return navigation_manager()->GetLastCommittedItem();
   }
 
-  // Synchronously executes |script| on |web_state|'s JS injection receiver and
-  // returns the result.
-  id ExecuteJavaScript(NSString* script);
-
   // Executes |block| and waits until |url| is successfully loaded in
   // |web_state_|.
-  bool ExecuteBlockAndWaitForLoad(const GURL& url,
-                                  ProceduralBlock block) WARN_UNUSED_RESULT;
+  [[nodiscard]] bool ExecuteBlockAndWaitForLoad(const GURL& url,
+                                                ProceduralBlock block);
 
   // Navigates |web_state_| to |url| and waits for the page to be loaded.
-  bool LoadUrl(const GURL& url) WARN_UNUSED_RESULT;
+  [[nodiscard]] bool LoadUrl(const GURL& url);
 
   // Navigates |web_state_| using |params| and waits for the page to be loaded.
-  bool LoadWithParams(const NavigationManager::WebLoadParams& params)
-      WARN_UNUSED_RESULT;
+  [[nodiscard]] bool LoadWithParams(
+      const NavigationManager::WebLoadParams& params);
 
   // Synchronously removes data from |data_store|.
   // |websiteDataTypes| is from the constants defined in
@@ -66,13 +64,11 @@ class WebIntTest : public WebTest {
   // or NSNotFound if it is not present.
   NSInteger GetIndexOfNavigationItem(const web::NavigationItem* item);
 
-  web::TestWebStateDelegate web_state_delegate_;
+  web::FakeWebStateDelegate web_state_delegate_;
 
  private:
   // WebState used to load pages.
   std::unique_ptr<WebState> web_state_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebIntTest);
 };
 
 }  // namespace web

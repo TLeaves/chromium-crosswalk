@@ -9,7 +9,10 @@
 #include <string>
 
 #include "base/cancelable_callback.h"
+#include "base/memory/raw_ptr.h"
+#include "base/time/time.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/net_errors.h"
 #include "net/base/privacy_mode.h"
 #include "net/http/http_stream_factory_job.h"
 #include "net/http/http_stream_request.h"
@@ -17,6 +20,8 @@
 #include "net/spdy/spdy_session_pool.h"
 
 namespace net {
+
+class ProxyResolutionRequest;
 
 namespace test {
 
@@ -38,6 +43,7 @@ class HttpStreamFactory::JobController
                 bool is_websocket,
                 bool enable_ip_based_pooling,
                 bool enable_alternative_services,
+                bool delay_main_job_with_available_spdy_session,
                 const SSLConfig& server_ssl_config,
                 const SSLConfig& proxy_ssl_config);
 
@@ -47,7 +53,7 @@ class HttpStreamFactory::JobController
   const Job* main_job() const { return main_job_.get(); }
   const Job* alternative_job() const { return alternative_job_.get(); }
 
-  GURL ApplyHostMappingRules(const GURL& url, HostPortPair* endpoint);
+  void RewriteUrlWithHostMappingRules(GURL& url);
 
   // Methods below are called by HttpStreamFactory only.
   // Creates request and hands out to HttpStreamFactory, this will also create
@@ -121,8 +127,6 @@ class HttpStreamFactory::JobController
                         const ProxyInfo& used_proxy_info,
                         HttpAuthController* auth_controller) override;
 
-  bool OnInitConnection(const ProxyInfo& proxy_info) override;
-
   // Invoked when the |job| finishes pre-connecting sockets.
   void OnPreconnectsComplete(Job* job) override;
 
@@ -157,9 +161,6 @@ class HttpStreamFactory::JobController
 
   // Returns true if |this| has a pending alternative job that is not completed.
   bool HasPendingAltJob() const;
-
-  // Returns the estimated memory usage in bytes.
-  size_t EstimateMemoryUsage() const;
 
  private:
   friend class test::JobControllerPeer;
@@ -208,10 +209,6 @@ class HttpStreamFactory::JobController
   // net error of the failed alternative service job.
   void OnAlternativeServiceJobFailed(int net_error);
 
-  // Must be called when the alternative proxy job fails. |net_error| is the
-  // net error of the failed alternative proxy job.
-  void OnAlternativeProxyJobFailed(int net_error);
-
   // Called when all Jobs complete. Reports alternative service brokenness to
   // HttpServerProperties if apply and resets net errors afterwards:
   // - report broken if the main job has no error and the alternative job has an
@@ -250,22 +247,12 @@ class HttpStreamFactory::JobController
       HttpStreamRequest::Delegate* delegate,
       HttpStreamRequest::StreamType stream_type);
 
-  // Returns a quic::ParsedQuicVersion that has been advertised in
-  // |advertised_versions| and is supported.  If more than one
-  // ParsedQuicVersions are supported, the first matched in the supported
-  // versions will be returned.  If no mutually supported version is found,
-  // QUIC_VERSION_UNSUPPORTED_VERSION will be returned.
+  // Returns the first quic::ParsedQuicVersion that has been advertised in
+  // |advertised_versions| and is supported, following the order of
+  // |advertised_versions|.  If no mutually supported version is found,
+  // quic::ParsedQuicVersion::Unsupported() will be returned.
   quic::ParsedQuicVersion SelectQuicVersion(
       const quic::ParsedQuicVersionVector& advertised_versions);
-
-  // Returns true if the |request_| can be fetched via an alternative
-  // proxy server, and sets |alternative_proxy_info| to the alternative proxy
-  // server configuration. |alternative_proxy_info| should not be null,
-  // and is owned by the caller.
-  bool ShouldCreateAlternativeProxyServerJob(
-      const ProxyInfo& proxy_info_,
-      const GURL& url,
-      ProxyInfo* alternative_proxy_info) const;
 
   // Records histogram metrics for the usage of alternative protocol. Must be
   // called when |job| has succeeded and the other job will be orphaned.
@@ -282,20 +269,20 @@ class HttpStreamFactory::JobController
   // given error code is simply returned.
   int ReconsiderProxyAfterError(Job* job, int error);
 
-  // Returns true if QUIC is whitelisted for |host|.
-  bool IsQuicWhitelistedForHost(const std::string& host);
+  // Returns true if QUIC is allowed for |host|.
+  bool IsQuicAllowedForHost(const std::string& host);
 
-  HttpStreamFactory* factory_;
-  HttpNetworkSession* session_;
-  JobFactory* job_factory_;
+  raw_ptr<HttpStreamFactory> factory_;
+  raw_ptr<HttpNetworkSession> session_;
+  raw_ptr<JobFactory> job_factory_;
 
   // Request will be handed out to factory once created. This just keeps an
   // reference and is safe as |request_| will notify |this| JobController
   // when it's destructed by calling OnRequestComplete(), which nulls
   // |request_|.
-  HttpStreamRequest* request_;
+  raw_ptr<HttpStreamRequest, DanglingUntriaged> request_ = nullptr;
 
-  HttpStreamRequest::Delegate* const delegate_;
+  const raw_ptr<HttpStreamRequest::Delegate> delegate_;
 
   // True if this JobController is used to preconnect streams.
   const bool is_preconnect_;
@@ -321,43 +308,44 @@ class HttpStreamFactory::JobController
 
   // Error status used for alternative service brokenness reporting.
   // Net error code of the main job. Set to OK by default.
-  int main_job_net_error_;
+  int main_job_net_error_ = OK;
   // Net error code of the alternative job. Set to OK by default.
-  int alternative_job_net_error_;
+  int alternative_job_net_error_ = OK;
   // Set to true if the alternative job failed on the default network.
-  bool alternative_job_failed_on_default_network_;
+  bool alternative_job_failed_on_default_network_ = false;
 
   // True if a Job has ever been bound to the |request_|.
-  bool job_bound_;
+  bool job_bound_ = false;
 
   // True if the main job has to wait for the alternative job: i.e., the main
   // job must not create a connection until it is resumed.
-  bool main_job_is_blocked_;
+  bool main_job_is_blocked_ = false;
 
   // Handle for cancelling any posted delayed ResumeMainJob() task.
   base::CancelableOnceClosure resume_main_job_callback_;
   // True if the main job was blocked and has been resumed in ResumeMainJob().
-  bool main_job_is_resumed_;
+  bool main_job_is_resumed_ = false;
+
+  // If true, delay main job even the request can be sent immediately on an
+  // available SPDY session.
+  bool delay_main_job_with_available_spdy_session_;
 
   // Waiting time for the main job before it is resumed.
   base::TimeDelta main_job_wait_time_;
 
   // At the point where a Job is irrevocably tied to |request_|, we set this.
   // It will be nulled when the |request_| is finished.
-  Job* bound_job_;
+  raw_ptr<Job, DanglingUntriaged> bound_job_ = nullptr;
 
-  // True if an alternative proxy server job can be started to fetch |request_|.
-  bool can_start_alternative_proxy_job_;
-
-  State next_state_;
-  std::unique_ptr<ProxyResolutionService::Request> proxy_resolve_request_;
+  State next_state_ = STATE_RESOLVE_PROXY;
+  std::unique_ptr<ProxyResolutionRequest> proxy_resolve_request_;
   const HttpRequestInfo request_info_;
   ProxyInfo proxy_info_;
   const SSLConfig server_ssl_config_;
   const SSLConfig proxy_ssl_config_;
-  int num_streams_;
+  int num_streams_ = 0;
   HttpStreamRequest::StreamType stream_type_;
-  RequestPriority priority_;
+  RequestPriority priority_ = IDLE;
   const NetLogWithSource net_log_;
 
   base::WeakPtrFactory<JobController> ptr_factory_{this};

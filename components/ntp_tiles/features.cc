@@ -5,6 +5,7 @@
 #include "components/ntp_tiles/features.h"
 
 #include "base/feature_list.h"
+#include "build/build_config.h"
 #include "ui/base/ui_base_features.h"
 
 namespace ntp_tiles {

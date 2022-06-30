@@ -15,7 +15,7 @@ function getURLWebAccessible() {
 
 function assertRedirectSucceeds(url, redirectURL, callback) {
   // Load a page to be sure webRequest listeners are set up.
-  navigateAndWait(getURL('simpleLoad/a.html'), function() {
+  navigateAndWait(getURL('simpleLoad/b.html'), function() {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.onload = pass(function() {
@@ -32,7 +32,7 @@ function assertRedirectSucceeds(url, redirectURL, callback) {
 
 function assertRedirectFails(url, callback) {
   // Load a page to be sure webRequest listeners are set up.
-  navigateAndWait(getURL('simpleLoad/a.html'), function() {
+  navigateAndWait(getURL('simpleLoad/b.html'), function() {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.onload = function() {
@@ -48,8 +48,11 @@ function assertRedirectFails(url, callback) {
 
 chrome.test.getConfig(function(config) {
   var onHeadersReceivedExtraInfoSpec = ['blocking'];
-  if (config.customArg === 'useExtraHeaders')
-    onHeadersReceivedExtraInfoSpec.push('extraHeaders');
+  if (config.customArg) {
+    let args = JSON.parse(config.customArg);
+    if (args.useExtraHeaders)
+      onHeadersReceivedExtraInfoSpec.push('extraHeaders');
+  }
 
   runTests([
     function subresourceRedirectToDataUrlOnHeadersReceived() {
@@ -177,6 +180,54 @@ chrome.test.getConfig(function(config) {
       assertRedirectSucceeds(
           getServerURL('server-redirect?' + getURLWebAccessible()),
           getURLWebAccessible());
+    },
+
+    function subresourceRedirectHasSameRequestIdOnHeadersReceived() {
+      var url = getServerURL('echo');
+      var requestId;
+      var onHeadersReceivedListener = function(details) {
+        requestId = details.requestId;
+        return {redirectUrl: getURLWebAccessible()};
+      };
+      chrome.webRequest.onHeadersReceived.addListener(onHeadersReceivedListener,
+          {urls: [url]}, onHeadersReceivedExtraInfoSpec);
+
+      var onBeforeRequestListener = chrome.test.callbackPass(function(details) {
+        chrome.test.assertEq(details.requestId, requestId);
+      });
+      chrome.webRequest.onBeforeRequest.addListener(onBeforeRequestListener,
+          {urls: [getURLWebAccessible()]});
+
+      assertRedirectSucceeds(url, getURLWebAccessible(), function() {
+        chrome.webRequest.onHeadersReceived.removeListener(
+            onHeadersReceivedListener);
+        chrome.webRequest.onBeforeRequest.removeListener(
+            onBeforeRequestListener);
+      });
+    },
+
+    function subresourceRedirectHasSameRequestIdOnBeforeRequest() {
+      var url = getServerURL('echo');
+      var requestId;
+      var onBeforeRequestRedirectListener = function(details) {
+        requestId = details.requestId;
+        return {redirectUrl: getURLWebAccessible()};
+      };
+      chrome.webRequest.onBeforeRequest.addListener(
+          onBeforeRequestRedirectListener, {urls: [url]}, ['blocking']);
+
+      var onBeforeRequestListener = chrome.test.callbackPass(function(details) {
+        chrome.test.assertEq(details.requestId, requestId);
+      });
+      chrome.webRequest.onBeforeRequest.addListener(onBeforeRequestListener,
+          {urls: [getURLWebAccessible()]});
+
+      assertRedirectSucceeds(url, getURLWebAccessible(), function() {
+        chrome.webRequest.onBeforeRequest.removeListener(
+            onBeforeRequestRedirectListener);
+        chrome.webRequest.onBeforeRequest.removeListener(
+            onBeforeRequestListener);
+      });
     },
   ]);
 });

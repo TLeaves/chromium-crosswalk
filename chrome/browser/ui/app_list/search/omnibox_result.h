@@ -6,47 +6,54 @@
 #define CHROME_BROWSER_UI_APP_LIST_SEARCH_OMNIBOX_RESULT_H_
 
 #include <memory>
+#include <vector>
 
-#include "ash/public/cpp/app_list/app_list_metrics.h"
-#include "base/macros.h"
+#include "ash/public/cpp/style/color_mode_observer.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/bitmap_fetcher/bitmap_fetcher_delegate.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "components/omnibox/browser/autocomplete_match.h"
-#include "url/gurl.h"
 
 class AppListControllerDelegate;
 class AutocompleteController;
+class FaviconCache;
+class BitmapFetcher;
 class Profile;
-
-// These are used in histograms, do not remove/renumber entries. If you're
-// adding to this enum with the intention that it will be logged, update the
-// AppListOmniboxResult enum listing in tools/metrics/histograms/enums.xml.
-enum class OmniboxResultType {
-  kQuerySuggestion = 0,
-  kZeroStateSuggestion = 1,
-  kMaxValue = kZeroStateSuggestion,
-};
 
 namespace app_list {
 
-class OmniboxResult : public ChromeSearchResult {
+class OmniboxResult : public ChromeSearchResult,
+                      public BitmapFetcherDelegate,
+                      public ash::ColorModeObserver {
  public:
   OmniboxResult(Profile* profile,
                 AppListControllerDelegate* list_controller,
                 AutocompleteController* autocomplete_controller,
+                FaviconCache* favicon_cache,
+                const AutocompleteInput& input,
                 const AutocompleteMatch& match,
                 bool is_zero_suggestion);
   ~OmniboxResult() override;
 
-  // ChromeSearchResult overrides:
-  void Open(int event_flags) override;
-  void InvokeAction(int action_index, int event_flags) override;
-  SearchResultType GetSearchResultType() const override;
+  OmniboxResult(const OmniboxResult&) = delete;
+  OmniboxResult& operator=(const OmniboxResult&) = delete;
 
-  // Returns the URL that will be navigated to by this search result.
-  GURL DestinationURL() const;
+  // ChromeSearchResult:
+  void Open(int event_flags) override;
+  void InvokeAction(ash::SearchResultActionType action) override;
+
+  // BitmapFetcherDelegate:
+  void OnFetchComplete(const GURL& url, const SkBitmap* bitmap) override;
+
+  int dedup_priority() const { return dedup_priority_; }
 
  private:
+  // ash::ColorModeObserver:
+  void OnColorModeChanged(bool dark_mode_enabled) override;
+
   void UpdateIcon();
+  // Creates a generic backup icon: used when rich icons are not available.
+  void SetGenericIcon();
   void UpdateTitleAndDetails();
 
   void Remove();
@@ -55,17 +62,32 @@ class OmniboxResult : public ChromeSearchResult {
   // description.
   bool IsUrlResultWithDescription() const;
 
-  void SetZeroSuggestionActions();
+  // Returns true if |match| has an image url.
+  bool IsRichEntity() const;
+  void FetchRichEntityImage(const GURL& url);
 
-  void RecordOmniboxResultHistogram();
+  void OnFaviconFetched(const gfx::Image& icon);
+
+  void InitializeButtonActions(
+      const std::vector<ash::SearchResultActionType>& button_actions);
+
+  ash::SearchResultType GetSearchResultType() const;
+
+  // Indicates the priority of a result for deduplicatin. Results with the same
+  // ID but lower |dedup_priority| are removed.
+  int dedup_priority_ = 0;
 
   Profile* profile_;
   AppListControllerDelegate* list_controller_;
   AutocompleteController* autocomplete_controller_;
+  FaviconCache* favicon_cache_;
   AutocompleteMatch match_;
   const bool is_zero_suggestion_;
+  std::unique_ptr<BitmapFetcher> bitmap_fetcher_;
+  // Whether this omnibox result uses a generic backup icon.
+  bool uses_generic_icon_ = false;
 
-  DISALLOW_COPY_AND_ASSIGN(OmniboxResult);
+  base::WeakPtrFactory<OmniboxResult> weak_factory_{this};
 };
 
 }  // namespace app_list

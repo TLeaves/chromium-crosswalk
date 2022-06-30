@@ -11,9 +11,9 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 
 namespace base {
@@ -37,11 +37,15 @@ class AlarmManager {
   // Construct and start the alarm manager. The clock poller will run on the
   // caller's thread.
   AlarmManager();
+
+  AlarmManager(const AlarmManager&) = delete;
+  AlarmManager& operator=(const AlarmManager&) = delete;
+
   ~AlarmManager();
 
   // For testing only. Allows setting a fake clock and using a custom task
   // runner.
-  AlarmManager(std::unique_ptr<base::Clock> clock,
+  AlarmManager(const base::Clock* clock,
                scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // Add an alarm.
@@ -57,9 +61,9 @@ class AlarmManager {
   // if it is past the requested time if the software is suspended. However,
   // once woken up, the event will fire within 5 seconds if the target time has
   // passed.
-  std::unique_ptr<AlarmHandle> PostAlarmTask(base::OnceClosure task,
-                                             base::Time time)
-      WARN_UNUSED_RESULT;
+  [[nodiscard]] std::unique_ptr<AlarmHandle> PostAlarmTask(
+      base::OnceClosure task,
+      base::Time time);
 
  private:
   class AlarmInfo {
@@ -67,6 +71,10 @@ class AlarmManager {
     AlarmInfo(base::OnceClosure task,
               base::Time time,
               scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+    AlarmInfo(const AlarmInfo&) = delete;
+    AlarmInfo& operator=(const AlarmInfo&) = delete;
+
     ~AlarmInfo();
 
     void PostTask();
@@ -77,7 +85,6 @@ class AlarmManager {
     base::OnceClosure task_;
     const base::Time time_;
     const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-    DISALLOW_COPY_AND_ASSIGN(AlarmInfo);
   };
 
   // Check if an alarm should fire.
@@ -105,13 +112,11 @@ class AlarmManager {
       next_alarm_;
 
   // Poller for wall clock time.
-  std::unique_ptr<base::Clock> clock_;
+  const base::Clock* const clock_;
   base::RepeatingTimer clock_tick_timer_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   base::WeakPtrFactory<AlarmManager> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(AlarmManager);
 };
 
 }  // namespace chromecast

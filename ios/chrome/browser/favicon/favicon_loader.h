@@ -7,7 +7,6 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/macros.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "components/keyed_service/core/keyed_service.h"
 
@@ -26,6 +25,10 @@ class FaviconLoader : public KeyedService {
   typedef void (^FaviconAttributesCompletionBlock)(FaviconAttributes*);
 
   explicit FaviconLoader(favicon::LargeIconService* large_icon_service);
+
+  FaviconLoader(const FaviconLoader&) = delete;
+  FaviconLoader& operator=(const FaviconLoader&) = delete;
+
   ~FaviconLoader() override;
 
   // Tries to find a FaviconAttributes in |favicon_cache_| with |page_url|:
@@ -45,6 +48,19 @@ class FaviconLoader : public KeyedService {
                          bool fallback_to_google_server,
                          FaviconAttributesCompletionBlock faviconBlockHandler);
 
+  // Tries to find a FaviconAttributes in |favicon_cache_| with |page_url|:
+  // If found, invokes |faviconBlockHandler| and exits.
+  // If not found, invokes |faviconBlockHandler| with a default placeholder
+  // then invokes it again asynchronously with the favicon fetched by trying
+  // following methods:
+  //   1. Use |large_icon_service_| to fetch from local DB managed by
+  //      HistoryService;
+  //   2. Create a favicon base on the fallback style from |large_icon_service|.
+  void FaviconForPageUrlOrHost(
+      const GURL& page_url,
+      float size_in_points,
+      FaviconAttributesCompletionBlock favicon_block_handler);
+
   // Tries to find a FaviconAttributes in |favicon_cache_| with |icon_url|:
   // If found, invokes |faviconBlockHandler| and exits.
   // If not found, invokes |faviconBlockHandler| with a default placeholder
@@ -61,6 +77,9 @@ class FaviconLoader : public KeyedService {
   // Cancel all incomplete requests.
   void CancellAllRequests();
 
+  // Return a weak pointer to the current object.
+  base::WeakPtr<FaviconLoader> AsWeakPtr();
+
  private:
   // The LargeIconService used to retrieve favicon.
   favicon::LargeIconService* large_icon_service_;
@@ -73,7 +92,7 @@ class FaviconLoader : public KeyedService {
   // algorithm. Keyed by NSString of URL (page URL or icon URL) spec.
   NSCache<NSString*, FaviconAttributes*>* favicon_cache_;
 
-  DISALLOW_COPY_AND_ASSIGN(FaviconLoader);
+  base::WeakPtrFactory<FaviconLoader> weak_ptr_factory_{this};
 };
 
 #endif  // IOS_CHROME_BROWSER_FAVICON_FAVICON_LOADER_H_

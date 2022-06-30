@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "base/base64.h"
 #include "base/files/file_path.h"
@@ -66,7 +68,7 @@ class DictInitBool {
  public:
   explicit DictInitBool(bool v) : init_value(v) {}
   void operator()(base::DictionaryValue* dict) {
-    dict->SetBoolean(key, init_value);
+    dict->GetDict().Set(key, init_value);
   }
 };
 
@@ -76,7 +78,7 @@ class DictInitInt {
  public:
   explicit DictInitInt(int v) : init_value(v) {}
   void operator()(base::DictionaryValue* dict) {
-    dict->SetInteger(key, init_value);
+    dict->GetDict().Set(key, init_value);
   }
 };
 
@@ -86,7 +88,7 @@ class DictInitDouble {
  public:
   explicit DictInitDouble(double v) : init_value(v) {}
   void operator()(base::DictionaryValue* dict) {
-    dict->SetDouble(key, init_value);
+    dict->GetDict().Set(key, init_value);
   }
 };
 
@@ -96,7 +98,7 @@ class DictInitString {
  public:
   explicit DictInitString(const std::string& v) : init_value(v) {}
   void operator()(base::DictionaryValue* dict) {
-    dict->SetString(key, init_value);
+    dict->GetDict().Set(key, init_value);
   }
 };
 
@@ -149,6 +151,20 @@ TEST(GetOptionalValue, StringNone) {
                                     "abcde", true, false);
 }
 
+TEST(GetOptionalValue, DictionaryNone) {
+  base::DictionaryValue dv;
+  const base::DictionaryValue* tmp = &dv;
+  TestGetOptionalValue<const base::DictionaryValue*>(
+      GetOptionalDictionary, DictNoInit, tmp, tmp, true, false);
+}
+
+TEST(GetOptionalValue, ListNone) {
+  base::ListValue lv;
+  const base::ListValue* tmp = &lv;
+  TestGetOptionalValue<const base::ListValue*>(GetOptionalList, DictNoInit, tmp,
+                                               tmp, true, false);
+}
+
 TEST(GetOptionalValue, SafeIntNone) {
   TestGetOptionalValue<int64_t>(GetOptionalSafeInt, DictNoInit, 12345, 12345,
                                 true, false);
@@ -172,6 +188,20 @@ TEST(GetOptionalValue, DoubleNull) {
 TEST(GetOptionalValue, StringNull) {
   TestGetOptionalValue<std::string>(GetOptionalString, DictInitNull, "abcde",
                                     "abcde", false, false);
+}
+
+TEST(GetOptionalValue, DictionaryNull) {
+  base::DictionaryValue dv;
+  const base::DictionaryValue* tmp = &dv;
+  TestGetOptionalValue<const base::DictionaryValue*>(
+      GetOptionalDictionary, DictInitNull, tmp, tmp, false, false);
+}
+
+TEST(GetOptionalValue, ListNull) {
+  base::ListValue lv;
+  const base::ListValue* tmp = &lv;
+  TestGetOptionalValue<const base::ListValue*>(GetOptionalList, DictInitNull,
+                                               tmp, tmp, false, false);
 }
 
 TEST(GetOptionalValue, SafeIntNull) {
@@ -199,6 +229,20 @@ TEST(GetOptionalValue, StringWrongType) {
                                     "abcde", "abcde", false, false);
 }
 
+TEST(GetOptionalValue, DictionaryWrongType) {
+  base::DictionaryValue dv;
+  const base::DictionaryValue* tmp = &dv;
+  TestGetOptionalValue<const base::DictionaryValue*>(
+      GetOptionalDictionary, DictInitString("test"), tmp, tmp, false, false);
+}
+
+TEST(GetOptionalValue, ListWrongType) {
+  base::ListValue lv;
+  const base::ListValue* tmp = &lv;
+  TestGetOptionalValue<const base::ListValue*>(
+      GetOptionalList, DictInitString("test"), tmp, tmp, false, false);
+}
+
 TEST(GetOptionalValue, SafeIntWrongType) {
   TestGetOptionalValue<int64_t>(GetOptionalSafeInt, DictInitString("test"),
                                 12345, 12345, false, false);
@@ -222,6 +266,44 @@ TEST(GetOptionalValue, DoubleNoConversion) {
 TEST(GetOptionalValue, StringNoConversion) {
   TestGetOptionalValue<std::string>(GetOptionalString, DictInitString("xyz"),
                                     "abcde", "xyz", true, true);
+}
+
+TEST(GetOptionalValue, DictionaryNoConversion) {
+  base::DictionaryValue dv1;
+  dv1.GetDict().Set("dv", "1");
+  base::DictionaryValue dv2;
+  dv2.GetDict().Set("dv", "2");
+
+  base::DictionaryValue dict;
+  dict.GetDict().Set(key, dv1.Clone());
+  const base::DictionaryValue* res = &dv2;
+  bool has_value;
+  bool has_dict = GetOptionalDictionary(&dict, key, &res, &has_value);
+  ASSERT_EQ(has_value, true);
+  ASSERT_EQ(has_dict, true);
+  // Cast to base class to ensure print properly if different
+  ASSERT_EQ(static_cast<const base::Value&>(*res),
+            static_cast<const base::Value&>(dv1));
+}
+
+TEST(GetOptionalValue, ListNoConversion) {
+  base::ListValue lv1;
+  lv1.Append("1");
+  base::ListValue lv2;
+  lv2.Append("2");
+
+  base::Value params = lv1.Clone();
+
+  base::DictionaryValue dict;
+  dict.GetDict().SetByDottedPath(key, std::move(params));
+  const base::ListValue* res = &lv2;
+  bool has_value;
+  bool has_dict = GetOptionalList(&dict, key, &res, &has_value);
+  ASSERT_EQ(has_value, true);
+  ASSERT_EQ(has_dict, true);
+  // Cast to base class to ensure print properly if different
+  ASSERT_EQ(static_cast<const base::Value&>(*res),
+            static_cast<const base::Value&>(lv1));
 }
 
 TEST(GetOptionalValue, SafeIntNoConversion) {
@@ -269,4 +351,18 @@ TEST(GetOptionalValue, SafeIntTooLarge) {
   TestGetOptionalValue<int64_t>(GetOptionalSafeInt,
                                 DictInitDouble(max_safe_int + 1), 12345, 12345,
                                 false, false);
+}
+
+TEST(ConvertCentimeterToInch, Zero) {
+  ASSERT_EQ(0, ConvertCentimeterToInch(0));
+}
+
+TEST(ConvertCentimeterToInch, PositiveDouble) {
+  ASSERT_EQ(1, ConvertCentimeterToInch(2.54));
+  ASSERT_EQ(0.1, ConvertCentimeterToInch(0.254));
+}
+
+TEST(ConvertCentimeterToInch, NegativeDouble) {
+  ASSERT_EQ(-1, ConvertCentimeterToInch(-2.54));
+  ASSERT_EQ(-0.1, ConvertCentimeterToInch(-0.254));
 }

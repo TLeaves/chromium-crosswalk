@@ -8,15 +8,16 @@
 #include <string>
 
 #include "base/linux_util.h"
+#include "build/chromeos_buildflags.h"
 
-#if defined(OS_CHROMEOS)
-#include "chromeos/constants/devicetype.h"
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chromeos/constants/devicetype.h"  // nogncheck
 #endif
 
 namespace syncer {
 
-std::string GetSessionNameInternal() {
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+std::string GetChromeOSDeviceNameFromType() {
   switch (chromeos::GetDeviceType()) {
     case chromeos::DeviceType::kChromebase:
       return "Chromebase";
@@ -30,10 +31,17 @@ std::string GetSessionNameInternal() {
       break;
   }
   return "Chromebook";
+}
+#endif
+
+std::string GetPersonalizableDeviceNameInternal() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  return GetChromeOSDeviceNameFromType();
 #else
   char hostname[HOST_NAME_MAX];
-  if (gethostname(hostname, HOST_NAME_MAX) == 0)  // Success.
+  if (gethostname(hostname, HOST_NAME_MAX) == 0) {  // Success.
     return hostname;
+  }
   return base::GetLinuxDistro();
 #endif
 }

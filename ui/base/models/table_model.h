@@ -5,22 +5,23 @@
 #ifndef UI_BASE_MODELS_TABLE_MODEL_H_
 #define UI_BASE_MODELS_TABLE_MODEL_H_
 
-#include <vector>
+#include <string>
 
-#include "base/strings/string16.h"
-#include "third_party/icu/source/i18n/unicode/coll.h"
-#include "ui/base/ui_base_export.h"
+#include "base/component_export.h"
+#include "third_party/icu/source/common/unicode/uversion.h"
 
-namespace gfx {
-class ImageSkia;
+// third_party/icu/source/common/unicode/uversion.h will set namespace icu.
+namespace U_ICU_NAMESPACE {
+class Collator;
 }
 
 namespace ui {
 
+class ImageModel;
 class TableModelObserver;
 
 // The model driving the TableView.
-class UI_BASE_EXPORT TableModel {
+class COMPONENT_EXPORT(UI_BASE) TableModel {
  public:
   // Size of the table row icon, if used.
   static constexpr int kIconSize = 16;
@@ -29,18 +30,18 @@ class UI_BASE_EXPORT TableModel {
   virtual int RowCount() = 0;
 
   // Returns the value at a particular location in text.
-  virtual base::string16 GetText(int row, int column_id) = 0;
+  virtual std::u16string GetText(int row, int column_id) = 0;
 
   // Returns the small icon (|kIconSize| x |kIconSize|) that should be displayed
   // in the first column before the text. This is only used when the TableView
-  // was created with the ICON_AND_TEXT table type. Returns an isNull() image if
-  // there is no image.
-  virtual gfx::ImageSkia GetIcon(int row);
+  // was created with the ICON_AND_TEXT table type. An empty ImageModel if there
+  // is no image.
+  virtual ui::ImageModel GetIcon(int row);
 
   // Returns the tooltip, if any, to show for a particular row.  If there are
   // multiple columns in the row, this will only be shown when hovering over
   // column zero.
-  virtual base::string16 GetTooltip(int row);
+  virtual std::u16string GetTooltip(int row);
 
   // Sets the observer for the model. The TableView should NOT take ownership
   // of the observer.
@@ -58,14 +59,14 @@ class UI_BASE_EXPORT TableModel {
   void ClearCollator();
 
  protected:
-  virtual ~TableModel() {}
+  virtual ~TableModel();
 
   // Returns the collator used by CompareValues.
   icu::Collator* GetCollator();
 };
 
 // TableColumn specifies the title, alignment and size of a particular column.
-struct UI_BASE_EXPORT TableColumn {
+struct COMPONENT_EXPORT(UI_BASE) TableColumn {
   enum Alignment {
     LEFT, RIGHT, CENTER
   };
@@ -73,12 +74,13 @@ struct UI_BASE_EXPORT TableColumn {
   TableColumn();
   TableColumn(int id, Alignment alignment, int width, float percent);
   TableColumn(const TableColumn& other);
+  TableColumn& operator=(const TableColumn& other);
 
   // A unique identifier for the column.
   int id;
 
   // The title for the column.
-  base::string16 title;
+  std::u16string title;
 
   // Alignment for the content.
   Alignment alignment;

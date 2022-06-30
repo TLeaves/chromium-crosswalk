@@ -5,8 +5,9 @@
 #import "chrome/browser/ui/cocoa/color_chooser_mac.h"
 
 #include "base/run_loop.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #import "chrome/browser/ui/cocoa/test/cocoa_test_helper.h"
+#include "mojo/core/embedder/embedder.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
@@ -21,24 +22,27 @@ namespace {
 
 class ColorPanelCocoaTest : public CocoaTest {
   void SetUp() override {
+    mojo::core::Init();
     // Create the color panel and call Init() again to update its initial
     // window list to include it. The NSColorPanel cannot be dealloced, so
-    // without this step the tests will fail complaining that not all windows
-    // were closed.
+    // without this step the tests will fail complaining that not all
+    // windows were closed.
     [[NSColorPanel sharedColorPanel] makeKeyAndOrderFront:nil];
-    Init();
+    MarkCurrentWindowsAsInitial();
   }
-  base::test::ScopedTaskEnvironment task_environment_;
+  base::test::TaskEnvironment task_environment_;
 };
 
-TEST_F(ColorPanelCocoaTest, ClearTargetOnEnd) {
+// TODO(https://crbug.com/1296023): Re-enable once flakes are fixed.
+TEST_F(ColorPanelCocoaTest, DISABLED_ClearTargetOnEnd) {
   NSColorPanel* nscolor_panel = [NSColorPanel sharedColorPanel];
   @autoreleasepool {
-    EXPECT_TRUE([nscolor_panel respondsToSelector:@selector(__target)]);
+    ASSERT_TRUE([nscolor_panel respondsToSelector:@selector(__target)]);
+    EXPECT_FALSE([nscolor_panel __target]);
 
     // Create a ColorPanelCocoa.
-    ColorChooserMac* color_chooser_mac =
-        ColorChooserMac::Open(nullptr, SK_ColorBLACK);
+    std::unique_ptr<ColorChooserMac> color_chooser_mac =
+        ColorChooserMac::Create(nullptr, SK_ColorBLACK);
     base::RunLoop().RunUntilIdle();
 
     // Confirm the NSColorPanel's configuration by the ColorChooserMac's
@@ -47,11 +51,13 @@ TEST_F(ColorPanelCocoaTest, ClearTargetOnEnd) {
 
     // Release the ColorPanelCocoa.
     color_chooser_mac->End();
+    color_chooser_mac.reset();
   }
 }
 
-TEST_F(ColorPanelCocoaTest, SetColor) {
-  // Set the NSColor panel up with an intial color.
+// TODO(https://crbug.com/1296023): Re-enable once flakes are fixed.
+TEST_F(ColorPanelCocoaTest, DISABLED_SetColor) {
+  // Set the NSColor panel up with an initial color.
   NSColor* blue_color = [NSColor blueColor];
   NSColorPanel* nscolor_panel = [NSColorPanel sharedColorPanel];
   [nscolor_panel setColor:blue_color];
@@ -60,8 +66,8 @@ TEST_F(ColorPanelCocoaTest, SetColor) {
   // Create a ColorChooserMac and confirm the NSColorPanel gets its initial
   // color.
   SkColor initial_color = SK_ColorBLACK;
-  ColorChooserMac* color_chooser_mac =
-      ColorChooserMac::Open(nullptr, SK_ColorBLACK);
+  std::unique_ptr<ColorChooserMac> color_chooser_mac =
+      ColorChooserMac::Create(nullptr, SK_ColorBLACK);
   base::RunLoop().RunUntilIdle();
 
   EXPECT_NSEQ([nscolor_panel color],
@@ -76,6 +82,7 @@ TEST_F(ColorPanelCocoaTest, SetColor) {
 
   // Clean up.
   color_chooser_mac->End();
+  color_chooser_mac.reset();
 }
 
 }  // namespace

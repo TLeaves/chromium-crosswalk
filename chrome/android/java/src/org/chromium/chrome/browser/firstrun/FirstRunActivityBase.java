@@ -9,13 +9,24 @@ import android.app.PendingIntent;
 import android.app.PendingIntent.CanceledException;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.SystemClock;
 
+import androidx.annotation.CallSuper;
+
+import org.chromium.base.IntentUtils;
 import org.chromium.base.Log;
+import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.supplier.OneshotSupplier;
+import org.chromium.base.supplier.OneshotSupplierImpl;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 import org.chromium.chrome.browser.init.AsyncInitializationActivity;
 import org.chromium.chrome.browser.metrics.UmaUtils;
+import org.chromium.chrome.browser.policy.PolicyServiceFactory;
 import org.chromium.chrome.browser.profiles.ProfileManagerUtils;
-import org.chromium.chrome.browser.util.IntentUtils;
+import org.chromium.chrome.browser.signin.services.FREMobileIdentityConsistencyFieldTrial;
+import org.chromium.components.policy.PolicyService;
+import org.chromium.components.signin.AccountManagerFacade;
+import org.chromium.components.signin.AccountManagerFacadeProvider;
 
 /** Base class for First Run Experience. */
 public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
@@ -24,6 +35,8 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
     public static final String EXTRA_COMING_FROM_CHROME_ICON = "Extra.ComingFromChromeIcon";
     public static final String EXTRA_CHROME_LAUNCH_INTENT_IS_CCT =
             "Extra.FreChromeLaunchIntentIsCct";
+    public static final String EXTRA_FRE_INTENT_CREATION_ELAPSED_REALTIME_MS =
+            "Extra.FreIntentCreationElapsedRealtimeMs";
 
     // The intent to send once the FRE completes.
     public static final String EXTRA_FRE_COMPLETE_LAUNCH_INTENT = "Extra.FreChromeLaunchIntent";
@@ -32,15 +45,30 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
     // received by ChromeLauncherActivity.)
     public static final String EXTRA_CHROME_LAUNCH_INTENT_EXTRAS =
             "Extra.FreChromeLaunchIntentExtras";
-
-    static final String SHOW_WELCOME_PAGE = "ShowWelcome";
-    static final String SHOW_DATA_REDUCTION_PAGE = "ShowDataReduction";
     static final String SHOW_SEARCH_ENGINE_PAGE = "ShowSearchEnginePage";
-    static final String SHOW_SIGNIN_PAGE = "ShowSignIn";
+    static final String SHOW_SYNC_CONSENT_PAGE = "ShowSyncConsent";
 
     public static final boolean DEFAULT_METRICS_AND_CRASH_REPORTING = true;
 
     private boolean mNativeInitialized;
+
+    private final FirstRunAppRestrictionInfo mFirstRunAppRestrictionInfo;
+    private final OneshotSupplierImpl<PolicyService> mPolicyServiceSupplier;
+    private final PolicyLoadListener mPolicyLoadListener;
+
+    private final long mStartTime;
+    private long mNativeInitializedTime;
+
+    private ChildAccountStatusSupplier mChildAccountStatusSupplier;
+
+    public FirstRunActivityBase() {
+        mFirstRunAppRestrictionInfo = FirstRunAppRestrictionInfo.takeMaybeInitialized();
+        mPolicyServiceSupplier = new OneshotSupplierImpl<>();
+        mPolicyLoadListener =
+                new PolicyLoadListener(mFirstRunAppRestrictionInfo, mPolicyServiceSupplier);
+        mStartTime = SystemClock.elapsedRealtime();
+        mPolicyLoadListener.onAvailable(this::onPolicyLoadListenerAvailable);
+    }
 
     @Override
     protected boolean requiresFirstRunToBeCompleted(Intent intent) {
@@ -53,8 +81,20 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
         return true;
     }
 
-    // Activity:
+    @Override
+    @CallSuper
+    public void triggerLayoutInflation() {
+        AccountManagerFacade accountManagerFacade = AccountManagerFacadeProvider.getInstance();
+        if (FREMobileIdentityConsistencyFieldTrial.isEnabled()) {
+            mChildAccountStatusSupplier = new ChildAccountStatusSupplier(
+                    accountManagerFacade, mFirstRunAppRestrictionInfo);
+        } else {
+            mChildAccountStatusSupplier =
+                    new ChildAccountStatusSupplier(accountManagerFacade, null);
+        }
+    }
 
+    // Activity:
     @Override
     public void onPause() {
         super.onPause();
@@ -66,10 +106,7 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
     public void onResume() {
         super.onResume();
         // Since the FRE may be shown before any tab is shown, mark that this is the point at
-        // which Chrome went to foreground. This is needed as otherwise an assert will be hit
-        // in UmaUtils.getForegroundStartTicks() when recording the time taken to load the first
-        // page (which happens after native has been initialized possibly while FRE is still
-        // active).
+        // which Chrome went to foreground.
         UmaUtils.recordForegroundStartTime();
     }
 
@@ -77,6 +114,18 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
     public void finishNativeInitialization() {
         super.finishNativeInitialization();
         mNativeInitialized = true;
+        mNativeInitializedTime = SystemClock.elapsedRealtime();
+        RecordHistogram.recordTimesHistogram(
+                "MobileFre.NativeInitialized", mNativeInitializedTime - mStartTime);
+        mPolicyServiceSupplier.set(PolicyServiceFactory.getGlobalPolicyService());
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        mPolicyLoadListener.destroy();
+        mFirstRunAppRestrictionInfo.destroy();
     }
 
     protected void flushPersistentData() {
@@ -123,6 +172,36 @@ public abstract class FirstRunActivityBase extends AsyncInitializationActivity {
             Log.e(TAG, "Unable to send PendingIntent.", e);
         }
         return false;
+    }
+
+    protected FirstRunAppRestrictionInfo getFirstRunAppRestrictionInfo() {
+        return mFirstRunAppRestrictionInfo;
+    }
+
+    protected void onPolicyLoadListenerAvailable(boolean onDevicePolicyFound) {
+        if (!mNativeInitialized) return;
+
+        assert mNativeInitializedTime != 0;
+        long delayAfterNative = SystemClock.elapsedRealtime() - mNativeInitializedTime;
+        String histogramName = onDevicePolicyFound
+                ? "MobileFre.PolicyServiceInitDelayAfterNative.WithPolicy2"
+                : "MobileFre.PolicyServiceInitDelayAfterNative.WithoutPolicy2";
+        RecordHistogram.recordTimesHistogram(histogramName, delayAfterNative);
+    }
+
+    /**
+     * @return PolicyLoadListener used to indicate if policy initialization is complete.
+     * @see PolicyLoadListener for return value expectation.
+     */
+    public OneshotSupplier<Boolean> getPolicyLoadListener() {
+        return mPolicyLoadListener;
+    }
+
+    /**
+     * Returns the supplier that supplies child account status.
+     */
+    public OneshotSupplier<Boolean> getChildAccountStatusSupplier() {
+        return mChildAccountStatusSupplier;
     }
 
     /**

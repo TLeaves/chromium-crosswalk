@@ -4,28 +4,46 @@
 
 #include "device/fido/mac/credential_store.h"
 
-#include <string>
-
 #import <Foundation/Foundation.h>
+#import <LocalAuthentication/LocalAuthentication.h>
 #import <Security/Security.h>
 
+#include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/optional.h"
-#include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "device/base/features.h"
+#include "components/device_event_log/device_event_log.h"
 #include "device/fido/mac/credential_metadata.h"
 #include "device/fido/mac/keychain.h"
+#include "device/fido/mac/touch_id_context.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace device {
-namespace fido {
-namespace mac {
+namespace device::fido::mac {
 
 namespace {
+
+// DefaultKeychainQuery returns a default keychain query dictionary that has
+// the keychain item class, keychain access group and RP ID filled out (but
+// not the credential ID). More fields can be set on the return value to
+// refine the query.
+base::ScopedCFTypeRef<CFMutableDictionaryRef> DefaultKeychainQuery(
+    const AuthenticatorConfig& config,
+    const std::string& rp_id) {
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> query(CFDictionaryCreateMutable(
+      kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks));
+  CFDictionarySetValue(query, kSecClass, kSecClassKey);
+  CFDictionarySetValue(query, kSecAttrAccessGroup,
+                       base::SysUTF8ToNSString(config.keychain_access_group));
+  CFDictionarySetValue(
+      query, kSecAttrLabel,
+      base::SysUTF8ToNSString(EncodeRpId(config.metadata_secret, rp_id)));
+  return query;
+}
 
 // Erase all keychain items with a creation date that is not within [not_before,
 // not_after).
@@ -49,12 +67,12 @@ void FilterKeychainItemsByCreationDate(
         return creation_date < not_before || creation_date >= not_after;
       });
 }
-base::Optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
+
+absl::optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
 QueryKeychainItemsForProfile(const std::string& keychain_access_group,
                              const std::string& metadata_secret,
                              base::Time created_not_before,
-                             base::Time created_not_after)
-    API_AVAILABLE(macosx(10.12.2)) {
+                             base::Time created_not_after) {
   // Query the keychain for all items tagged with the given access group, which
   // should in theory yield all WebAuthentication credentials (for all
   // profiles). Sadly, the kSecAttrAccessGroup filter doesn't quite work, and
@@ -62,8 +80,9 @@ QueryKeychainItemsForProfile(const std::string& keychain_access_group,
   // keychain access group.
   std::vector<base::ScopedCFTypeRef<CFDictionaryRef>> result;
 
-  base::ScopedCFTypeRef<CFMutableDictionaryRef> query(
-      CFDictionaryCreateMutable(kCFAllocatorDefault, 0, nullptr, nullptr));
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> query(CFDictionaryCreateMutable(
+      kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks));
   CFDictionarySetValue(query, kSecClass, kSecClassKey);
   CFDictionarySetValue(query, kSecAttrAccessGroup,
                        base::SysUTF8ToNSString(keychain_access_group));
@@ -78,11 +97,11 @@ QueryKeychainItemsForProfile(const std::string& keychain_access_group,
         query, reinterpret_cast<CFTypeRef*>(keychain_items.InitializeInto()));
     if (status == errSecItemNotFound) {
       DVLOG(1) << "no credentials found";
-      return base::nullopt;
+      return absl::nullopt;
     }
     if (status != errSecSuccess) {
       OSSTATUS_DLOG(ERROR, status) << "SecItemCopyMatching failed";
-      return base::nullopt;
+      return absl::nullopt;
     }
   }
 
@@ -91,7 +110,7 @@ QueryKeychainItemsForProfile(const std::string& keychain_access_group,
         CFArrayGetValueAtIndex(keychain_items, i));
     if (!attributes) {
       DLOG(ERROR) << "unexpected result type";
-      return base::nullopt;
+      return absl::nullopt;
     }
 
     // Skip items that don't belong to the correct keychain access group
@@ -114,15 +133,14 @@ QueryKeychainItemsForProfile(const std::string& keychain_access_group,
       DLOG(ERROR) << "missing label";
       continue;
     }
-    base::Optional<std::string> opt_rp_id =
+    absl::optional<std::string> opt_rp_id =
         DecodeRpId(metadata_secret, base::SysCFStringRefToUTF8(sec_attr_label));
     if (!opt_rp_id) {
       DVLOG(1) << "key doesn't belong to this profile";
       continue;
     }
 
-    result.push_back(base::ScopedCFTypeRef<CFDictionaryRef>(
-        attributes, base::scoped_policy::RETAIN));
+    result.emplace_back(attributes, base::scoped_policy::RETAIN);
   }
 
   FilterKeychainItemsByCreationDate(&result, created_not_before,
@@ -130,16 +148,197 @@ QueryKeychainItemsForProfile(const std::string& keychain_access_group,
   return result;
 }
 
-bool DoDeleteWebAuthnCredentials(const std::string& keychain_access_group,
-                                 const std::string& metadata_secret,
-                                 base::Time created_not_before,
-                                 base::Time created_not_after)
-    API_AVAILABLE(macosx(10.12.2)) {
-  bool result = true;
-  base::Optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
-      keychain_items =
-          QueryKeychainItemsForProfile(keychain_access_group, metadata_secret,
-                                       created_not_before, created_not_after);
+}  // namespace
+
+Credential::Credential(base::ScopedCFTypeRef<SecKeyRef> private_key_,
+                       std::vector<uint8_t> credential_id_)
+    : private_key(std::move(private_key_)),
+      credential_id(std::move(credential_id_)) {}
+
+Credential::Credential(const Credential& other) = default;
+
+Credential::Credential(Credential&& other) = default;
+
+Credential& Credential::operator=(const Credential& other) = default;
+
+Credential& Credential::operator=(Credential&& other) = default;
+
+Credential::~Credential() = default;
+
+bool Credential::operator==(const Credential& other) const {
+  return CFEqual(private_key, other.private_key) &&
+         credential_id == other.credential_id;
+}
+
+TouchIdCredentialStore::TouchIdCredentialStore(AuthenticatorConfig config)
+    : config_(std::move(config)) {}
+TouchIdCredentialStore::~TouchIdCredentialStore() = default;
+
+base::ScopedCFTypeRef<SecAccessControlRef>
+TouchIdCredentialStore::DefaultAccessControl() {
+  return base::ScopedCFTypeRef<SecAccessControlRef>(
+      SecAccessControlCreateWithFlags(
+          kCFAllocatorDefault,
+          // Credential can only be used when the device is unlocked.
+          kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+          // Private key is available for signing after user authorization with
+          // biometrics or password.
+          kSecAccessControlPrivateKeyUsage | kSecAccessControlUserPresence,
+          nullptr));
+}
+
+absl::optional<std::pair<Credential, base::ScopedCFTypeRef<SecKeyRef>>>
+TouchIdCredentialStore::CreateCredential(
+    const std::string& rp_id,
+    const PublicKeyCredentialUserEntity& user,
+    Discoverable discoverable) const {
+  std::vector<uint8_t> credential_id =
+      SealCredentialId(config_.metadata_secret, rp_id,
+                       CredentialMetadata::FromPublicKeyCredentialUserEntity(
+                           user, discoverable == kDiscoverable));
+
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> params(
+      CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks));
+  CFDictionarySetValue(params, kSecAttrAccessGroup,
+                       base::SysUTF8ToNSString(config_.keychain_access_group));
+  CFDictionarySetValue(params, kSecAttrKeyType,
+                       kSecAttrKeyTypeECSECPrimeRandom);
+  CFDictionarySetValue(params, kSecAttrKeySizeInBits, @256);
+  CFDictionarySetValue(params, kSecAttrSynchronizable, @NO);
+  CFDictionarySetValue(params, kSecAttrTokenID, kSecAttrTokenIDSecureEnclave);
+
+  CFDictionarySetValue(
+      params, kSecAttrLabel,
+      base::SysUTF8ToNSString(EncodeRpId(config_.metadata_secret, rp_id)));
+  CFDictionarySetValue(params, kSecAttrApplicationTag,
+                       base::SysUTF8ToNSString(EncodeRpIdAndUserId(
+                           config_.metadata_secret, rp_id, user.id)));
+  CFDictionarySetValue(params, kSecAttrApplicationLabel,
+                       [NSData dataWithBytes:credential_id.data()
+                                      length:credential_id.size()]);
+
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> private_key_params(
+      CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                &kCFTypeDictionaryKeyCallBacks,
+                                &kCFTypeDictionaryValueCallBacks));
+  CFDictionarySetValue(params, kSecPrivateKeyAttrs, private_key_params);
+  CFDictionarySetValue(private_key_params, kSecAttrIsPermanent, @YES);
+  CFDictionarySetValue(private_key_params, kSecAttrAccessControl,
+                       DefaultAccessControl());
+  if (authentication_context_) {
+    CFDictionarySetValue(private_key_params, kSecUseAuthenticationContext,
+                         authentication_context_);
+  }
+
+  base::ScopedCFTypeRef<CFErrorRef> cferr;
+  base::ScopedCFTypeRef<SecKeyRef> private_key(
+      Keychain::GetInstance().KeyCreateRandomKey(params,
+                                                 cferr.InitializeInto()));
+  if (!private_key) {
+    FIDO_LOG(ERROR) << "SecKeyCreateRandomKey failed: " << cferr;
+    return absl::nullopt;
+  }
+  base::ScopedCFTypeRef<SecKeyRef> public_key(
+      Keychain::GetInstance().KeyCopyPublicKey(private_key));
+  if (!public_key) {
+    FIDO_LOG(ERROR) << "SecKeyCopyPublicKey failed";
+    return absl::nullopt;
+  }
+
+  return std::make_pair(
+      Credential(std::move(private_key), std::move(credential_id)),
+      std::move(public_key));
+}
+
+absl::optional<std::list<Credential>>
+TouchIdCredentialStore::FindCredentialsFromCredentialDescriptorList(
+    const std::string& rp_id,
+    const std::vector<PublicKeyCredentialDescriptor>& descriptors) const {
+  std::set<std::vector<uint8_t>> credential_ids;
+  for (const auto& descriptor : descriptors) {
+    if (descriptor.credential_type == CredentialType::kPublicKey &&
+        (descriptor.transports.empty() ||
+         base::Contains(descriptor.transports,
+                        FidoTransportProtocol::kInternal))) {
+      credential_ids.insert(descriptor.id);
+    }
+  }
+  if (credential_ids.empty()) {
+    // Don't call FindCredentialsImpl(). Given an empty |credential_ids|, it
+    // returns *all* credentials for |rp_id|.
+    return std::list<Credential>();
+  }
+  return FindCredentialsImpl(rp_id, credential_ids);
+}
+
+absl::optional<std::list<Credential>>
+TouchIdCredentialStore::FindResidentCredentials(
+    const std::string& rp_id) const {
+  absl::optional<std::list<Credential>> credentials =
+      FindCredentialsImpl(rp_id, /*credential_ids=*/{});
+  if (!credentials) {
+    return absl::nullopt;
+  }
+  credentials->remove_if([this, &rp_id](const Credential& credential) {
+    auto opt_metadata = UnsealCredentialId(config_.metadata_secret, rp_id,
+                                           credential.credential_id);
+    if (!opt_metadata) {
+      FIDO_LOG(ERROR) << "UnsealCredentialId() failed";
+      return true;
+    }
+    return !opt_metadata->is_resident;
+  });
+  return credentials;
+}
+
+absl::optional<CredentialMetadata> TouchIdCredentialStore::UnsealMetadata(
+    const std::string& rp_id,
+    const Credential& credential) const {
+  return UnsealCredentialId(config_.metadata_secret, rp_id,
+                            credential.credential_id);
+}
+
+bool TouchIdCredentialStore::DeleteCredentialsForUserId(
+    const std::string& rp_id,
+    base::span<const uint8_t> user_id) const {
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> query =
+      DefaultKeychainQuery(config_, rp_id);
+  CFDictionarySetValue(query, kSecAttrApplicationTag,
+                       base::SysUTF8ToNSString(EncodeRpIdAndUserId(
+                           config_.metadata_secret, rp_id, user_id)));
+
+  OSStatus status = Keychain::GetInstance().ItemDelete(query);
+  if (status != errSecSuccess && status != errSecItemNotFound) {
+    OSSTATUS_DLOG(ERROR, status) << "SecItemDelete failed";
+    return false;
+  }
+  return true;
+}
+
+void TouchIdCredentialStore::DeleteCredentials(base::Time created_not_before,
+                                               base::Time created_not_after,
+                                               base::OnceClosure callback) {
+  DeleteCredentialsSync(created_not_before, created_not_after);
+  std::move(callback).Run();
+}
+
+void TouchIdCredentialStore::CountCredentials(
+    base::Time created_not_before,
+    base::Time created_not_after,
+    base::OnceCallback<void(size_t)> callback) {
+  std::move(callback).Run(
+      CountCredentialsSync(created_not_before, created_not_after));
+}
+
+bool TouchIdCredentialStore::DeleteCredentialsSync(
+    base::Time created_not_before,
+    base::Time created_not_after) {
+  absl::optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
+      keychain_items = QueryKeychainItemsForProfile(
+          config_.keychain_access_group, config_.metadata_secret,
+          created_not_before, created_not_after);
   if (!keychain_items) {
     return false;
   }
@@ -152,72 +351,103 @@ bool DoDeleteWebAuthnCredentials(const std::string& keychain_access_group,
   // does work however, is to look up and delete by the (unique)
   // kSecAttrApplicationLabel (which stores the credential id). So we clumsily
   // do this for each item instead.
-  for (const CFDictionaryRef& attributes : *keychain_items) {
+  bool result = true;
+  for (const base::ScopedCFTypeRef<CFDictionaryRef>& attributes :
+       *keychain_items) {
     CFDataRef sec_attr_app_label = base::mac::GetValueFromDictionary<CFDataRef>(
-        attributes, kSecAttrApplicationLabel);
+        attributes.get(), kSecAttrApplicationLabel);
     if (!sec_attr_app_label) {
       DLOG(ERROR) << "missing application label";
       continue;
     }
     base::ScopedCFTypeRef<CFMutableDictionaryRef> delete_query(
-        CFDictionaryCreateMutable(kCFAllocatorDefault, 0, nullptr, nullptr));
+        CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                  &kCFTypeDictionaryKeyCallBacks,
+                                  &kCFTypeDictionaryValueCallBacks));
     CFDictionarySetValue(delete_query, kSecClass, kSecClassKey);
     CFDictionarySetValue(delete_query, kSecAttrApplicationLabel,
                          sec_attr_app_label);
     OSStatus status = Keychain::GetInstance().ItemDelete(delete_query);
     if (status != errSecSuccess) {
+      // Indicate failure but keep deleting remaining items.
       OSSTATUS_DLOG(ERROR, status) << "SecItemDelete failed";
       result = false;
-      continue;
     }
   }
   return result;
 }
 
-size_t DoCountWebAuthnCredentials(const std::string& keychain_access_group,
-                                  const std::string& metadata_secret,
-                                  base::Time created_not_before,
-                                  base::Time created_not_after)
-    API_AVAILABLE(macosx(10.12.2)) {
-  base::Optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
-      keychain_items =
-          QueryKeychainItemsForProfile(keychain_access_group, metadata_secret,
-                                       created_not_before, created_not_after);
+size_t TouchIdCredentialStore::CountCredentialsSync(
+    base::Time created_not_before,
+    base::Time created_not_after) {
+  absl::optional<std::vector<base::ScopedCFTypeRef<CFDictionaryRef>>>
+      keychain_items = QueryKeychainItemsForProfile(
+          config_.keychain_access_group, config_.metadata_secret,
+          created_not_before, created_not_after);
   if (!keychain_items) {
     DLOG(ERROR) << "Failed to query credentials in keychain";
     return 0;
   }
-
   return keychain_items->size();
 }
-}  // namespace
 
-TouchIdCredentialStore::TouchIdCredentialStore(AuthenticatorConfig config)
-    : config_(std::move(config)) {}
-TouchIdCredentialStore::~TouchIdCredentialStore() = default;
-
-bool TouchIdCredentialStore::DeleteCredentials(base::Time created_not_before,
-                                               base::Time created_not_after) {
-  // Touch ID uses macOS APIs available in 10.12.2 or newer. No need to check
-  // for credentials in lower OS versions.
-  if (__builtin_available(macos 10.12.2, *)) {
-    return DoDeleteWebAuthnCredentials(config_.keychain_access_group,
-                                       config_.metadata_secret,
-                                       created_not_before, created_not_after);
+absl::optional<std::list<Credential>>
+TouchIdCredentialStore::FindCredentialsImpl(
+    const std::string& rp_id,
+    const std::set<std::vector<uint8_t>>& credential_ids) const {
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> query =
+      DefaultKeychainQuery(config_, rp_id);
+  if (authentication_context_) {
+    CFDictionarySetValue(query, kSecUseAuthenticationContext,
+                         authentication_context_);
   }
-  return true;
+  CFDictionarySetValue(query, kSecReturnRef, @YES);
+  CFDictionarySetValue(query, kSecReturnAttributes, @YES);
+  CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitAll);
+
+  base::ScopedCFTypeRef<CFArrayRef> keychain_items;
+  OSStatus status = Keychain::GetInstance().ItemCopyMatching(
+      query, reinterpret_cast<CFTypeRef*>(keychain_items.InitializeInto()));
+  if (status == errSecItemNotFound) {
+    return std::list<Credential>();
+  }
+  if (status != errSecSuccess) {
+    FIDO_LOG(ERROR) << "SecItemCopyMatching failed: "
+                    << logging::DescriptionFromOSStatus(status);
+    return absl::nullopt;
+  }
+
+  // Filter credentials for the RP down to |credential_ids|, unless it's
+  // empty in which case all credentials should be returned.
+  std::list<Credential> credentials;
+  for (CFIndex i = 0; i < CFArrayGetCount(keychain_items); ++i) {
+    CFDictionaryRef attributes = base::mac::CFCast<CFDictionaryRef>(
+        CFArrayGetValueAtIndex(keychain_items, i));
+    CFDataRef application_label = base::mac::GetValueFromDictionary<CFDataRef>(
+        attributes, kSecAttrApplicationLabel);
+    if (!application_label) {
+      FIDO_LOG(ERROR) << "credential with missing application label";
+      return absl::nullopt;
+    }
+    SecKeyRef key =
+        base::mac::GetValueFromDictionary<SecKeyRef>(attributes, kSecValueRef);
+    if (!key) {
+      FIDO_LOG(ERROR) << "credential with missing value ref";
+      return absl::nullopt;
+    }
+    std::vector<uint8_t> credential_id(CFDataGetBytePtr(application_label),
+                                       CFDataGetBytePtr(application_label) +
+                                           CFDataGetLength(application_label));
+    if (!credential_ids.empty() &&
+        !base::Contains(credential_ids, credential_id)) {
+      continue;
+    }
+    base::ScopedCFTypeRef<SecKeyRef> private_key(key,
+                                                 base::scoped_policy::RETAIN);
+    credentials.emplace_back(
+        Credential{std::move(private_key), std::move(credential_id)});
+  }
+  return std::move(credentials);
 }
 
-size_t TouchIdCredentialStore::CountCredentials(base::Time created_not_before,
-                                                base::Time created_not_after) {
-  if (__builtin_available(macos 10.12.2, *)) {
-    return DoCountWebAuthnCredentials(config_.keychain_access_group,
-                                      config_.metadata_secret,
-                                      created_not_before, created_not_after);
-  }
-  return 0;
-}
-
-}  // namespace mac
-}  // namespace fido
-}  // namespace device
+}  // namespace device::fido::mac

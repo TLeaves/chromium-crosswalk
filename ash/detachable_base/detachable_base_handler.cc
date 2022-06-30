@@ -4,8 +4,8 @@
 
 #include "ash/detachable_base/detachable_base_handler.h"
 
+#include "ash/constants/ash_pref_names.h"
 #include "ash/detachable_base/detachable_base_observer.h"
-#include "ash/public/cpp/ash_pref_names.h"
 #include "ash/public/cpp/session/user_info.h"
 #include "ash/shell.h"
 #include "base/bind.h"
@@ -49,14 +49,13 @@ void DetachableBaseHandler::RegisterPrefs(PrefRegistrySimple* registry) {
 
 DetachableBaseHandler::DetachableBaseHandler(PrefService* local_state)
     : local_state_(local_state),
-      hammerd_observer_(this),
-      power_manager_observer_(this),
-      weak_ptr_factory_(this) {
-  if (chromeos::HammerdClient::Get())  // May be null in tests
-    hammerd_observer_.Add(chromeos::HammerdClient::Get());
+      hammerd_observation_(this),
+      power_manager_observation_(this) {
+  if (HammerdClient::Get())  // May be null in tests
+    hammerd_observation_.Observe(HammerdClient::Get());
   chromeos::PowerManagerClient* power_manager_client =
       chromeos::PowerManagerClient::Get();
-  power_manager_observer_.Add(power_manager_client);
+  power_manager_observation_.Observe(power_manager_client);
 
   power_manager_client->GetSwitchStates(
       base::BindOnce(&DetachableBaseHandler::OnGotPowerManagerSwitchStates,
@@ -175,12 +174,12 @@ void DetachableBaseHandler::InvalidBaseConnected() {
 
 void DetachableBaseHandler::TabletModeEventReceived(
     chromeos::PowerManagerClient::TabletMode mode,
-    const base::TimeTicks& timestamp) {
+    base::TimeTicks timestamp) {
   UpdateTabletMode(mode);
 }
 
 void DetachableBaseHandler::OnGotPowerManagerSwitchStates(
-    base::Optional<chromeos::PowerManagerClient::SwitchStates> switch_states) {
+    absl::optional<chromeos::PowerManagerClient::SwitchStates> switch_states) {
   if (!switch_states.has_value() || tablet_mode_.has_value())
     return;
 
@@ -214,7 +213,7 @@ DetachableBaseHandler::GetLastUsedDeviceForUser(const UserInfo& user) const {
   if (user.is_ephemeral)
     return "";
 
-  const base::DictionaryValue* detachable_base_info =
+  const base::Value* detachable_base_info =
       local_state_->GetDictionary(prefs::kDetachableBaseDevices);
   const base::Value* last_used = detachable_base_info->FindPathOfType(
       {GetKeyForPrefs(user.account_id), kLastUsedByUserPrefKey},

@@ -6,99 +6,95 @@
 #define ASH_STYLE_ASH_COLOR_PROVIDER_H_
 
 #include "ash/ash_export.h"
-#include "base/macros.h"
+#include "ash/public/cpp/style/color_provider.h"
+#include "base/callback_helpers.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/color_palette.h"
 
 namespace ash {
 
+// TODO(minch): AshColorProvider is not needed to be a class now.
 // The color provider for system UI. It provides colors for Shield layer, Base
-// layer and +1 layer. Shield layer is a combination of color, opacity and blur
-// which may change depending on the context, it is usually a fullscreen layer.
-// e.g, PowerButtoneMenuScreenView for power button menu. Base layer is the
-// bottom layer of any UI displayed on top of all other UIs. e.g, the ShelfView
-// that contains all the shelf items. Controls layer is where components such as
-// icons and inkdrops lay on, it may also indicate the state of an interactive
-// element (active/inactive states). The color of an element in system UI will
-// be the combination of the colors of the three layers.
-class ASH_EXPORT AshColorProvider {
+// layer, Controls layer and Content layer. Shield layer is a combination of
+// color, opacity and blur which may change depending on the context, it is
+// usually a fullscreen layer. e.g, PowerButtoneMenuScreenView for power button
+// menu. Base layer is the bottom layer of any UI displayed on top of all other
+// UIs. e.g, the ShelfView that contains all the shelf items. Controls layer is
+// where components such as icons and inkdrops lay on, it may also indicate the
+// state of an interactive element (active/inactive states). Content layer means
+// the UI elements, e.g., separator, text, icon. The color of an element in
+// system UI will be the combination of the colors of the four layers.
+class ASH_EXPORT AshColorProvider : public ColorProvider {
  public:
-  // The color mode of system UI. It is controlled by the feature flag
-  // "--ash-color-mode" currently.
-  enum class AshColorMode {
-    // This is the color mode of current system UI, which is a combination of
-    // dark and light mode. e.g, shelf and system tray are dark while many other
-    // elements like notification are light.
-    kDefault = 0,
-    // The text is black while the background is white or light.
-    kLight,
-    // The text is light color while the background is black or dark grey.
-    kDark
-  };
-
-  // Types of Shield layer.
-  enum class ShieldLayerType {
-    kAlpha20,  // opacity of the layer is 20%
-    kAlpha40,  // opacity of the layer is 40%
-    kAlpha60,  // opacity of the layer is 60%
-  };
-
-  // Types of Base layer.
-  enum class BaseLayerType {
-    // Base layer is transparent with blur.
-    kTransparentWithBlur = 0,
-
-    // Base layer is transparent without blur.
-    kTransparentWithoutBlur,
-
-    // Base layer is opaque.
-    kOpaque,
-  };
-
-  // Types of Controls layer.
-  enum class ControlsLayerType {
-    kHairlineBorder,
-    kSeparator,
-    kActiveControlBackground,
-    kInactiveControlBackground,
-    kFocusRing,
-  };
-
-  // Attributes of ripple, includes the base color, opacity of inkdrop and
-  // highlight.
-  struct RippleAttributes {
-    RippleAttributes(SkColor color,
-                     float opacity_of_inkdrop,
-                     float opacity_of_highlight)
-        : base_color(color),
-          inkdrop_opacity(opacity_of_inkdrop),
-          highlight_opacity(opacity_of_highlight) {}
-    const SkColor base_color;
-    const float inkdrop_opacity;
-    const float highlight_opacity;
-  };
-
   AshColorProvider();
-  ~AshColorProvider();
+  AshColorProvider(const AshColorProvider& other) = delete;
+  AshColorProvider operator=(const AshColorProvider& other) = delete;
+  ~AshColorProvider() override;
 
-  // Gets the color of corresponding layer for specific type.
-  SkColor GetShieldLayerColor(ShieldLayerType type) const;
-  SkColor GetBaseLayerColor(BaseLayerType type) const;
-  SkColor GetControlsLayerColor(ControlsLayerType type) const;
+  static AshColorProvider* Get();
 
-  // Gets the attributes of ripple on |bg_color|. |bg_color| is the background
-  // color of the UI element that wants to show inkdrop.
-  RippleAttributes GetRippleAttributes(SkColor bg_color) const;
+  // Gets the disabled color on |enabled_color|. It can be disabled background,
+  // an disabled icon, etc.
+  static SkColor GetDisabledColor(SkColor enabled_color);
 
-  AshColorMode color_mode() const { return color_mode_; }
+  // Gets the color of second tone on the given |color_of_first_tone|. e.g,
+  // power status icon inside status area is a dual tone icon.
+  static SkColor GetSecondToneColor(SkColor color_of_first_tone);
+
+  // ColorProvider:
+  SkColor GetShieldLayerColor(ShieldLayerType type) const override;
+  SkColor GetBaseLayerColor(BaseLayerType type) const override;
+  SkColor GetControlsLayerColor(ControlsLayerType type) const override;
+  SkColor GetContentLayerColor(ContentLayerType type) const override;
+  SkColor GetActiveDialogTitleBarColor() const override;
+  SkColor GetInactiveDialogTitleBarColor() const override;
+  std::pair<SkColor, float> GetInkDropBaseColorAndOpacity(
+      SkColor background_color = gfx::kPlaceholderColor) const override;
+  std::pair<SkColor, float> GetInvertedInkDropBaseColorAndOpacity(
+      SkColor background_color = gfx::kPlaceholderColor) const override;
+
+  // Gets the color of |type| of the corresponding layer based on the current
+  // inverted color mode. For views that need LIGHT colors while DARK mode is
+  // active, and vice versa.
+  SkColor GetInvertedShieldLayerColor(ShieldLayerType type) const;
+  SkColor GetInvertedBaseLayerColor(BaseLayerType type) const;
+  SkColor GetInvertedControlsLayerColor(ControlsLayerType type) const;
+  SkColor GetInvertedContentLayerColor(ContentLayerType type) const;
+
+  // Gets the background color that can be applied on any layer. The returned
+  // color will be different based on color mode and color theme (see
+  // |is_themed_|).
+  SkColor GetBackgroundColor() const;
+  // Same as above, but returns the color based on the current inverted color
+  // mode and color theme.
+  SkColor GetInvertedBackgroundColor() const;
+  // Gets the background color in the desired color mode dark/light.
+  SkColor GetBackgroundColorInMode(bool use_dark_color) const;
 
  private:
-  // Selects from |light_color| and |dark_color| based on |color_mode_|.
-  SkColor SelectColorOnMode(SkColor light_color, SkColor dark_color) const;
+  // Gets the color of |type| of the corresponding layer. Returns color based on
+  // the current inverted color mode if |inverted| is true.
+  SkColor GetShieldLayerColorImpl(ShieldLayerType type, bool inverted) const;
+  SkColor GetBaseLayerColorImpl(BaseLayerType type, bool inverted) const;
+  // Gets the color of |type| of the corresponding layer. Returns the color on
+  // dark mode if |use_dark_color| is true.
+  SkColor GetControlsLayerColorImpl(ControlsLayerType type,
+                                    bool use_dark_color) const;
+  SkColor GetContentLayerColorImpl(ContentLayerType type,
+                                   bool use_dark_color) const;
 
-  // Current color mode of system UI.
-  AshColorMode color_mode_ = AshColorMode::kDefault;
+  // Gets the background default color based on the current color mode.
+  SkColor GetBackgroundDefaultColor() const;
+  // Gets the background default color based on the current inverted color mode.
+  SkColor GetInvertedBackgroundDefaultColor() const;
 
-  DISALLOW_COPY_AND_ASSIGN(AshColorProvider);
+  // Gets the background themed color that's calculated based on the color
+  // extracted from wallpaper. For dark mode, it will be dark muted wallpaper
+  // prominent color + SK_ColorBLACK 50%. For light mode, it will be light
+  // muted wallpaper prominent color + SK_ColorWHITE 75%. Extracts the color on
+  // dark mode if |use_dark_color| is true.
+  SkColor GetBackgroundThemedColorImpl(SkColor default_color,
+                                       bool use_dark_color) const;
 };
 
 }  // namespace ash

@@ -10,19 +10,22 @@
 class CacheStatsRecorder : public chrome::mojom::CacheStatsRecorder {
  public:
   explicit CacheStatsRecorder(int render_process_id);
+
+  CacheStatsRecorder(const CacheStatsRecorder&) = delete;
+  CacheStatsRecorder& operator=(const CacheStatsRecorder&) = delete;
+
   ~CacheStatsRecorder() override;
 
   static void Create(
       int render_process_id,
-      chrome::mojom::CacheStatsRecorderAssociatedRequest request);
+      mojo::PendingAssociatedReceiver<chrome::mojom::CacheStatsRecorder>
+          receiver);
 
  private:
   // chrome::mojom::CacheStatsRecorder:
   void RecordCacheStats(uint64_t capacity, uint64_t size) override;
 
   const int render_process_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(CacheStatsRecorder);
 };
 
 #endif  // CHROME_BROWSER_CACHE_STATS_RECORDER_H_

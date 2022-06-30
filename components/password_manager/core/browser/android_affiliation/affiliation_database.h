@@ -8,8 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
-#include "base/time/time.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
 #include "components/password_manager/core/browser/sql_table_builder.h"
 
@@ -36,6 +34,10 @@ namespace password_manager {
 class AffiliationDatabase {
  public:
   AffiliationDatabase();
+
+  AffiliationDatabase(const AffiliationDatabase&) = delete;
+  AffiliationDatabase& operator=(const AffiliationDatabase&) = delete;
+
   ~AffiliationDatabase();
 
   // Opens an existing database at |path|, or creates a new one if none exists,
@@ -57,14 +59,6 @@ class AffiliationDatabase {
   // containing |facet_uri|.
   void DeleteAffiliationsAndBrandingForFacetURI(const FacetURI& facet_uri);
 
-  // Removes stored equivalence classes and branding information that were last
-  // updated before the |cutoff_threshold|.
-  void DeleteAffiliationsAndBrandingOlderThan(
-      const base::Time& cutoff_threshold);
-
-  // Removes all records from all tables of the database.
-  void DeleteAllAffiliationsAndBranding();
-
   // Stores the equivalence class and branding information defined by
   // |affiliated_facets| to the DB and returns true unless it has a non-empty
   // subset with a preexisting class, in which case no changes are made and the
@@ -79,6 +73,10 @@ class AffiliationDatabase {
   void StoreAndRemoveConflicting(
       const AffiliatedFacetsWithUpdateTime& affiliated_facets,
       std::vector<AffiliatedFacetsWithUpdateTime>* removed_affiliations);
+
+  // Removes all the stored equivalence classes and branding information which
+  // aren't represented by |facet_uris|.
+  void RemoveMissingFacetURI(std::vector<FacetURI> facet_uris);
 
   // Deletes the database file at |path| along with all its auxiliary files. The
   // database must be closed before calling this.
@@ -111,8 +109,6 @@ class AffiliationDatabase {
 
   // The SQL connection to the database.
   std::unique_ptr<sql::Database> sql_connection_;
-
-  DISALLOW_COPY_AND_ASSIGN(AffiliationDatabase);
 };
 
 }  // namespace password_manager

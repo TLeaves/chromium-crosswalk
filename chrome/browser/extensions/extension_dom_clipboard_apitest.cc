@@ -11,6 +11,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -56,7 +57,8 @@ bool ClipboardApiTest::LoadHostedApp(const std::string& app_name,
 
   std::string launch_page_path =
       base::StringPrintf("%s/%s", app_name.c_str(), launch_page.c_str());
-  ui_test_utils::NavigateToURL(browser(), base_url.Resolve(launch_page_path));
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           base_url.Resolve(launch_page_path)));
 
   return true;
 }
@@ -94,13 +96,19 @@ bool ClipboardApiTest::ExecuteScriptInSelectedTab(const std::string& script) {
 
 }  // namespace
 
-IN_PROC_BROWSER_TEST_F(ClipboardApiTest, Extension) {
+// Flaky on Mac. See https://crbug.com/1242373.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_Extension DISABLED_Extension
+#else
+#define MAYBE_Extension Extension
+#endif
+IN_PROC_BROWSER_TEST_F(ClipboardApiTest, MAYBE_Extension) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("clipboard/extension")) << message_;
 }
 
 // Flaky on Mac. See https://crbug.com/900301.
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 #define MAYBE_ExtensionNoPermission DISABLED_ExtensionNoPermission
 #else
 #define MAYBE_ExtensionNoPermission ExtensionNoPermission
@@ -130,11 +138,7 @@ IN_PROC_BROWSER_TEST_F(ClipboardApiTest, HostedAppNoPermission) {
   EXPECT_TRUE(ExecuteCopyInSelectedTab()) << message_;
   EXPECT_FALSE(ExecutePasteInSelectedTab()) << message_;
 
-  if (!base::FeatureList::IsEnabled(features::kUserActivationV2)) {
-    EXPECT_TRUE(ExecuteCommandInIframeInSelectedTab("copy")) << message_;
-  } else {
-    // In UserActivationV2, acitvation doesn't propagate to a child frame.
-    EXPECT_FALSE(ExecuteCommandInIframeInSelectedTab("copy")) << message_;
-  }
+  // User acitvation doesn't propagate to a child frame.
+  EXPECT_FALSE(ExecuteCommandInIframeInSelectedTab("copy")) << message_;
   EXPECT_FALSE(ExecuteCommandInIframeInSelectedTab("paste")) << message_;
 }

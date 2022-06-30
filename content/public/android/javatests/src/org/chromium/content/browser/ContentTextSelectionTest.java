@@ -10,10 +10,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.SystemClock;
-import android.support.test.filters.MediumTest;
-import android.support.test.filters.SmallTest;
-import android.text.TextUtils;
 
+import androidx.test.filters.MediumTest;
+import androidx.test.filters.SmallTest;
+
+import org.hamcrest.Matchers;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -21,6 +22,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.task.PostTask;
+import org.chromium.base.test.util.Criteria;
+import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
@@ -28,12 +31,11 @@ import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.input.ChromiumBaseInputConnection;
 import org.chromium.content.browser.input.ImeTestUtils;
 import org.chromium.content.browser.selection.SelectionPopupControllerImpl;
+import org.chromium.content_public.browser.SelectAroundCaretResult;
 import org.chromium.content_public.browser.SelectionClient;
 import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.test.ContentJUnit4ClassRunner;
-import org.chromium.content_public.browser.test.util.Criteria;
-import org.chromium.content_public.browser.test.util.CriteriaHelper;
 import org.chromium.content_public.browser.test.util.DOMUtils;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_shell_apk.ContentShellActivityTestRule;
@@ -76,7 +78,7 @@ public class ContentTextSelectionTest {
         public void onSelectionEvent(int eventType, float posXPix, float poxYPix) {}
 
         @Override
-        public void selectWordAroundCaretAck(boolean didSelect, int startAdjust, int endAdjust) {}
+        public void selectAroundCaretAck(SelectAroundCaretResult result) {}
 
         @Override
         public boolean requestSelectionPopupUpdates(boolean shouldSuggest) {
@@ -105,7 +107,7 @@ public class ContentTextSelectionTest {
     }
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         mActivityTestRule.launchContentShellWithUrl(DATA_URL);
         mActivityTestRule.waitForActiveShellToBeDoneLoading();
 
@@ -118,6 +120,7 @@ public class ContentTextSelectionTest {
     @Test
     @SmallTest
     @Feature({"TextSelection"})
+    @DisabledTest(message = "https://crbug.com/1237513")
     public void testSelectionClearedAfterLossOfFocus() throws Throwable {
         requestFocusOnUiThread(true);
 
@@ -136,6 +139,7 @@ public class ContentTextSelectionTest {
     @Test
     @SmallTest
     @Feature({"TextSelection"})
+    @DisabledTest(message = "https://crbug.com/1237513")
     public void testSelectionPreservedAfterLossOfFocusIfRequested() throws Throwable {
         requestFocusOnUiThread(true);
 
@@ -195,8 +199,7 @@ public class ContentTextSelectionTest {
     @Test
     @SmallTest
     @Feature({"TextSelection"})
-    @DisableIf.
-    Build(sdk_is_less_than = Build.VERSION_CODES.N, message = "Drag and drop not enabled pre-N")
+    @DisabledTest(message = "https://crbug.com/980733")
     public void testSelectionPreservedAfterDragAndDrop() throws Throwable {
         DOMUtils.longPressNode(mWebContents, "plain_text_1");
         waitForSelectActionBarVisible(true);
@@ -415,15 +418,18 @@ public class ContentTextSelectionTest {
 
         DOMUtils.clickNode(mWebContents, "smart_selection");
 
-        CriteriaHelper.pollUiThread(Criteria.equals(
-                0, () -> mSelectionPopupController.getClassificationResult().startAdjust));
-        Assert.assertEquals("Amphitheatre", mSelectionPopupController.getSelectedText());
+        CriteriaHelper.pollUiThread(() -> {
+            Criteria.checkThat(mSelectionPopupController.getClassificationResult().startAdjust,
+                    Matchers.is(0));
+            Criteria.checkThat(
+                    mSelectionPopupController.getSelectedText(), Matchers.is("Amphitheatre"));
+        });
     }
 
     @Test
     @SmallTest
     @Feature({"TextInput"})
-    @DisabledTest(message = "https://crbug.com/592428")
+    @DisabledTest(message = "https://crbug.com/1315297")
     public void testPastePopupDismissedOnDestroy() throws Throwable {
         copyStringToClipboard("SampleTextToCopy");
         DOMUtils.longPressNode(mWebContents, "empty_input_text");
@@ -665,7 +671,7 @@ public class ContentTextSelectionTest {
         return ImeTestUtils.runBlockingOnHandlerNoException(
                 connection.getHandler(), new Callable<CharSequence>() {
                     @Override
-                    public CharSequence call() throws Exception {
+                    public CharSequence call() {
                         return connection.getTextBeforeCursor(length, flags);
                     }
                 });
@@ -674,6 +680,7 @@ public class ContentTextSelectionTest {
     @Test
     @SmallTest
     @Feature({"TextSelection", "TextInput"})
+    @DisabledTest(message = "https://crbug.com/1217277")
     public void testCursorPositionAfterHidingActionMode() throws Exception {
         DOMUtils.longPressNode(mWebContents, "textarea");
         waitForSelectActionBarVisible(true);
@@ -682,13 +689,9 @@ public class ContentTextSelectionTest {
         Assert.assertEquals(mSelectionPopupController.getSelectedText(), "SampleTextArea");
         hideSelectActionMode();
         waitForSelectActionBarVisible(false);
-        CriteriaHelper.pollInstrumentationThread(
-                Criteria.equals("SampleTextArea", new Callable<CharSequence>() {
-                    @Override
-                    public CharSequence call() {
-                        return getTextBeforeCursor(50, 0);
-                    }
-                }));
+        CriteriaHelper.pollInstrumentationThread(() -> {
+            Criteria.checkThat(getTextBeforeCursor(50, 0), Matchers.is("SampleTextArea"));
+        });
     }
 
     @Test
@@ -766,7 +769,7 @@ public class ContentTextSelectionTest {
     @Test
     @SmallTest
     @Feature({"TextInput"})
-    @DisabledTest(message = "crbug.com/592428")
+    @DisabledTest(message = "https://crbug.com/1315299")
     public void testSelectActionBarTextAreaPaste() throws Throwable {
         copyStringToClipboard("SampleTextToCopy");
         DOMUtils.longPressNode(mWebContents, "textarea");
@@ -829,26 +832,22 @@ public class ContentTextSelectionTest {
     }
 
     private void waitForClipboardContents(final String expectedContents) {
-        CriteriaHelper.pollUiThread(new Criteria() {
-            @Override
-            public boolean isSatisfied() {
-                Context context = mActivityTestRule.getActivity();
-                ClipboardManager clipboardManager =
-                        (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clip = clipboardManager.getPrimaryClip();
-                return clip != null && clip.getItemCount() == 1
-                        && TextUtils.equals(clip.getItemAt(0).getText(), expectedContents);
-            }
+        CriteriaHelper.pollUiThread(() -> {
+            Context context = mActivityTestRule.getActivity();
+            ClipboardManager clipboardManager =
+                    (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = clipboardManager.getPrimaryClip();
+            Criteria.checkThat(clip, Matchers.notNullValue());
+            Criteria.checkThat(clip.getItemCount(), Matchers.is(1));
+            Criteria.checkThat(clip.getItemAt(0).getText(), Matchers.is(expectedContents));
         });
     }
 
     private void waitForSelectActionBarVisible(final boolean visible) {
-        CriteriaHelper.pollUiThread(Criteria.equals(visible, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return mSelectionPopupController.isSelectActionBarShowing();
-            }
-        }));
+        CriteriaHelper.pollUiThread(() -> {
+            Criteria.checkThat(
+                    mSelectionPopupController.isSelectActionBarShowing(), Matchers.is(visible));
+        });
     }
 
     private void setVisibileOnUiThread(final boolean show) {
@@ -910,20 +909,15 @@ public class ContentTextSelectionTest {
     }
 
     private void waitForPastePopupStatus(final boolean show) {
-        CriteriaHelper.pollUiThread(Criteria.equals(show, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return mSelectionPopupController.isPastePopupShowing();
-            }
-        }));
+        CriteriaHelper.pollUiThread(() -> {
+            Criteria.checkThat(mSelectionPopupController.isPastePopupShowing(), Matchers.is(show));
+        });
     }
 
     private void waitForInsertion(final boolean show) {
-        CriteriaHelper.pollUiThread(Criteria.equals(show, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return mSelectionPopupController.isInsertionForTesting();
-            }
-        }));
+        CriteriaHelper.pollUiThread(() -> {
+            Criteria.checkThat(
+                    mSelectionPopupController.isInsertionForTesting(), Matchers.is(show));
+        });
     }
 }

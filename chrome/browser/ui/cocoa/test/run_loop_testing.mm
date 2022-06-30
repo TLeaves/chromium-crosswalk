@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/cocoa/test/run_loop_testing.h"
+#include "base/memory/raw_ptr.h"
 
 #import <Foundation/Foundation.h>
 
@@ -14,22 +15,22 @@
 // This class is scheduled with a delayed selector to quit the message pump.
 @interface CocoaQuitTask : NSObject {
  @private
-  base::MessagePumpNSRunLoop* pump_;
+  raw_ptr<base::MessagePumpNSRunLoop> _pump;
 }
-- (id)initWithMessagePump:(base::MessagePumpNSRunLoop*)pump;
+- (instancetype)initWithMessagePump:(base::MessagePumpNSRunLoop*)pump;
 - (void)doQuit;
 @end
 
 @implementation CocoaQuitTask
-- (id)initWithMessagePump:(base::MessagePumpNSRunLoop*)pump {
+- (instancetype)initWithMessagePump:(base::MessagePumpNSRunLoop*)pump {
   if ((self = [super init])) {
-    pump_ = pump;
+    _pump = pump;
   }
   return self;
 }
 
 - (void)doQuit {
-  pump_->Quit();
+  _pump->Quit();
 }
 @end
 

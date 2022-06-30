@@ -4,8 +4,8 @@
 
 #include "components/proxy_config/proxy_prefs.h"
 
-#include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/check.h"
+#include "base/notreached.h"
 
 namespace ProxyPrefs {
 
@@ -19,7 +19,7 @@ const char* kProxyModeNames[] = { kDirectProxyModeName,
                                   kFixedServersProxyModeName,
                                   kSystemProxyModeName };
 
-static_assert(base::size(kProxyModeNames) == kModeCount,
+static_assert(std::size(kProxyModeNames) == kModeCount,
               "kProxyModeNames must have kModeCount elements");
 
 }  // namespace

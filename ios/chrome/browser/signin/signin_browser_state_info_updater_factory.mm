@@ -8,6 +8,7 @@
 #error "This file requires ARC support."
 #endif
 
+#include "base/no_destructor.h"
 #include "components/keyed_service/ios/browser_state_dependency_manager.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
@@ -17,7 +18,7 @@
 // static
 SigninBrowserStateInfoUpdater*
 SigninBrowserStateInfoUpdaterFactory::GetForBrowserState(
-    ios::ChromeBrowserState* chrome_browser_state) {
+    ChromeBrowserState* chrome_browser_state) {
   return static_cast<SigninBrowserStateInfoUpdater*>(
       GetInstance()->GetServiceForBrowserState(chrome_browser_state, true));
 }
@@ -42,8 +43,8 @@ SigninBrowserStateInfoUpdaterFactory::~SigninBrowserStateInfoUpdaterFactory() {}
 std::unique_ptr<KeyedService>
 SigninBrowserStateInfoUpdaterFactory::BuildServiceInstanceFor(
     web::BrowserState* state) const {
-  ios::ChromeBrowserState* chrome_browser_state =
-      ios::ChromeBrowserState::FromBrowserState(state);
+  ChromeBrowserState* chrome_browser_state =
+      ChromeBrowserState::FromBrowserState(state);
   return std::make_unique<SigninBrowserStateInfoUpdater>(
       IdentityManagerFactory::GetForBrowserState(chrome_browser_state),
       ios::SigninErrorControllerFactory::GetForBrowserState(

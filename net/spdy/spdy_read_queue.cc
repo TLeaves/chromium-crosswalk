@@ -7,12 +7,12 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "net/spdy/spdy_buffer.h"
 
 namespace net {
 
-SpdyReadQueue::SpdyReadQueue() : total_size_(0) {}
+SpdyReadQueue::SpdyReadQueue() = default;
 
 SpdyReadQueue::~SpdyReadQueue() {
   Clear();

@@ -14,6 +14,7 @@ extern const char kCleaningTimeoutMinutesSwitch[];
 extern const char kCleanupIdSwitch[];
 extern const char kCrashHandlerSwitch[];
 extern const char kCrashSwitch[];
+extern const char kDenyElevationForTestingSwitch[];
 extern const char kDumpRawLogsSwitch[];
 extern const char kElevatedSwitch[];
 extern const char kFileSizeLimitSwitch[];
@@ -53,6 +54,13 @@ extern const char kWithCleanupModeLogsSwitch[];
 extern const char kAllowUnsecureDLLsSwitch[];
 extern const char kRunWithoutSandboxForTestingSwitch[];
 #endif
+
+// Deprecated switches that were set by older Chrome versions.
+// These must still be handled until we drop support for those versions.
+
+// The Mojo pipe token for IPC communication between the Software Reporter and
+// Chrome. Dropped in M80.
+extern const char kChromeMojoPipeTokenSwitch[];
 
 }  // namespace chrome_cleaner
 

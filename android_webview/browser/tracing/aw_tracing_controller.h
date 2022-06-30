@@ -6,15 +6,16 @@
 #define ANDROID_WEBVIEW_BROWSER_TRACING_AW_TRACING_CONTROLLER_H_
 
 #include "base/android/jni_weak_ref.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/values.h"
 
 namespace android_webview {
 
 class AwTracingController {
  public:
   AwTracingController(JNIEnv* env, jobject obj);
+
+  AwTracingController(const AwTracingController&) = delete;
+  AwTracingController& operator=(const AwTracingController&) = delete;
 
   bool Start(JNIEnv* env,
              const base::android::JavaParamRef<jobject>& obj,
@@ -28,13 +29,10 @@ class AwTracingController {
   ~AwTracingController();
 
   void OnTraceDataReceived(std::unique_ptr<std::string> chunk);
-  void OnTraceDataComplete(
-      std::unique_ptr<const base::DictionaryValue> metadata);
+  void OnTraceDataComplete();
 
   JavaObjectWeakGlobalRef weak_java_object_;
-  base::WeakPtrFactory<AwTracingController> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(AwTracingController);
+  base::WeakPtrFactory<AwTracingController> weak_factory_{this};
 };
 
 }  // namespace android_webview

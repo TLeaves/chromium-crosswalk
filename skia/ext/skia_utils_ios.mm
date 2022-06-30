@@ -5,14 +5,13 @@
 #include "skia/ext/skia_utils_ios.h"
 
 #import <ImageIO/ImageIO.h>
+#import <UIKit/UIKit.h>
 #include <stddef.h>
 #include <stdint.h>
-#import <UIKit/UIKit.h>
 
 #include "base/ios/ios_util.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/stl_util.h"
 #include "third_party/skia/include/utils/mac/SkCGUtils.h"
 
 namespace {
@@ -21,10 +20,10 @@ const uint8_t kICOHeaderMagic[4] = {0x00, 0x00, 0x01, 0x00};
 
 // Returns whether the data encodes an ico image.
 bool EncodesIcoImage(NSData* image_data) {
-  if (image_data.length < base::size(kICOHeaderMagic))
+  if (image_data.length < std::size(kICOHeaderMagic))
     return false;
   return memcmp(kICOHeaderMagic, image_data.bytes,
-                base::size(kICOHeaderMagic)) == 0;
+                std::size(kICOHeaderMagic)) == 0;
 }
 
 }  // namespace
@@ -91,6 +90,11 @@ UIImage* SkBitmapToUIImageWithColorSpace(const SkBitmap& skia_bitmap,
 }
 
 std::vector<SkBitmap> ImageDataToSkBitmaps(NSData* image_data) {
+  return ImageDataToSkBitmapsWithMaxSize(image_data, CGFLOAT_MAX);
+}
+
+std::vector<SkBitmap> ImageDataToSkBitmapsWithMaxSize(NSData* image_data,
+                                                      CGFloat max_size) {
   DCHECK(image_data);
 
   // On iOS 8.1.1 |CGContextDrawImage| crashes when processing images included
@@ -112,6 +116,8 @@ std::vector<SkBitmap> ImageDataToSkBitmaps(NSData* image_data) {
 
     CGSize size = CGSizeMake(CGImageGetWidth(cg_image),
                              CGImageGetHeight(cg_image));
+    if (size.width > max_size || size.height > max_size)
+      continue;
     if (size.width >= 88 && size.height >= 88 && skip_images_88x88_or_larger)
       continue;
 

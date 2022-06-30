@@ -5,9 +5,10 @@
 #import <ChromeWebView/ChromeWebView.h>
 #import <Foundation/Foundation.h>
 
-#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
+#include "components/variations/variations_ids_provider.h"
+#import "ios/web_view/public/cwv_navigation_delegate.h"
 #import "ios/web_view/test/web_view_inttest_base.h"
 #import "ios/web_view/test/web_view_test_util.h"
 #import "net/base/mac/url_conversions.h"
@@ -22,6 +23,28 @@
 
 using base::test::ios::kWaitForActionTimeout;
 using base::test::ios::WaitUntilConditionOrTimeout;
+using base::test::ios::kWaitForPageLoadTimeout;
+
+// A stub object that observes the |webViewDidFinishNavigation| event of
+// CWVNavigationDelegate. CWVNavigationDelegate is also used as navigation
+// policy decider, so OCMProtocolMock doesn't work here because it implements
+// all protocol methods which will return NO and block the navigation.
+@interface CWVNavigationPageLoadObserver : NSObject <CWVNavigationDelegate>
+
+// Whether |webViewDidFinishNavigation| has been called. Initiated as NO.
+@property(nonatomic, assign, readonly) BOOL pageLoaded;
+
+- (void)webViewDidFinishNavigation:(CWVWebView*)webView;
+
+@end
+
+@implementation CWVNavigationPageLoadObserver
+
+- (void)webViewDidFinishNavigation:(CWVWebView*)webView {
+  _pageLoaded = YES;
+}
+
+@end
 
 namespace ios_web_view {
 
@@ -66,7 +89,7 @@ class WebViewAutofillTest : public WebViewInttestBase {
  protected:
   WebViewAutofillTest() : autofill_controller_(web_view_.autofillController) {}
 
-  bool LoadTestPage() WARN_UNUSED_RESULT {
+  [[nodiscard]] bool LoadTestPage() {
     std::string html = base::SysNSStringToUTF8(kTestFormHtml);
     main_frame_id_ = nil;
     GURL url = GetUrlForPageWithHtmlBody(html);
@@ -78,7 +101,7 @@ class WebViewAutofillTest : public WebViewInttestBase {
     });
   }
 
-  bool SubmitForm() WARN_UNUSED_RESULT {
+  [[nodiscard]] bool SubmitForm() {
     NSString* submit_script =
         [NSString stringWithFormat:@"document.getElementById('%@').click();",
                                    kTestSubmitID];
@@ -87,8 +110,8 @@ class WebViewAutofillTest : public WebViewInttestBase {
     return !submit_error;
   }
 
-  bool SetFormFieldValue(NSString* field_id,
-                         NSString* field_value) WARN_UNUSED_RESULT {
+  [[nodiscard]] bool SetFormFieldValue(NSString* field_id,
+                                       NSString* field_value) {
     NSString* set_value_script = [NSString
         stringWithFormat:@"document.getElementById('%@').value = '%@';",
                          field_id, field_value];
@@ -127,13 +150,26 @@ class WebViewAutofillTest : public WebViewInttestBase {
     return main_frame_id_;
   }
 
+  bool WaitUntilPageLoaded() {
+    CWVNavigationPageLoadObserver* observer =
+        [[CWVNavigationPageLoadObserver alloc] init];
+    web_view_.navigationDelegate = observer;
+    bool result = WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+      return observer.pageLoaded;
+    });
+    web_view_.navigationDelegate = nil;
+    return result;
+  }
+
   CWVAutofillController* autofill_controller_;
+  id<CWVNavigationDelegate> navigation_delegate_ = nil;
   NSString* main_frame_id_ = nil;
   UIView* dummy_super_view_ = nil;
 };
 
 // Tests that CWVAutofillControllerDelegate receives callbacks.
 TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
+  ASSERT_TRUE(variations::VariationsIdsProvider::GetInstance());
   ASSERT_TRUE(test_server_->Start());
   ASSERT_TRUE(LoadTestPage());
   ASSERT_TRUE(SetFormFieldValue(kTestAddressFieldID, kTestAddressFieldValue));
@@ -146,7 +182,8 @@ TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
                               fieldType:kTestFieldType
                                formName:kTestFormName
                                 frameID:[OCMArg any]
-                                  value:kTestAddressFieldValue];
+                                  value:kTestAddressFieldValue
+                          userInitiated:YES];
   NSString* focus_script =
       [NSString stringWithFormat:@"document.getElementById('%@').focus();",
                                  kTestAddressFieldID];
@@ -160,7 +197,8 @@ TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
                               fieldType:kTestFieldType
                                formName:kTestFormName
                                 frameID:[OCMArg any]
-                                  value:kTestAddressFieldValue];
+                                  value:kTestAddressFieldValue
+                          userInitiated:NO];
   NSString* blur_script =
       [NSString stringWithFormat:
                     @"var event = new Event('blur', {bubbles:true});"
@@ -176,7 +214,8 @@ TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
                               fieldType:kTestFieldType
                                formName:kTestFormName
                                 frameID:[OCMArg any]
-                                  value:kTestAddressFieldValue];
+                                  value:kTestAddressFieldValue
+                          userInitiated:NO];
   // The 'input' event listener defined in form.js is only called during the
   // bubbling phase.
   NSString* input_script =
@@ -191,8 +230,8 @@ TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
 
   [[delegate expect] autofillController:autofill_controller_
                   didSubmitFormWithName:kTestFormName
-                          userInitiated:NO
-                            isMainFrame:YES];
+                                frameID:[OCMArg any]
+                          userInitiated:NO];
   // The 'submit' event listener defined in form.js is only called during the
   // bubbling phase.
   NSString* submit_script =
@@ -207,7 +246,8 @@ TEST_F(WebViewAutofillTest, TestDelegateCallbacks) {
 }
 
 // Tests that CWVAutofillController can fetch, fill, and clear suggestions.
-TEST_F(WebViewAutofillTest, TestSuggestionFetchFillClear) {
+// TODO(crbug.com/1259114): Figure out why this is test is flaky.
+TEST_F(WebViewAutofillTest, DISABLED_TestSuggestionFetchFillClear) {
   ASSERT_TRUE(test_server_->Start());
   ASSERT_TRUE(LoadTestPage());
   ASSERT_TRUE(SetFormFieldValue(kTestNameFieldID, kTestNameFieldValue));
@@ -216,6 +256,8 @@ TEST_F(WebViewAutofillTest, TestSuggestionFetchFillClear) {
   ASSERT_TRUE(SetFormFieldValue(kTestCityFieldID, kTestCityFieldValue));
   ASSERT_TRUE(SetFormFieldValue(kTestZipFieldID, kTestZipFieldValue));
   ASSERT_TRUE(SubmitForm());
+  // Wait for about:blank to be loaded after <form> submitted.
+  ASSERT_TRUE(WaitUntilPageLoaded());
   ASSERT_TRUE(LoadTestPage());
 
   NSArray<CWVAutofillSuggestion*>* fetched_suggestions = FetchSuggestions();
@@ -233,8 +275,8 @@ TEST_F(WebViewAutofillTest, TestSuggestionFetchFillClear) {
   test::EvaluateJavaScript(web_view_, focus_script, &focus_error);
   ASSERT_NSEQ(nil, focus_error);
 
-  [autofill_controller_ fillSuggestion:fetched_suggestion
-                     completionHandler:nil];
+  [autofill_controller_ acceptSuggestion:fetched_suggestion
+                       completionHandler:nil];
   NSString* filled_script =
       [NSString stringWithFormat:@"document.getElementById('%@').value",
                                  kTestAddressFieldID];
@@ -267,30 +309,6 @@ TEST_F(WebViewAutofillTest, TestSuggestionFetchFillClear) {
     return [current_value isEqualToString:@""];
   }));
   ASSERT_NSEQ(nil, cleared_error);
-}
-
-// Tests that CWVAutofillController can remove a suggestion.
-TEST_F(WebViewAutofillTest, TestSuggestionFetchRemoveFetch) {
-  ASSERT_TRUE(test_server_->Start());
-  ASSERT_TRUE(LoadTestPage());
-  ASSERT_TRUE(SetFormFieldValue(kTestNameFieldID, kTestNameFieldValue));
-  ASSERT_TRUE(SetFormFieldValue(kTestAddressFieldID, kTestAddressFieldValue));
-  ASSERT_TRUE(SetFormFieldValue(kTestStateFieldID, kTestStateFieldValue));
-  ASSERT_TRUE(SetFormFieldValue(kTestCityFieldID, kTestCityFieldValue));
-  ASSERT_TRUE(SetFormFieldValue(kTestZipFieldID, kTestZipFieldValue));
-  ASSERT_TRUE(SubmitForm());
-  ASSERT_TRUE(LoadTestPage());
-
-  NSArray* fetched_suggestions_after_creating = FetchSuggestions();
-  ASSERT_EQ(1U, fetched_suggestions_after_creating.count);
-
-  CWVAutofillSuggestion* suggestion_to_remove =
-      fetched_suggestions_after_creating.firstObject;
-  EXPECT_TRUE([autofill_controller_ removeSuggestion:suggestion_to_remove]);
-
-  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForActionTimeout, ^bool {
-    return FetchSuggestions().count == 0;
-  }));
 }
 
 }  // namespace ios_web_view

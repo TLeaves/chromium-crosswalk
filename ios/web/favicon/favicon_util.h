@@ -5,21 +5,18 @@
 #ifndef IOS_WEB_FAVICON_FAVICON_UTIL_H_
 #define IOS_WEB_FAVICON_FAVICON_UTIL_H_
 
+#include "base/values.h"
 #include "ios/web/public/favicon/favicon_url.h"
-
-namespace base {
-class DictionaryValue;
-}  // namespace base
 
 namespace web {
 
-// Extracts the favicon url out of the |favicon_url_message| and put them into
+// Extracts the favicon url out of |favicons| and put them into
 // the |out_parameter|. The |page_origin| is used to get the default favicon.ico
 // at the root of the page if there is none in the message. The message is
 // structured as containing a list of favicons containing the href, rel and
 // sizes attributes of the favicons. Returns whether the extraction was
 // completely successful or not.
-bool ExtractFaviconURL(const base::DictionaryValue* favicon_url_message,
+bool ExtractFaviconURL(const base::Value::ConstListView& favicons,
                        const GURL& page_origin,
                        std::vector<web::FaviconURL>* out_parameter);
 

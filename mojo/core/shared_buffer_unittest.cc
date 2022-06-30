@@ -7,8 +7,7 @@
 #include <string>
 #include <utility>
 
-#include "base/logging.h"
-#include "base/memory/shared_memory.h"
+#include "base/memory/platform_shared_memory_region.h"
 #include "base/strings/string_piece.h"
 #include "build/build_config.h"
 #include "mojo/core/core.h"
@@ -54,7 +53,7 @@ TEST_F(SharedBufferTest, PassSharedBufferLocal) {
   ExpectBufferContents(dupe, 0, message);
 }
 
-#if !defined(OS_IOS)
+#if !BUILDFLAG(IS_IOS)
 
 // Reads a single message with a shared buffer handle, maps the buffer, copies
 // the message contents into it, then exits.
@@ -195,10 +194,8 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(ReceiveAndEditBufferParent,
   });
 }
 
-#if defined(OS_ANDROID) || defined(OS_MACOSX)
+#if BUILDFLAG(IS_ANDROID)
 // Android multi-process tests are not executing the new process. This is flaky.
-// Passing shared memory handles between cousins is not currently supported on
-// OSX.
 #define MAYBE_PassHandleBetweenCousins DISABLED_PassHandleBetweenCousins
 #else
 #define MAYBE_PassHandleBetweenCousins PassHandleBetweenCousins
@@ -302,7 +299,7 @@ TEST_F(SharedBufferTest, CreateAndPassFromChildReadOnlyBuffer) {
   });
 }
 
-#endif  // !defined(OS_IOS)
+#endif  // !BUILDFLAG(IS_IOS)
 
 }  // namespace
 }  // namespace core

@@ -6,25 +6,49 @@
 #define CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_
 
 #include <memory>
+#include <string>
 #include <utility>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
+#include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/scoped_observer.h"
+#include "base/scoped_observation.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/net/proxy_config_monitor.h"
 #include "components/content_settings/core/browser/content_settings_observer.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_member.h"
+#include "components/privacy_sandbox/privacy_sandbox_settings.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "mojo/public/cpp/bindings/remote_set.h"
 #include "net/net_buildflags.h"
+#include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom-forward.h"
+#include "services/network/public/mojom/first_party_sets_access_delegate.mojom-forward.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 
+class PrefRegistrySimple;
 class Profile;
 class TrialComparisonCertVerifierController;
+
+namespace net {
+class ClientCertStore;
+
+// Enum that specifies which profiles are allowed to do
+// ambient authentication.
+enum class AmbientAuthAllowedProfileTypes {
+  REGULAR_ONLY = 0,
+  INCOGNITO_AND_REGULAR = 1,
+  GUEST_AND_REGULAR = 2,
+  ALL = 3,
+};
+
+}  // namespace net
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -35,27 +59,33 @@ class PrefRegistrySyncable;
 class ProfileNetworkContextService
     : public KeyedService,
       public content_settings::Observer,
-      public content_settings::CookieSettings::Observer {
+      public content_settings::CookieSettings::Observer,
+      public privacy_sandbox::PrivacySandboxSettings::Observer {
  public:
   explicit ProfileNetworkContextService(Profile* profile);
+
+  ProfileNetworkContextService(const ProfileNetworkContextService&) = delete;
+  ProfileNetworkContextService& operator=(const ProfileNetworkContextService&) =
+      delete;
+
   ~ProfileNetworkContextService() override;
 
-  // Creates a NetworkContext for the BrowserContext, using the specified
-  // parameters. An empty |relative_partition_path| corresponds to the main
-  // network context.
-  network::mojom::NetworkContextPtr CreateNetworkContext(
+  // Configures the NetworkContextParams and the CertVerifierCreationParams for
+  // the BrowserContext, using the specified parameters. An empty
+  // |relative_partition_path| corresponds to the main network context.
+  void ConfigureNetworkContextParams(
       bool in_memory,
-      const base::FilePath& relative_partition_path);
+      const base::FilePath& relative_partition_path,
+      network::mojom::NetworkContextParams* network_context_params,
+      cert_verifier::mojom::CertVerifierCreationParams*
+          cert_verifier_creation_params);
 
-#if defined(OS_CHROMEOS)
-  void UpdateAdditionalCertificates(
-      const net::CertificateList& all_additional_certificates,
-      const net::CertificateList& trust_anchors);
-
-  bool using_builtin_cert_verifier() { return using_builtin_cert_verifier_; }
+#if BUILDFLAG(IS_CHROMEOS)
+  void UpdateAdditionalCertificates();
 #endif
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+  static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
   // Packages up configuration info in |profile| and |cookie_settings| into a
   // mojo-friendly form.
@@ -68,7 +98,26 @@ class ProfileNetworkContextService
 
   static void SetDiscardDomainReliabilityUploadsForTesting(bool value);
 
+  void set_client_cert_store_factory_for_testing(
+      base::RepeatingCallback<std::unique_ptr<net::ClientCertStore>()>
+          factory) {
+    client_cert_store_factory_ = std::move(factory);
+  }
+
+  // Get platform ClientCertStore. May return nullptr.
+  std::unique_ptr<net::ClientCertStore> CreateClientCertStore();
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(ProfileNetworkContextServiceBrowsertest,
+                           DefaultCacheSize);
+  FRIEND_TEST_ALL_PREFIXES(ProfileNetworkContextServiceDiskCacheBrowsertest,
+                           DiskCacheSize);
+  FRIEND_TEST_ALL_PREFIXES(
+      ProfileNetworkContextServiceCertVerifierBuiltinPermissionsPolicyTest,
+      Test);
+
+  friend class AmbientAuthenticationTestHelper;
+
   // Checks |quic_allowed_|, and disables QUIC if needed.
   void DisableQuicIfNotAllowed();
 
@@ -76,14 +125,14 @@ class ProfileNetworkContextService
   // formatting them as appropriate.
   void UpdateAcceptLanguage();
 
-  // Forwards changes to |block_third_party_cookies_| to the NetworkContext.
-  void UpdateBlockThirdPartyCookies();
-
   // Computes appropriate value of Accept-Language header based on
   // |pref_accept_language_|
   std::string ComputeAcceptLanguage() const;
 
   void UpdateReferrersEnabled();
+
+  // Gets the current CTPolicy from preferences.
+  network::mojom::CTPolicyPtr GetCTPolicy();
 
   // Update the CTPolicy for the given NetworkContexts.
   void UpdateCTPolicyForContexts(
@@ -94,28 +143,44 @@ class ProfileNetworkContextService
 
   void ScheduleUpdateCTPolicy();
 
+  bool ShouldSplitAuthCacheByNetworkIsolationKey() const;
+  void UpdateSplitAuthCacheByNetworkIsolationKey();
+
+  void UpdateCorsNonWildcardRequestHeadersSupport();
+
   // Creates parameters for the NetworkContext. Use |in_memory| instead of
   // |profile_->IsOffTheRecord()| because sometimes normal profiles want off the
   // record partitions (e.g. for webview tag).
-  network::mojom::NetworkContextParamsPtr CreateNetworkContextParams(
+  void ConfigureNetworkContextParamsInternal(
       bool in_memory,
-      const base::FilePath& relative_partition_path);
+      const base::FilePath& relative_partition_path,
+      network::mojom::NetworkContextParams* network_context_params,
+      cert_verifier::mojom::CertVerifierCreationParams*
+          cert_verifier_creation_params);
 
   // Returns the path for a given storage partition.
   base::FilePath GetPartitionPath(
       const base::FilePath& relative_partition_path);
 
+  // Populates |network_context_params| with initial additional server and
+  // authority certificates for |relative_partition_path|.
+  void PopulateInitialAdditionalCerts(
+      const base::FilePath& relative_partition_path,
+      network::mojom::NetworkContextParams* network_context_params);
+
   // content_settings::Observer:
   void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
                                const ContentSettingsPattern& secondary_pattern,
-                               ContentSettingsType content_type,
-                               const std::string& resource_identifier) override;
+                               ContentSettingsType content_type) override;
 
   // content_settings::CookieSettings::Observer:
   void OnThirdPartyCookieBlockingChanged(
       bool block_third_party_cookies) override;
 
-  Profile* const profile_;
+  // PrivacySandboxSettings::Observer:
+  void OnTrustTokenBlockingChanged(bool block_trust_tokens) override;
+
+  const raw_ptr<Profile> profile_;
 
   ProxyConfigMonitor proxy_config_monitor_;
 
@@ -125,8 +190,12 @@ class ProfileNetworkContextService
   PrefChangeRegistrar pref_change_registrar_;
 
   scoped_refptr<content_settings::CookieSettings> cookie_settings_;
-  ScopedObserver<content_settings::CookieSettings, ProfileNetworkContextService>
-      cookie_settings_observer_;
+  base::ScopedObservation<content_settings::CookieSettings,
+                          content_settings::CookieSettings::Observer>
+      cookie_settings_observation_{this};
+  base::ScopedObservation<privacy_sandbox::PrivacySandboxSettings,
+                          privacy_sandbox::PrivacySandboxSettings::Observer>
+      privacy_sandbox_settings_observer_{this};
 
   // Used to post schedule CT policy updates
   base::OneShotTimer ct_policy_update_timer_;
@@ -138,11 +207,13 @@ class ProfileNetworkContextService
       trial_comparison_cert_verifier_controller_;
 #endif
 
-#if defined(OS_CHROMEOS)
-  bool using_builtin_cert_verifier_;
-#endif
+  // TODO(crbug.com/1325050): Let FirstPartySetsHandlerImpl own it.
+  mojo::RemoteSet<network::mojom::FirstPartySetsAccessDelegate>
+      fps_access_delegate_remote_set_;
 
-  DISALLOW_COPY_AND_ASSIGN(ProfileNetworkContextService);
+  // Used for testing.
+  base::RepeatingCallback<std::unique_ptr<net::ClientCertStore>()>
+      client_cert_store_factory_;
 };
 
 #endif  // CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_

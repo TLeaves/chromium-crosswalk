@@ -4,8 +4,8 @@
 
 #include "extensions/browser/warning_service.h"
 
+#include "base/observer_list.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/warning_service_factory.h"
 #include "extensions/common/extension_set.h"
@@ -15,10 +15,10 @@ using content::BrowserThread;
 namespace extensions {
 
 WarningService::WarningService(content::BrowserContext* browser_context)
-    : browser_context_(browser_context), extension_registry_observer_(this) {
+    : browser_context_(browser_context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (browser_context_) {
-    extension_registry_observer_.Add(ExtensionRegistry::Get(
+    extension_registry_observation_.Observe(ExtensionRegistry::Get(
         ExtensionsBrowserClient::Get()->GetOriginalContext(browser_context_)));
   }
 }

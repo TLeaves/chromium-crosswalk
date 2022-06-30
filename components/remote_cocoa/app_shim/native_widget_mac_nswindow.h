@@ -52,6 +52,16 @@ REMOTE_COCOA_APP_SHIM_EXPORT
 // create one.
 - (void)setWindowTouchBarDelegate:(id<WindowTouchBarDelegate>)delegate;
 
+// Enforce that this window never be made visible. In the event that it is made
+// visible, it will log a crash report.
+// https://crbug.com/960904
+- (void)enforceNeverMadeVisible;
+
+// Order the window to the front (space switch if necessary), and ensure that
+// the window maintains its key state. A space switch will normally activate a
+// window, so this function prevents that if the window is currently inactive.
+- (void)orderFrontKeepWindowKeyState;
+
 // Identifier for the NativeWidgetMac from which this window was created. This
 // may be used to look up the NativeWidgetMacNSWindowHost in the browser process
 // or the NativeWidgetNSWindowBridge in a display process.

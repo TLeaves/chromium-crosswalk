@@ -4,7 +4,6 @@
 
 package org.chromium.media;
 
-import android.annotation.TargetApi;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
@@ -18,6 +17,7 @@ import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -31,9 +31,13 @@ import android.provider.Settings;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
+import org.chromium.base.ThreadUtils.ThreadChecker;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
+import org.chromium.base.annotations.NativeMethods;
+import org.chromium.base.compat.ApiHelperForS;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -41,41 +45,11 @@ import java.util.Map;
 
 @JNINamespace("media")
 class AudioManagerAndroid {
-    private static final String TAG = "cr.media";
+    private static final String TAG = "media";
 
     // Set to true to enable debug logs. Avoid in production builds.
     // NOTE: always check in as false.
     private static final boolean DEBUG = false;
-
-    /**
-     * NonThreadSafe is a helper class used to help verify that methods of a
-     * class are called from the same thread.
-     * Inspired by class in package com.google.android.apps.chrome.utilities.
-     * Is only utilized when DEBUG is set to true.
-     */
-    private static class NonThreadSafe {
-        private final Long mThreadId;
-
-        public NonThreadSafe() {
-            if (DEBUG) {
-                mThreadId = Thread.currentThread().getId();
-            } else {
-                // Avoids "Unread field" issue reported by findbugs.
-                mThreadId = 0L;
-            }
-        }
-
-        /**
-         * Checks if the method is called on the valid thread.
-         * Assigns the current thread if no thread was assigned.
-         */
-        public boolean calledOnValidThread() {
-            if (DEBUG) {
-                return mThreadId.equals(Thread.currentThread().getId());
-            }
-            return true;
-        }
-    }
 
     /** Simple container for device information. */
     private static class AudioDeviceName {
@@ -166,9 +140,9 @@ class AudioManagerAndroid {
     private int mRequestedAudioDevice = DEVICE_INVALID;
 
     // This class should be created, initialized and closed on the audio thread
-    // in the audio manager. We use |mNonThreadSafe| to ensure that this is
-    // the case. Only active when |DEBUG| is set to true.
-    private final NonThreadSafe mNonThreadSafe = new NonThreadSafe();
+    // in the audio manager. We use |mThreadChecker| to ensure that this is
+    // the case.
+    private final ThreadChecker mThreadChecker = new ThreadChecker();
 
     // Lock to protect |mAudioDevices| and |mRequestedAudioDevice| which can
     // be accessed from the main thread and the audio manager thread.
@@ -222,7 +196,7 @@ class AudioManagerAndroid {
      */
     @CalledByNative
     private void init() {
-        checkIfCalledOnValidThread();
+        mThreadChecker.assertOnValidThread();
         if (DEBUG) logd("init");
         if (DEBUG) logDeviceInfo();
         if (mIsInitialized) return;
@@ -264,7 +238,7 @@ class AudioManagerAndroid {
      */
     @CalledByNative
     private void close() {
-        checkIfCalledOnValidThread();
+        mThreadChecker.assertOnValidThread();
         if (DEBUG) logd("close");
         if (!mIsInitialized) return;
 
@@ -283,7 +257,7 @@ class AudioManagerAndroid {
      */
     @CalledByNative
     private void setCommunicationAudioModeOn(boolean on) {
-        checkIfCalledOnValidThread();
+        mThreadChecker.assertOnValidThread();
         if (DEBUG) logd("setCommunicationAudioModeOn" + on + ")");
         if (!mIsInitialized) return;
 
@@ -501,14 +475,38 @@ class AudioManagerAndroid {
         return AcousticEchoCanceler.isAvailable();
     }
 
-    /**
-     * Helper method for debugging purposes. Ensures that method is
-     * called on same thread as this object was created on.
-     */
-    private void checkIfCalledOnValidThread() {
-        if (DEBUG && !mNonThreadSafe.calledOnValidThread()) {
-            throw new IllegalStateException("Method is not called on valid thread");
+    // Used for reflection of hidden method getOutputLatency.
+    private static final Method sGetOutputLatency = reflectMethod("getOutputLatency");
+
+    // Reflect |methodName(int)|, and return it.
+    private static final Method reflectMethod(String methodName) {
+        try {
+            return AudioManager.class.getMethod(methodName, int.class);
+        } catch (NoSuchMethodException e) {
+            return null;
         }
+    }
+
+    // Return the output latency, as reported by AudioManager.  Do not use this,
+    // since it is (a) a hidden API call, and (b) documented as being
+    // unreliable.  It's here only to adjust for some hardware devices that do
+    // not handle latency properly otherwise.
+    // See b/80326798 for more information.
+    @CalledByNative
+    private int getOutputLatency() {
+        mThreadChecker.assertOnValidThread();
+
+        int result = 0;
+        if (sGetOutputLatency != null) {
+            try {
+                result = (Integer) sGetOutputLatency.invoke(
+                        mAudioManager, AudioManager.STREAM_MUSIC);
+            } catch (Exception e) {
+                ;
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -519,6 +517,10 @@ class AudioManagerAndroid {
         // Check if this process has the BLUETOOTH permission or not.
         mHasBluetoothPermission = hasPermission(
                 android.Manifest.permission.BLUETOOTH);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mHasBluetoothPermission &= ApiHelperForS.hasBluetoothConnectPermission();
+        }
 
         // Add a Bluetooth headset to the list of available devices if a BT
         // headset is detected and if we have the BLUETOOTH permission.
@@ -633,11 +635,9 @@ class AudioManagerAndroid {
      * peripheral and automatically routes audio playback and capture appropriately on Android5.0
      * and higher in the order of wired headset first, then USB audio device and earpiece at last.
      */
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     private boolean hasUsbAudio() {
         // Android 5.0 (API level 21) and above supports USB audio class 1 (UAC1) features for
         // audio functions, capture and playback, in host mode.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false;
 
         boolean hasUsbAudio = false;
         // UsbManager fails internally with NullPointerException on the emulator created without
@@ -1083,8 +1083,9 @@ class AudioManagerAndroid {
                     // slider all the way down in communication mode but the callback
                     // implementation can ensure that the volume is completely muted.
                     int volume = mAudioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
-                    if (DEBUG) logd("nativeSetMute: " + (volume == 0));
-                    nativeSetMute(mNativeAudioManagerAndroid, (volume == 0));
+                    if (DEBUG) logd("AudioManagerAndroidJni.get().setMute: " + (volume == 0));
+                    AudioManagerAndroidJni.get().setMute(
+                            mNativeAudioManagerAndroid, AudioManagerAndroid.this, (volume == 0));
                 }
         };
 
@@ -1199,5 +1200,88 @@ class AudioManagerAndroid {
         mUsbAudioReceiver = null;
     }
 
-    private native void nativeSetMute(long nativeAudioManagerAndroid, boolean muted);
+    /** Return the AudioDeviceInfo array as reported by the Android OS. */
+    private static AudioDeviceInfo[] getAudioDeviceInfo() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+            return new AudioDeviceInfo[0];
+        }
+
+        AudioManager audioManager =
+                (AudioManager) ContextUtils.getApplicationContext().getSystemService(
+                        Context.AUDIO_SERVICE);
+        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+    }
+
+    /** Returns whether an audio sink device is connected. */
+    @CalledByNative
+    private static boolean isAudioSinkConnected() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+            return false;
+        }
+
+        for (AudioDeviceInfo deviceInfo : getAudioDeviceInfo()) {
+            if (deviceInfo.isSink()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns a bit mask of Audio Formats (C++ AudioParameters::Format enum)
+     * supported by all of the sink devices.
+     */
+    @CalledByNative
+    private static int getAudioEncodingFormatsSupported() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+            return 0;
+        }
+
+        int intersection_mask = 0; // intersection of multiple device encoding arrays
+        boolean first = true;
+        for (AudioDeviceInfo deviceInfo : getAudioDeviceInfo()) {
+            int[] encodings = deviceInfo.getEncodings();
+            if (encodings.length > 0) {
+                int mask = 0; // bit mask for a single device
+
+                // Map AudioFormat values to C++ media/base/audio_parameters.h Format enum
+                for (int i : encodings) {
+                    switch (i) {
+                        case AudioFormat.ENCODING_PCM_16BIT:
+                            mask |= AudioEncodingFormat.PCM_LINEAR;
+                            break;
+                        case AudioFormat.ENCODING_AC3:
+                            mask |= AudioEncodingFormat.BITSTREAM_AC3;
+                            break;
+                        case AudioFormat.ENCODING_E_AC3:
+                            mask |= AudioEncodingFormat.BITSTREAM_EAC3;
+                            break;
+                        case AudioFormat.ENCODING_DTS:
+                            mask |= AudioEncodingFormat.BITSTREAM_DTS;
+                            break;
+                        case AudioFormat.ENCODING_DTS_HD:
+                            mask |= AudioEncodingFormat.BITSTREAM_DTS_HD;
+                            break;
+                        case AudioFormat.ENCODING_IEC61937:
+                            mask |= AudioEncodingFormat.BITSTREAM_IEC61937;
+                            break;
+                    }
+                }
+
+                // Require all devices to support a format
+                if (first) {
+                    first = false;
+                    intersection_mask = mask;
+                } else {
+                    intersection_mask &= mask;
+                }
+            }
+        }
+        return intersection_mask;
+    }
+
+    @NativeMethods
+    interface Natives {
+        void setMute(long nativeAudioManagerAndroid, AudioManagerAndroid caller, boolean muted);
+    }
 }

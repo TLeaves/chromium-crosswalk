@@ -10,23 +10,23 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/debug/alias.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop.h"
-#include "base/strings/string_util.h"
+#include "base/message_loop/message_pump_type.h"
+#include "base/task/current_thread.h"
 #include "build/build_config.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "remoting/base/auto_thread.h"
 #include "remoting/base/auto_thread_task_runner.h"
 #include "remoting/host/chromoting_messages.h"
+#include "remoting/host/crash_process.h"
 #include "remoting/host/desktop_environment.h"
 #include "remoting/host/desktop_session_agent.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "base/win/windows_version.h"
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
 namespace remoting {
 
@@ -38,10 +38,9 @@ DesktopProcess::DesktopProcess(
     : caller_task_runner_(caller_task_runner),
       input_task_runner_(input_task_runner),
       io_task_runner_(io_task_runner),
-      daemon_channel_handle_(std::move(daemon_channel_handle)),
-      weak_factory_(this) {
+      daemon_channel_handle_(std::move(daemon_channel_handle)) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
-  DCHECK(base::MessageLoopCurrentForUI::IsSet());
+  DCHECK(base::CurrentUIThread::IsSet());
 }
 
 DesktopProcess::~DesktopProcess() {
@@ -61,15 +60,23 @@ void DesktopProcess::OnNetworkProcessDisconnected() {
   OnChannelError();
 }
 
+void DesktopProcess::CrashNetworkProcess(const base::Location& location) {
+  DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  LOG(ERROR) << "Asking the daemon process to crash the network process. "
+             << "Request originated from: " << location.ToString();
+  desktop_session_request_handler_->CrashNetworkProcess();
+}
+
 void DesktopProcess::InjectSas() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
-  daemon_channel_->Send(new ChromotingDesktopDaemonMsg_InjectSas());
+  desktop_session_request_handler_->InjectSecureAttentionSequence();
 }
 
 void DesktopProcess::LockWorkstation() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   if (base::win::OSInfo::GetInstance()->version_type() ==
       base::win::VersionType::SUITE_HOME) {
     return;
@@ -80,7 +87,7 @@ void DesktopProcess::LockWorkstation() {
   }
 #else
   NOTREACHED();
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 bool DesktopProcess::OnMessageReceived(const IPC::Message& message) {
@@ -109,6 +116,7 @@ void DesktopProcess::OnChannelError() {
     desktop_agent_->Stop();
     desktop_agent_ = nullptr;
   }
+  desktop_session_request_handler_.reset();
 
   caller_task_runner_ = nullptr;
   input_task_runner_ = nullptr;
@@ -126,36 +134,37 @@ bool DesktopProcess::Start(
 
   // Launch the audio capturing thread.
   scoped_refptr<AutoThreadTaskRunner> audio_task_runner;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   // On Windows the AudioCapturer requires COM, so we run a single-threaded
   // apartment, which requires a UI thread.
-  audio_task_runner =
-      AutoThread::CreateWithLoopAndComInitTypes("ChromotingAudioThread",
-                                                caller_task_runner_,
-                                                base::MessageLoop::TYPE_UI,
-                                                AutoThread::COM_INIT_STA);
-#else // !defined(OS_WIN)
+  audio_task_runner = AutoThread::CreateWithLoopAndComInitTypes(
+      "ChromotingAudioThread", caller_task_runner_, base::MessagePumpType::UI,
+      AutoThread::COM_INIT_STA);
+#else   // !BUILDFLAG(IS_WIN)
   audio_task_runner = AutoThread::CreateWithType(
-      "ChromotingAudioThread", caller_task_runner_, base::MessageLoop::TYPE_IO);
-#endif  // !defined(OS_WIN)
+      "ChromotingAudioThread", caller_task_runner_, base::MessagePumpType::IO);
+#endif  // !BUILDFLAG(IS_WIN)
 
   // Create a desktop agent.
   desktop_agent_ =
       new DesktopSessionAgent(audio_task_runner, caller_task_runner_,
                               input_task_runner_, io_task_runner_);
 
-  // Start the agent and create an IPC channel to talk to it.
+  // Initialize the agent and create an IPC channel to talk to it.
   mojo::ScopedMessagePipeHandle desktop_pipe =
-      desktop_agent_->Start(weak_factory_.GetWeakPtr());
+      desktop_agent_->Initialize(weak_factory_.GetWeakPtr());
 
   // Connect to the daemon.
   daemon_channel_ = IPC::ChannelProxy::Create(
       daemon_channel_handle_.release(), IPC::Channel::MODE_CLIENT, this,
       io_task_runner_, base::ThreadTaskRunnerHandle::Get());
 
+  daemon_channel_->GetRemoteAssociatedInterface(
+      &desktop_session_request_handler_);
+
   // Pass |desktop_pipe| to the daemon.
-  daemon_channel_->Send(
-      new ChromotingDesktopDaemonMsg_DesktopAttached(desktop_pipe.release()));
+  desktop_session_request_handler_->ConnectDesktopChannel(
+      std::move(desktop_pipe));
 
   return true;
 }
@@ -163,14 +172,8 @@ bool DesktopProcess::Start(
 void DesktopProcess::OnCrash(const std::string& function_name,
                              const std::string& file_name,
                              const int& line_number) {
-  char message[1024];
-  base::snprintf(message, sizeof(message),
-                 "Requested by %s at %s, line %d.",
-                 function_name.c_str(), file_name.c_str(), line_number);
-  base::debug::Alias(message);
-
   // The daemon requested us to crash the process.
-  CHECK(false) << message;
+  CrashProcess(function_name, file_name, line_number);
 }
 
 } // namespace remoting

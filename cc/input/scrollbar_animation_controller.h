@@ -5,7 +5,10 @@
 #ifndef CC_INPUT_SCROLLBAR_ANIMATION_CONTROLLER_H_
 #define CC_INPUT_SCROLLBAR_ANIMATION_CONTROLLER_H_
 
+#include <memory>
+
 #include "base/cancelable_callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "cc/cc_export.h"
@@ -24,6 +27,7 @@ class CC_EXPORT ScrollbarAnimationControllerClient {
   virtual void SetNeedsAnimateForScrollbarAnimation() = 0;
   virtual void DidChangeScrollbarVisibility() = 0;
   virtual ScrollbarSet ScrollbarsFor(ElementId scroll_element_id) const = 0;
+  virtual bool IsFluentScrollbar() const = 0;
 
  protected:
   virtual ~ScrollbarAnimationControllerClient() {}
@@ -72,17 +76,13 @@ class CC_EXPORT ScrollbarAnimationController {
   // Effect both Android and Aura Overlay Scrollbar.
   void DidScrollUpdate();
 
-  void DidScrollBegin();
-  void DidScrollEnd();
-
   void DidMouseDown();
   void DidMouseUp();
   void DidMouseLeave();
   void DidMouseMove(const gfx::PointF& device_viewport_point);
 
-  // Called when Blink wants to show the scrollbars (via
-  // ScrollableArea::showOverlayScrollbars).
-  void DidRequestShowFromMainThread();
+  // Called when we want to show the scrollbars.
+  void DidRequestShow();
 
   void UpdateTickmarksVisibility(bool show);
 
@@ -98,7 +98,7 @@ class CC_EXPORT ScrollbarAnimationController {
 
  private:
   // Describes whether the current animation should FadeIn or FadeOut.
-  enum AnimationChange { NONE, FADE_IN, FADE_OUT };
+  enum class AnimationChange { NONE, FADE_IN, FADE_OUT };
 
   ScrollbarAnimationController(ElementId scroll_element_id,
                                ScrollbarAnimationControllerClient* client,
@@ -136,7 +136,7 @@ class CC_EXPORT ScrollbarAnimationController {
 
   void ApplyOpacityToScrollbars(float opacity);
 
-  ScrollbarAnimationControllerClient* client_;
+  raw_ptr<ScrollbarAnimationControllerClient> client_;
 
   base::TimeTicks last_awaken_time_;
 
@@ -150,8 +150,6 @@ class CC_EXPORT ScrollbarAnimationController {
   AnimationChange animation_change_;
 
   const ElementId scroll_element_id_;
-  bool currently_scrolling_;
-  bool show_in_fast_scroll_;
 
   base::CancelableOnceClosure delayed_scrollbar_animation_;
 
@@ -159,6 +157,9 @@ class CC_EXPORT ScrollbarAnimationController {
 
   const bool show_scrollbars_on_scroll_gesture_;
   const bool need_thinning_animation_;
+  // Controls whether an overlay scrollbar should fade in/out. Should be True
+  // for Aura overlay scrollbars and False for Fluent overlay scrollbars.
+  const bool need_fade_animation_;
 
   bool is_mouse_down_;
 

@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webgl/oes_texture_float.h"
 
+#include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+
 namespace blink {
 
 OESTextureFloat::OESTextureFloat(WebGLRenderingContextBase* context)
@@ -45,10 +47,6 @@ OESTextureFloat::OESTextureFloat(WebGLRenderingContextBase* context)
 
 WebGLExtensionName OESTextureFloat::GetName() const {
   return kOESTextureFloatName;
-}
-
-OESTextureFloat* OESTextureFloat::Create(WebGLRenderingContextBase* context) {
-  return MakeGarbageCollected<OESTextureFloat>(context);
 }
 
 bool OESTextureFloat::Supported(WebGLRenderingContextBase* context) {

@@ -2,19 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stl_util.h"
+#include <memory>
+
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "content/browser/devtools/protocol/devtools_protocol_test_support.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/common/content_features.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "base/files/scoped_temp_dir.h"
 #include "content/browser/renderer_host/dwrite_font_lookup_table_builder_win.h"
 #endif
@@ -22,15 +24,13 @@
 namespace content {
 namespace {
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 const char* kExpectedFontFamilyNames[] = {"AndroidClock",
                                           "Roboto",
                                           "Droid Sans Mono",
                                           "Roboto",
                                           "Noto Color Emoji",
                                           "Noto Sans Bengali",
-                                          "Noto Sans Bengali",
-                                          "Noto Sans Bengali UI",
                                           "Noto Sans Bengali UI",
                                           "Noto Sans Devanagari",
                                           "Noto Sans Devanagari",
@@ -66,7 +66,7 @@ const char* kExpectedFontFamilyNames[] = {"AndroidClock",
                                           "Roboto Condensed",
                                           "Roboto Condensed",
                                           "Roboto"};
-#elif defined(OS_LINUX)
+#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 const char* kExpectedFontFamilyNames[] = {"Ahem",
                                           "Arimo",
                                           "Arimo",
@@ -93,7 +93,7 @@ const char* kExpectedFontFamilyNames[] = {"Ahem",
                                           "Tinos",
                                           "Mukti Narrow",
                                           "Tinos"};
-#elif defined(OS_MACOSX)
+#elif BUILDFLAG(IS_MAC)
 const char* kExpectedFontFamilyNames[] = {"American Typewriter",
                                           "Arial Narrow",
                                           "Baskerville",
@@ -104,7 +104,7 @@ const char* kExpectedFontFamilyNames[] = {"American Typewriter",
                                           "Malayalam Sangam MN",
                                           "Hiragino Maru Gothic Pro",
                                           "Hiragino Kaku Gothic StdN"};
-#elif defined(OS_WIN)
+#elif BUILDFLAG(IS_WIN)
 const char* kExpectedFontFamilyNames[] = {"Cambria Math", "MingLiU_HKSCS-ExtB",
                                           "NSimSun", "Calibri"};
 #endif
@@ -118,89 +118,76 @@ class FontUniqueNameBrowserTest : public DevToolsProtocolTest {
     feature_list_.InitAndEnableFeature(features::kFontSrcLocalMatching);
   }
 
-#if defined(OS_WIN)
-  // The Windows service for font unique name lookup needs a cache directory to
-  // persist the cached information. Configure a temporary one before running
-  // this test.
-  void SetUpInProcessBrowserTestFixture() override {
-    DevToolsProtocolTest::SetUpInProcessBrowserTestFixture();
-    DWriteFontLookupTableBuilder* table_builder =
-        DWriteFontLookupTableBuilder::GetInstance();
-    ASSERT_TRUE(cache_directory_.CreateUniqueTempDir());
-    table_builder->SetCacheDirectoryForTesting(cache_directory_.GetPath());
-  }
-#endif
-
   void LoadAndWait(const std::string& url) {
     base::ScopedAllowBlockingForTesting blocking_for_load;
     ASSERT_TRUE(embedded_test_server()->Start());
     TestNavigationObserver navigation_observer(
         static_cast<WebContentsImpl*>(shell()->web_contents()));
-    NavigateToURL(shell(), embedded_test_server()->GetURL("a.com", url));
+    EXPECT_TRUE(
+        NavigateToURL(shell(), embedded_test_server()->GetURL("a.com", url)));
     ASSERT_TRUE(navigation_observer.last_navigation_succeeded());
   }
 
  private:
   base::test::ScopedFeatureList feature_list_;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   base::ScopedTempDir cache_directory_;
 #endif
 };
 
-#if !defined(OS_FUCHSIA)
-IN_PROC_BROWSER_TEST_F(FontUniqueNameBrowserTest, ContentLocalFontsMatching) {
+// TODO(crbug.com/949181): Make this work on Fuchsia.
+#if !BUILDFLAG(IS_FUCHSIA)
+// TODO(crbug.com/1270151): Fix this on Android 11 and 12.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_ContentLocalFontsMatching DISABLED_ContentLocalFontsMatching
+#else
+#define MAYBE_ContentLocalFontsMatching ContentLocalFontsMatching
+#endif
+IN_PROC_BROWSER_TEST_F(FontUniqueNameBrowserTest,
+                       MAYBE_ContentLocalFontsMatching) {
   LoadAndWait("/font_src_local_matching.html");
   Attach();
 
-  base::Value* dom_enable_result = SendCommand("DOM.enable", nullptr, true);
-  ASSERT_TRUE(dom_enable_result);
-
-  base::Value* css_enable_result = SendCommand("CSS.enable", nullptr, true);
-  ASSERT_TRUE(css_enable_result);
+  ASSERT_TRUE(SendCommand("DOM.enable", nullptr, true));
+  ASSERT_TRUE(SendCommand("CSS.enable", nullptr, true));
 
   unsigned num_added_nodes = static_cast<unsigned>(
       content::EvalJs(shell(), "addTestNodes()").ExtractInt());
-  ASSERT_EQ(num_added_nodes, base::size(kExpectedFontFamilyNames));
+  ASSERT_EQ(num_added_nodes, std::size(kExpectedFontFamilyNames));
 
   std::unique_ptr<base::DictionaryValue> params =
       std::make_unique<base::DictionaryValue>();
   params->SetInteger("depth", 0);
-  base::Value* result = SendCommand("DOM.getDocument", std::move(params));
-  result = result->FindPath({"root", "nodeId"});
-  ASSERT_TRUE(result);
-  ASSERT_TRUE(result->is_int());
+  const base::Value::Dict* result =
+      SendCommand("DOM.getDocument", std::move(params));
+  int nodeId = *result->FindIntByDottedPath("root.nodeId");
 
-  params.reset(new base::DictionaryValue());
-  params->SetInteger("nodeId", result->GetInt());
+  params = std::make_unique<base::DictionaryValue>();
+  params->SetInteger("nodeId", nodeId);
   params->SetString("selector", ".testnode");
   result = SendCommand("DOM.querySelectorAll", std::move(params));
   // This needs a Clone() because node_list otherwise gets invalid after the
   // next SendCommand call.
-  base::Value node_list =
-      result->FindKeyOfType("nodeIds", base::Value::Type::LIST)->Clone();
-  std::vector<base::Value>& nodes_vector = node_list.GetList();
-  ASSERT_EQ(nodes_vector.size(), num_added_nodes);
-  ASSERT_EQ(nodes_vector.size(), base::size(kExpectedFontFamilyNames));
-  for (size_t i = 0; i < nodes_vector.size(); ++i) {
-    base::Value& nodeId = nodes_vector[i];
-    params.reset(new base::DictionaryValue());
+  const base::Value::List nodes_view = result->FindList("nodeIds")->Clone();
+  ASSERT_EQ(nodes_view.size(), num_added_nodes);
+  ASSERT_EQ(nodes_view.size(), std::size(kExpectedFontFamilyNames));
+  for (size_t i = 0; i < nodes_view.size(); ++i) {
+    const base::Value& nodeId = nodes_view[i];
+    params = std::make_unique<base::DictionaryValue>();
     params->SetInteger("nodeId", nodeId.GetInt());
-    base::Value* font_info =
+    const base::Value::Dict* font_info =
         SendCommand("CSS.getPlatformFontsForNode", std::move(params));
     ASSERT_TRUE(font_info);
-    ASSERT_TRUE(font_info->is_dict());
-    base::Value* font_list = font_info->FindKey("fonts");
+    const base::Value::List* font_list = font_info->FindList("fonts");
     ASSERT_TRUE(font_list);
-    ASSERT_TRUE(font_list->is_list());
-    std::vector<base::Value>& font_info_list = font_list->GetList();
-    ASSERT_TRUE(font_info_list.size());
-    base::Value& first_font_info = font_info_list[0];
+    ASSERT_TRUE(font_list->size());
+    const base::Value& first_font_info = font_list->front();
     ASSERT_TRUE(first_font_info.is_dict());
-    base::Value* first_font_name = first_font_info.FindKey("familyName");
+    const std::string* first_font_name =
+        first_font_info.GetDict().FindString("familyName");
     ASSERT_TRUE(first_font_name);
-    ASSERT_TRUE(first_font_name->is_string());
-    ASSERT_GT(first_font_name->GetString().size(), 0u);
-    ASSERT_EQ(first_font_name->GetString(), kExpectedFontFamilyNames[i]);
+    ASSERT_GT(first_font_name->size(), 0u);
+    ASSERT_EQ(*first_font_name, kExpectedFontFamilyNames[i]);
   }
 }
 #endif

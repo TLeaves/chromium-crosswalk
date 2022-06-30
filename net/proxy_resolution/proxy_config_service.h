@@ -27,7 +27,7 @@ class NET_EXPORT ProxyConfigService {
   // Observer for being notified when the proxy settings have changed.
   class NET_EXPORT Observer {
    public:
-    virtual ~Observer() {}
+    virtual ~Observer() = default;
     // Notification callback that should be invoked by ProxyConfigService
     // implementors whenever the configuration changes. |availability| indicates
     // the new availability status and can be CONFIG_UNSET or CONFIG_VALID (in
@@ -37,7 +37,7 @@ class NET_EXPORT ProxyConfigService {
                                       ConfigAvailability availability) = 0;
   };
 
-  virtual ~ProxyConfigService() {}
+  virtual ~ProxyConfigService() = default;
 
   // Adds/Removes an observer that will be called whenever the proxy
   // configuration has changed.
@@ -54,8 +54,8 @@ class NET_EXPORT ProxyConfigService {
   virtual ConfigAvailability GetLatestProxyConfig(
       ProxyConfigWithAnnotation* config) = 0;
 
-  // ProxyResolutionService will call this periodically during periods of
-  // activity. It can be used as a signal for polling-based implementations.
+  // ConfiguredProxyResolutionService will call this periodically during periods
+  // of activity. It can be used as a signal for polling-based implementations.
   //
   // Note that this is purely used as an optimization -- polling
   // implementations could simply set a global timer that goes off every

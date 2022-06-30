@@ -13,7 +13,6 @@
 
 #include "base/base_switches.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -44,22 +43,25 @@ namespace {
 
 // Switches to propagate to the sandbox target process.
 const char* kSwitchesToPropagate[] = {
-    kEnableCrashReportingSwitch, kExecutionModeSwitch,
-    kExtendedSafeBrowsingEnabledSwitch, switches::kTestChildProcess,
+    kEnableCrashReportingSwitch,
+    kExecutionModeSwitch,
+    kExtendedSafeBrowsingEnabledSwitch,
+    switches::kTestChildProcess,
+    kTestingSwitch,
+    kTestLoggingPathSwitch,
 };
 
 std::map<SandboxType, base::Process>* g_target_processes = nullptr;  // Leaked.
 
-scoped_refptr<sandbox::TargetPolicy> GetSandboxPolicy(
+std::unique_ptr<sandbox::TargetPolicy> GetSandboxPolicy(
     sandbox::BrokerServices* sandbox_broker_services) {
-  scoped_refptr<sandbox::TargetPolicy> policy(
-      sandbox_broker_services->CreatePolicy());
+  auto policy = sandbox_broker_services->CreatePolicy();
 
   sandbox::ResultCode sandbox_result = policy->SetTokenLevel(
       sandbox::USER_RESTRICTED_SAME_ACCESS, sandbox::USER_LOCKDOWN);
   CHECK_EQ(sandbox::SBOX_ALL_OK, sandbox_result);
 
-  sandbox_result = policy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0);
+  sandbox_result = policy->SetJobLevel(sandbox::JobLevel::kLockdown, 0);
   CHECK_EQ(sandbox::SBOX_ALL_OK, sandbox_result);
 
 #ifdef NDEBUG
@@ -168,7 +170,7 @@ ResultCode SandboxTargetHooks::TargetStartedWithHighPrivileges() {
 
 SandboxType SandboxProcessType() {
   // This should only be called by children processes.
-  DCHECK(sandbox::SandboxFactory::GetTargetServices() != nullptr);
+  DCHECK(sandbox::SandboxFactory::GetTargetServices());
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   int val = -1;
@@ -219,7 +221,7 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
   if (g_target_processes->erase(type))
     DCHECK_EQ(SandboxType::kTest, type);
 
-  base::ScopedClosureRunner notify_hooks_on_failure(base::DoNothing::Once());
+  base::ScopedClosureRunner notify_hooks_on_failure;
 
   if (hooks) {
     // Unretained is safe because |hooks| lives for the entire enclosing scope.
@@ -241,8 +243,7 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
     return RESULT_CODE_FAILED_TO_START_SANDBOX_PROCESS;
   }
 
-  scoped_refptr<sandbox::TargetPolicy> policy =
-      GetSandboxPolicy(sandbox_broker_services);
+  auto policy = GetSandboxPolicy(sandbox_broker_services);
   base::CommandLine command_line = sandbox_command_line;
 
   // Create an event so the sandboxed process can notify the broker when it
@@ -254,7 +255,7 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
           base::WaitableEvent::InitialState::NOT_SIGNALED);
   command_line.AppendSwitchNative(
       chrome_cleaner::kInitDoneNotifierSwitch,
-      base::NumberToString16(
+      base::NumberToWString(
           base::win::HandleToUint32(init_done_event->handle())));
   policy->AddHandleToShare(init_done_event->handle());
 
@@ -273,12 +274,13 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
             << command_line.GetArgumentsString();
   sandbox::ResultCode sandbox_result = sandbox_broker_services->SpawnTarget(
       command_line.GetProgram().value().c_str(),
-      command_line.GetCommandLineString().c_str(), policy, &last_sbox_warning,
-      &last_win_error, &temp_process_info);
+      command_line.GetCommandLineString().c_str(), std::move(policy),
+      &last_sbox_warning, &last_win_error, &temp_process_info);
   if (sandbox_result != sandbox::SBOX_ALL_OK) {
     LOG(DFATAL) << "Failed to spawn sandbox target: " << sandbox_result
-                << " , last sandbox warning : " << last_sbox_warning
-                << " , last windows error: " << last_win_error;
+                << ", last sandbox warning: " << last_sbox_warning
+                << ", last windows error: "
+                << logging::SystemErrorCodeToString(last_win_error);
     return RESULT_CODE_FAILED_TO_START_SANDBOX_PROCESS;
   }
 
@@ -319,10 +321,21 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
       DWORD exit_code = -1;
       BOOL result = ::GetExitCodeProcess(process_handle.Handle(), &exit_code);
       DCHECK(result);
-      LOG(ERROR)
-          << "Sandboxed process exited before signaling it was initialized, "
-             "exit code: "
-          << exit_code;
+      // Windows error codes such as 0xC0000005 and 0xC0000409 are much easier
+      // to recognize and differentiate in hex.
+      if (static_cast<int>(exit_code) < -100) {
+        LOG(ERROR)
+            << "Sandboxed process exited before signaling it was initialized, "
+               "exit code: 0x"
+            << std::hex << exit_code;
+      } else {
+        // Print other error codes as a signed integer so that small negative
+        // numbers are also recognizable.
+        LOG(ERROR)
+            << "Sandboxed process exited before signaling it was initialized, "
+               "exit code: "
+            << static_cast<int>(exit_code);
+      }
     } else {
       PLOG(ERROR) << "::WaitForMultipleObjects returned an unexpected error, "
                   << wait_result;
@@ -341,8 +354,8 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
   // global that will be cleaned up by the OS on exit, so that it can be polled
   // in |IsSandboxTargetRunning|.
   g_target_processes->emplace(type, base::Process(std::move(process_handle)));
-  terminate_process_on_failure.ReplaceClosure(base::DoNothing::Once());
-  notify_hooks_on_failure.ReplaceClosure(base::DoNothing::Once());
+  terminate_process_on_failure.ReplaceClosure(base::NullCallback());
+  notify_hooks_on_failure.ReplaceClosure(base::NullCallback());
 
   return RESULT_CODE_SUCCESS;
 }

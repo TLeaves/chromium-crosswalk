@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assertArrayEquals, assertEquals} from 'chrome://webui-test/chai_assert.js';
+
+import {FileListModel} from './file_list_model.js';
+import {MetadataModel} from './metadata/metadata_model.js';
+
 const TEST_METADATA = {
   'a.txt': {
     contentMimeType: 'text/plain',
@@ -49,9 +54,9 @@ function makeSimpleFileListModel(names) {
 function createFakeMetadataModel(data) {
   return /** @type {!MetadataModel} */ ({
     getCache: (entries, names) => {
-      let result = [];
+      const result = [];
       for (let i = 0; i < entries.length; i++) {
-        let metadata = {};
+        const metadata = {};
         if (!entries[i].isDirectory && data[entries[i].name]) {
           for (let j = 0; j < names.length; j++) {
             metadata[names[j]] = data[entries[i].name][names[j]];
@@ -64,7 +69,7 @@ function createFakeMetadataModel(data) {
   });
 }
 
-function testIsImageDominant() {
+export function testIsImageDominant() {
   const fileListModel =
       new FileListModel(createFakeMetadataModel(TEST_METADATA));
 
@@ -92,7 +97,7 @@ function testIsImageDominant() {
   assertEquals(fileListModel.isImageDominant(), true);
 }
 
-function testSortWithFolders() {
+export function testSortWithFolders() {
   const fileListModel =
       new FileListModel(createFakeMetadataModel(TEST_METADATA));
   fileListModel.push({name: 'dirA', isDirectory: true});
@@ -124,7 +129,7 @@ function testSortWithFolders() {
       fileListModel, ['dirB', 'dirA', 'a.txt', 'b.html', 'c.jpg']);
 }
 
-function testSplice() {
+export function testSplice() {
   const fileListModel = makeSimpleFileListModel(['d', 'a', 'x', 'n']);
   fileListModel.sort('name', 'asc');
 
@@ -145,7 +150,7 @@ function testSplice() {
   assertFileListModelElementNames(fileListModel, ['a', 'b', 'd', 'p', 'x']);
 }
 
-function testSpliceWithoutSortStatus() {
+export function testSpliceWithoutSortStatus() {
   const fileListModel = makeSimpleFileListModel(['d', 'a', 'x', 'n']);
 
   fileListModel.addEventListener('splice', event => {
@@ -168,7 +173,7 @@ function testSpliceWithoutSortStatus() {
   assertFileListModelElementNames(fileListModel, ['d', 'a', 'p', 'b', 'n']);
 }
 
-function testSpliceWithoutAddingNewItems() {
+export function testSpliceWithoutAddingNewItems() {
   const fileListModel = makeSimpleFileListModel(['d', 'a', 'x', 'n']);
   fileListModel.sort('name', 'asc');
 
@@ -189,7 +194,7 @@ function testSpliceWithoutAddingNewItems() {
   assertFileListModelElementNames(fileListModel, ['a', 'd', 'x']);
 }
 
-function testSpliceWithoutDeletingItems() {
+export function testSpliceWithoutDeletingItems() {
   const fileListModel = makeSimpleFileListModel(['d', 'a', 'x', 'n']);
   fileListModel.sort('name', 'asc');
 

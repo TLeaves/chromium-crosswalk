@@ -4,25 +4,24 @@
 
 #include "net/proxy_resolution/mock_pac_file_fetcher.h"
 
+#include <string>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/run_loop.h"
-#include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 
 namespace net {
 
-MockPacFileFetcher::MockPacFileFetcher()
-    : pending_request_text_(nullptr), is_shutdown_(false) {}
+MockPacFileFetcher::MockPacFileFetcher() = default;
 
 MockPacFileFetcher::~MockPacFileFetcher() = default;
 
 // PacFileFetcher implementation.
 int MockPacFileFetcher::Fetch(
     const GURL& url,
-    base::string16* text,
+    std::u16string* text,
     CompletionOnceCallback callback,
     const NetworkTrafficAnnotationTag traffic_annotation) {
   DCHECK(!has_pending_request());

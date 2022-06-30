@@ -72,8 +72,6 @@ class HudWithRootLayerChange : public HeadsUpDisplayTest {
     }
   }
 
-  void AfterTest() override {}
-
  private:
   scoped_refptr<Layer> root_layer1_;
   scoped_refptr<Layer> root_layer2_;
@@ -95,11 +93,32 @@ class HeadsUpDisplaySizeWithFPS : public LayerTreeTest {
     EXPECT_EQ(gfx::Size(256, 256), layer_tree_host()->hud_layer()->bounds());
     EndTest();
   }
-
-  void AfterTest() override {}
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(HeadsUpDisplaySizeWithFPS);
+
+class HeadsUpDisplaySizeWithFPSWithScaleFactor : public LayerTreeTest {
+ public:
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    settings->use_painted_device_scale_factor = true;
+    settings->initial_debug_state.show_fps_counter = true;
+  }
+
+  void SetupTree() override {
+    SetInitialDeviceScaleFactor(3.f);
+    LayerTreeTest::SetupTree();
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void DidCommit() override {
+    ASSERT_TRUE(layer_tree_host()->hud_layer());
+    EXPECT_EQ(gfx::Size(768, 768), layer_tree_host()->hud_layer()->bounds());
+    EndTest();
+  }
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(HeadsUpDisplaySizeWithFPSWithScaleFactor);
 
 }  // namespace
 }  // namespace cc

@@ -5,8 +5,10 @@
 #include "content/browser/scheduler/responsiveness/native_event_observer.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
+#include "base/memory/raw_ptr.h"
 #include "base/win/message_window.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/content_browser_test.h"
 
 namespace content {
@@ -36,8 +38,8 @@ class ResponsivenessNativeEventObserverBrowserTest : public ContentBrowserTest {
   }
 
  protected:
-  const void* will_run_id_ = nullptr;
-  const void* did_run_id_ = nullptr;
+  raw_ptr<const void> will_run_id_ = nullptr;
+  raw_ptr<const void> did_run_id_ = nullptr;
   base::OnceClosure quit_closure_;
 };
 

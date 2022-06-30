@@ -22,7 +22,8 @@ class FakeNetworkManager : public rtc::NetworkManager {
   // rtc::NetworkManager interface.
   void StartUpdating() override;
   void StopUpdating() override;
-  void GetNetworks(NetworkList* networks) const override;
+  std::vector<const rtc::Network*> GetNetworks() const override;
+  std::vector<const rtc::Network*> GetAnyAddressNetworks() override;
 
  protected:
   void SendNetworksChangedSignal();
@@ -30,7 +31,7 @@ class FakeNetworkManager : public rtc::NetworkManager {
   bool started_;
   std::unique_ptr<rtc::Network> network_;
 
-  base::WeakPtrFactory<FakeNetworkManager> weak_factory_;
+  base::WeakPtrFactory<FakeNetworkManager> weak_factory_{this};
 };
 
 }  // namespace remoting

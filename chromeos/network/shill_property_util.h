@@ -9,9 +9,9 @@
 #include <string>
 
 #include "base/component_export.h"
+#include "components/onc/onc_constants.h"
 
 namespace base {
-class DictionaryValue;
 class Value;
 }
 
@@ -53,34 +53,39 @@ std::unique_ptr<NetworkUIData> GetUIDataFromValue(const base::Value& value);
 // |shill_dictionary|. If parsing fails or the field doesn't exist, returns
 // NULL.
 std::unique_ptr<NetworkUIData> GetUIDataFromProperties(
-    const base::DictionaryValue& shill_dictionary);
+    const base::Value& shill_dictionary);
 
 // Sets the UIData property in |shill_dictionary| to the serialization of
-// |ui_data|.
-void SetUIData(const NetworkUIData& ui_data,
-               base::DictionaryValue* shill_dictionary);
+// |ui_data|. Sets the ONCSource property in |shill_dictionary|,
+// derived from |ui_data|.
+void SetUIDataAndSource(const NetworkUIData& ui_data,
+                        base::Value* shill_dictionary);
+
+// Sets the RandomMACPolicy property in |shill_dictionary|.
+// This is only a temporary logic, until UI is present.
+COMPONENT_EXPORT(CHROMEOS_NETWORK)
+void SetRandomMACPolicy(::onc::ONCSource onc_source,
+                        base::Value* shill_dictionary);
 
 // Copy configuration properties required by Shill to identify a network in the
 // format that Shill expects on writes.
-// Only WiFi, VPN, Ethernet and EthernetEAP are supported. Wimax and Cellular
-// are not supported.
+// Only WiFi, VPN, Ethernet and EthernetEAP are supported. Cellular is not
+// supported.
 // If |properties_read_from_shill| is true, it is assumed that
 // |service_properties| has the format that Shill exposes on reads, as opposed
 // to property dictionaries which are sent to Shill. Returns true only if all
 // required properties could be copied.
-bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
+bool CopyIdentifyingProperties(const base::Value& service_properties,
                                const bool properties_read_from_shill,
-                               base::DictionaryValue* dest);
+                               base::Value* dest);
 
 // Compares the identifying configuration properties of |new_properties| and
 // |old_properties|, returns true if they are identical. |new_properties| must
 // have the form that Shill expects on writes. |old_properties| must have the
 // form that Shill exposes on reads. See also CopyIdentifyingProperties. Only
-// WiFi, VPN, Ethernet and EthernetEAP are supported. Wimax and Cellular are not
-// supported.
-bool DoIdentifyingPropertiesMatch(
-    const base::DictionaryValue& new_properties,
-    const base::DictionaryValue& old_properties);
+// WiFi, VPN, Ethernet and EthernetEAP are supported. Cellular is not supported.
+bool DoIdentifyingPropertiesMatch(const base::Value& new_properties,
+                                  const base::Value& old_properties);
 
 // Returns false if |key| is something that should not be logged either
 // because it is sensitive or noisy. Note: this is not necessarily
@@ -93,5 +98,13 @@ bool IsLoggableShillProperty(const std::string& key);
 }  // namespace shill_property_util
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove when this file is moved to ash.
+namespace ash {
+namespace shill_property_util {
+using ::chromeos::shill_property_util::GetSSIDFromProperties;
+using ::chromeos::shill_property_util::SetSSID;
+}  // namespace shill_property_util
+}  // namespace ash
 
 #endif  // CHROMEOS_NETWORK_SHILL_PROPERTY_UTIL_H_

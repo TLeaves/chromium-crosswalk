@@ -5,8 +5,8 @@
 #ifndef CHROMECAST_GRAPHICS_CAST_SCREEN_H_
 #define CHROMECAST_GRAPHICS_CAST_SCREEN_H_
 
-#include "base/macros.h"
 #include "chromecast/public/graphics_types.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/display/display.h"
 #include "ui/display/screen_base.h"
 
@@ -23,6 +23,10 @@ class CastBrowserMainParts;
 class CastScreen : public display::ScreenBase {
  public:
   CastScreen();
+
+  CastScreen(const CastScreen&) = delete;
+  CastScreen& operator=(const CastScreen&) = delete;
+
   ~CastScreen() override;
 
   // display::Screen overrides:
@@ -37,8 +41,20 @@ class CastScreen : public display::ScreenBase {
                         display::Display::Rotation rotation,
                         const gfx::Rect& bounds);
 
+  // Temporarily override the primary display settings with new bounds, scale
+  // factor, and rotation.
+  // The original display settings are stashed for later retrieval.
+  void OverridePrimaryDisplaySettings(const gfx::Rect& bounds,
+                                      float scale_factor,
+                                      display::Display::Rotation rotation);
+
+  // Restore stashed display settings stored by OverridePrimaryDisplaySettings.
+  // Returns true if stashed settings were applied. False if none were
+  // available.
+  bool RestorePrimaryDisplaySettings();
+
  private:
-  DISALLOW_COPY_AND_ASSIGN(CastScreen);
+  absl::optional<display::Display> stashed_display_settings_;
 };
 
 }  // namespace chromecast

@@ -16,13 +16,14 @@
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
-#include "ui/gl/buildflags.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_display_manager.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_switching_manager.h"
+#include "ui/gl/init/gl_initializer.h"
 
 #if defined(USE_EGL)
 #include "ui/gl/gl_egl_api_implementation.h"
@@ -50,11 +51,6 @@ bool InitializeOneOffForSandbox() {
     // Avoid switching to the discrete GPU just for this pixel
     // format selection.
     attribs.push_back(kCGLPFAAllowOfflineRenderers);
-  }
-  if (GetGLImplementation() == kGLImplementationAppleGL) {
-    attribs.push_back(kCGLPFARendererID);
-    attribs.push_back(
-        static_cast<CGLPixelFormatAttribute>(kCGLRendererGenericFloatID));
   }
   attribs.push_back(static_cast<CGLPixelFormatAttribute>(0));
 
@@ -94,10 +90,11 @@ bool InitializeStaticCGLInternal(GLImplementation implementation) {
 const char kGLESv2ANGLELibraryName[] = "libGLESv2.dylib";
 const char kEGLANGLELibraryName[] = "libEGL.dylib";
 
-const char kGLESv2SwiftShaderLibraryName[] = "libswiftshader_libGLESv2.dylib";
-const char kEGLSwiftShaderLibraryName[] = "libswiftshader_libEGL.dylib";
+bool InitializeStaticEGLInternalFromLibrary(GLImplementation implementation) {
+#if BUILDFLAG(USE_STATIC_ANGLE)
+  NOTREACHED();
+#endif
 
-bool InitializeStaticEGLInternal(GLImplementation implementation) {
   // Some unit test targets depend on Angle/SwiftShader but aren't built
   // as app bundles. In that case, the .dylib is next to the executable.
   base::FilePath base_dir;
@@ -111,25 +108,13 @@ bool InitializeStaticEGLInternal(GLImplementation implementation) {
     base_dir = base_dir.DirName();
   }
 
-  base::FilePath glesv2_path;
-  base::FilePath egl_path;
-  if (implementation == kGLImplementationSwiftShaderGL) {
-#if BUILDFLAG(ENABLE_SWIFTSHADER)
-    glesv2_path = base_dir.Append(kGLESv2SwiftShaderLibraryName);
-    egl_path = base_dir.Append(kEGLSwiftShaderLibraryName);
-#else
-    return false;
-#endif
-  } else {
-    glesv2_path = base_dir.Append(kGLESv2ANGLELibraryName);
-    egl_path = base_dir.Append(kEGLANGLELibraryName);
-  }
-
+  base::FilePath glesv2_path = base_dir.Append(kGLESv2ANGLELibraryName);
   base::NativeLibrary gles_library = LoadLibraryAndPrintError(glesv2_path);
   if (!gles_library) {
     return false;
   }
 
+  base::FilePath egl_path = base_dir.Append(kEGLANGLELibraryName);
   base::NativeLibrary egl_library = LoadLibraryAndPrintError(egl_path);
   if (!egl_library) {
     base::UnloadNativeLibrary(gles_library);
@@ -152,8 +137,26 @@ bool InitializeStaticEGLInternal(GLImplementation implementation) {
   // currently
   AddGLNativeLibrary(gles_library);
   AddGLNativeLibrary(egl_library);
-  SetGLImplementation(implementation);
 
+  return true;
+}
+
+bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
+#if BUILDFLAG(USE_STATIC_ANGLE)
+  if (implementation.gl == kGLImplementationEGLANGLE) {
+    // Use ANGLE if it is requested and it is statically linked
+    if (!InitializeStaticANGLEEGL())
+      return false;
+  } else if (!InitializeStaticEGLInternalFromLibrary(implementation.gl)) {
+    return false;
+  }
+#else
+  if (!InitializeStaticEGLInternalFromLibrary(implementation.gl)) {
+    return false;
+  }
+#endif  // !BUILDFLAG(USE_STATIC_ANGLE)
+
+  SetGLImplementationParts(implementation);
   InitializeStaticGLBindingsGL();
   InitializeStaticGLBindingsEGL();
 
@@ -163,32 +166,32 @@ bool InitializeStaticEGLInternal(GLImplementation implementation) {
 
 }  // namespace
 
-bool InitializeGLOneOffPlatform() {
+GLDisplay* InitializeGLOneOffPlatform(uint64_t system_device_id) {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
     case kGLImplementationDesktopGLCoreProfile:
-    case kGLImplementationAppleGL:
       if (!InitializeOneOffForSandbox()) {
         LOG(ERROR) << "GLSurfaceCGL::InitializeOneOff failed.";
-        return false;
       }
-      return true;
+      return GLDisplayManagerEGL::GetInstance()->GetDisplay(system_device_id);
 #if defined(USE_EGL)
     case kGLImplementationEGLGLES2:
-    case kGLImplementationEGLANGLE:
-    case kGLImplementationSwiftShaderGL:
-      if (!GLSurfaceEGL::InitializeOneOff(0)) {
+    case kGLImplementationEGLANGLE: {
+      GLDisplay* display = GLSurfaceEGL::InitializeOneOff(EGLDisplayPlatform(0),
+                                                          system_device_id);
+      if (!display) {
         LOG(ERROR) << "GLSurfaceEGL::InitializeOneOff failed.";
-        return false;
+        return nullptr;
       }
-      return true;
+      return display;
+    }
 #endif  // defined(USE_EGL)
     default:
-      return true;
+      return GLDisplayManagerEGL::GetInstance()->GetDisplay(system_device_id);
   }
 }
 
-bool InitializeStaticGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
@@ -200,20 +203,18 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
   // one-time initialization cost is small, between 2 and 5 ms.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
 
-  switch (implementation) {
+  switch (implementation.gl) {
     case kGLImplementationDesktopGL:
     case kGLImplementationDesktopGLCoreProfile:
-    case kGLImplementationAppleGL:
-      return InitializeStaticCGLInternal(implementation);
+      return InitializeStaticCGLInternal(implementation.gl);
 #if defined(USE_EGL)
     case kGLImplementationEGLGLES2:
     case kGLImplementationEGLANGLE:
-    case kGLImplementationSwiftShaderGL:
       return InitializeStaticEGLInternal(implementation);
 #endif  // #if defined(USE_EGL)
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
-      SetGLImplementation(implementation);
+      SetGLImplementationParts(implementation);
       InitializeStaticGLBindingsGL();
       return true;
     default:
@@ -223,13 +224,10 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
   return false;
 }
 
-void InitializeDebugGLBindings() {
-  InitializeDebugGLBindingsGL();
-}
-
-void ShutdownGLPlatform() {
+void ShutdownGLPlatform(GLDisplay* display) {
   ClearBindingsGL();
 #if defined(USE_EGL)
+  GLSurfaceEGL::ShutdownOneOff(static_cast<GLDisplayEGL*>(display));
   ClearBindingsEGL();
 #endif  // defined(USE_EGL)
 }

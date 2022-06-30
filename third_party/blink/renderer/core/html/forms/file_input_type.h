@@ -38,7 +38,7 @@
 #include "third_party/blink/renderer/core/html/forms/input_type.h"
 #include "third_party/blink/renderer/core/html/forms/keyboard_clickable_input_type_view.h"
 #include "third_party/blink/renderer/core/page/popup_opening_observer.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
 
@@ -48,15 +48,14 @@ class FileList;
 class CORE_EXPORT FileInputType final : public InputType,
                                         public KeyboardClickableInputTypeView,
                                         private FileChooserClient {
-  USING_GARBAGE_COLLECTED_MIXIN(FileInputType);
-
  public:
   FileInputType(HTMLInputElement&);
 
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
   using InputType::GetElement;
   static Vector<String> FilesFromFormControlState(const FormControlState&);
-  static FileList* CreateFileList(const FileChooserFileInfoList& files,
+  static FileList* CreateFileList(ExecutionContext& context,
+                                  const FileChooserFileInfoList& files,
                                   const base::FilePath& base_dir);
 
   void CountUsage() override;
@@ -72,6 +71,8 @@ class CORE_EXPORT FileInputType final : public InputType,
   bool ValueMissing(const String&) const override;
   String ValueMissingText() const override;
   void HandleDOMActivateEvent(Event&) override;
+  void OpenPopupView() override;
+  void CustomStyleForLayoutObject(ComputedStyle& style) override;
   LayoutObject* CreateLayoutObject(const ComputedStyle&,
                                    LegacyLayout) const override;
   bool CanSetStringValue() const override;
@@ -88,10 +89,13 @@ class CORE_EXPORT FileInputType final : public InputType,
   bool ReceiveDroppedFiles(const DragData*) override;
   String DroppedFileSystemId() override;
   void CreateShadowSubtree() override;
+  HTMLInputElement* UploadButton() const override;
   void DisabledAttributeChanged() override;
   void MultipleAttributeChanged() override;
   String DefaultToolTip(const InputTypeView&) const override;
   void CopyNonAttributeProperties(const HTMLInputElement&) override;
+  String FileStatusText() const override;
+  void UpdateView() override;
 
   // KeyboardClickableInputTypeView overrides.
   void HandleKeypressEvent(KeyboardEvent&) override;
@@ -106,6 +110,7 @@ class CORE_EXPORT FileInputType final : public InputType,
   void WillOpenPopup() override;
 
   void SetFilesFromDirectory(const String&);
+  Node* FileStatusElement() const;
 
   Member<FileList> file_list_;
   String dropped_file_system_id_;

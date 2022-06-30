@@ -29,7 +29,7 @@
 #include "util/linux/auxiliary_vector.h"
 #include "util/linux/proc_stat_reader.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include <android/api-level.h>
 #endif
 
@@ -125,7 +125,8 @@ void ProcessReaderLinux::Thread::InitializeStackFromSP(
     LOG(WARNING) << "no stack mapping";
     return;
   }
-  LinuxVMAddress stack_region_start = stack_pointer;
+  LinuxVMAddress stack_region_start =
+      reader->Memory()->PointerToAddress(stack_pointer);
 
   // We've hit what looks like a guard page; skip to the end and check for a
   // mapped stack region.
@@ -177,11 +178,11 @@ void ProcessReaderLinux::Thread::InitializeStackFromSP(
   // at the high-address end of the stack so we can try using that to shrink
   // the stack region.
   stack_region_size = stack_end - stack_region_address;
-  if (tid != reader->ProcessID() &&
-      thread_info.thread_specific_data_address > stack_region_address &&
-      thread_info.thread_specific_data_address < stack_end) {
-    stack_region_size =
-        thread_info.thread_specific_data_address - stack_region_address;
+  VMAddress tls_address = reader->Memory()->PointerToAddress(
+      thread_info.thread_specific_data_address);
+  if (tid != reader->ProcessID() && tls_address > stack_region_address &&
+      tls_address < stack_end) {
+    stack_region_size = tls_address - stack_region_address;
   }
 }
 
@@ -281,7 +282,7 @@ const std::vector<ProcessReaderLinux::Module>& ProcessReaderLinux::Modules() {
 }
 
 void ProcessReaderLinux::InitializeAbortMessage() {
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   const MemoryMap::Mapping* mapping =
       memory_map_.FindMappingWithName("[anon:abort message]");
   if (!mapping) {
@@ -296,7 +297,7 @@ void ProcessReaderLinux::InitializeAbortMessage() {
 #endif
 }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 
 // These structure definitions and the magic numbers below were copied from
 // bionic/libc/bionic/android_set_abort_message.cpp
@@ -345,7 +346,7 @@ void ProcessReaderLinux::ReadAbortMessage(const MemoryMap::Mapping* mapping) {
   }
 }
 
-#endif  // OS_ANDROID
+#endif  // BUILDFLAG(IS_ANDROID)
 
 const std::string& ProcessReaderLinux::AbortMessage() {
   INITIALIZATION_STATE_DCHECK_VALID(initialized_);
@@ -439,7 +440,7 @@ void ProcessReaderLinux::InitializeModules() {
       if (parsed_exe->Initialize(
               range,
               mapping->range.Base(),
-              /* verbose= */ possible_mappings->Count() == 1) &&
+              /* verbose= */ possible_mappings->Count() == 0) &&
           parsed_exe->GetProgramHeaderTableAddress() == phdrs) {
         exe_mapping = mapping;
         exe_reader = std::move(parsed_exe);
@@ -485,7 +486,7 @@ void ProcessReaderLinux::InitializeModules() {
         continue;
       }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
       // Beginning at API 21, Bionic provides android_dlopen_ext() which allows
       // passing a file descriptor with an existing relro segment to the loader.
       // This means that the mapping attributes of dyn_mapping may be unrelated
@@ -508,7 +509,7 @@ void ProcessReaderLinux::InitializeModules() {
         if (parsed_module->Initialize(
                 range,
                 mapping->range.Base(),
-                /* verbose= */ possible_mappings->Count() == 1) &&
+                /* verbose= */ possible_mappings->Count() == 0) &&
             parsed_module->GetDynamicArrayAddress(&dynamic_address) &&
             dynamic_address == entry.dynamic_array) {
           module_mapping = mapping;

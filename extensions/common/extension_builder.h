@@ -10,10 +10,11 @@
 #include <string>
 
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_piece.h"
+#include "extensions/common/api/extension_action/action_info.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/mojom/manifest.mojom-shared.h"
 #include "extensions/common/value_builder.h"
 
 namespace extensions {
@@ -45,15 +46,13 @@ class ExtensionBuilder {
     PLATFORM_APP,
   };
 
-  enum class ActionType {
-    PAGE_ACTION,
-    BROWSER_ACTION,
+  enum class BackgroundContext {
+    BACKGROUND_PAGE,
+    EVENT_PAGE,
+    SERVICE_WORKER,
   };
 
-  enum class BackgroundPage {
-    PERSISTENT,
-    EVENT,
-  };
+  static constexpr char kServiceWorkerScriptFile[] = "sw.js";
 
   // Initializes an ExtensionBuilder that can be used with SetManifest() for
   // complete customization.
@@ -64,11 +63,19 @@ class ExtensionBuilder {
   // the extension and used to generate a stable ID.
   ExtensionBuilder(const std::string& name, Type type = Type::EXTENSION);
 
+  ExtensionBuilder(const ExtensionBuilder&) = delete;
+  ExtensionBuilder& operator=(const ExtensionBuilder&) = delete;
+
   ~ExtensionBuilder();
 
   // Move constructor and operator=.
   ExtensionBuilder(ExtensionBuilder&& other);
   ExtensionBuilder& operator=(ExtensionBuilder&& other);
+
+  // Returns the base::Value for the manifest, rather than constructing a full
+  // extension. This is useful if you want to then use this in a ManifestTest or
+  // to write a manifest with a TestExtensionDir.
+  base::Value BuildManifest();
 
   // Can only be called once, after which it's invalid to use the builder.
   // CHECKs that the extension was created successfully.
@@ -83,11 +90,10 @@ class ExtensionBuilder {
 
   // Sets an action type for the extension to have. By default, no action will
   // be set (though note that we synthesize a page action for most extensions).
-  ExtensionBuilder& SetAction(ActionType action);
+  ExtensionBuilder& SetAction(ActionInfo::Type type);
 
-  // Sets a background page for the extension to have. By default, no background
-  // page will be set.
-  ExtensionBuilder& SetBackgroundPage(BackgroundPage background_page);
+  // Sets a background context for the extension. By default, none will be set.
+  ExtensionBuilder& SetBackgroundContext(BackgroundContext background_context);
 
   // Adds a content script to the extension, with a script with the specified
   // |script_name| that matches the given |match_patterns|.
@@ -95,10 +101,11 @@ class ExtensionBuilder {
       const std::string& script_name,
       const std::vector<std::string>& match_patterns);
 
-  // Shortcut for setting a specific manifest version. Typically we'd use
-  // SetManifestKey() or SetManifestPath() for these, but provide a faster
-  // route for version, since it's so central.
+  // Shortcuts for extremely popular keys.
+  // Typically we'd use SetManifestKey() or SetManifestPath() for these, but
+  // provide a faster route for these, since they're so central.
   ExtensionBuilder& SetVersion(const std::string& version);
+  ExtensionBuilder& SetManifestVersion(int manifest_version);
 
   // Shortcuts to setting values on the manifest dictionary without needing to
   // go all the way through MergeManifest(). Sample usage:
@@ -133,6 +140,15 @@ class ExtensionBuilder {
     return *this;
   }
 
+  // A shortcut for adding raw JSON to the extension manifest. Useful if
+  // constructing the values with a ValueBuilder is more painful than seeing
+  // them with a string.
+  // This JSON should be what you would add at the root node of the manifest;
+  // for instance:
+  // builder.AddJSON(R"("content_scripts": [...], "action": {})");
+  // Keys specified in `json` take precedence over previously-set values.
+  ExtensionBuilder& AddJSON(base::StringPiece json);
+
   //////////////////////////////////////////////////////////////////////////////
   // Utility methods for use with custom manifest construction.
 
@@ -147,11 +163,12 @@ class ExtensionBuilder {
   // Defaults to FilePath().
   ExtensionBuilder& SetPath(const base::FilePath& path);
 
-  // Defaults to Manifest::UNPACKED.
-  ExtensionBuilder& SetLocation(Manifest::Location location);
+  // Defaults to mojom::ManifestLocation::kUnpacked.
+  ExtensionBuilder& SetLocation(mojom::ManifestLocation location);
 
   // Merge another manifest into the current manifest, with new keys taking
   // precedence.
+  ExtensionBuilder& MergeManifest(const base::Value& manifest);
   ExtensionBuilder& MergeManifest(
       std::unique_ptr<base::DictionaryValue> manifest);
 
@@ -177,11 +194,9 @@ class ExtensionBuilder {
   std::unique_ptr<base::DictionaryValue> manifest_value_;
 
   base::FilePath path_;
-  Manifest::Location location_;
+  mojom::ManifestLocation location_;
   int flags_;
   std::string id_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExtensionBuilder);
 };
 
 }  // namespace extensions

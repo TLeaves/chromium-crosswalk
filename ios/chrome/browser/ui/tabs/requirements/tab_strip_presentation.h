@@ -5,6 +5,8 @@
 #ifndef IOS_CHROME_BROWSER_UI_TABS_REQUIREMENTS_TAB_STRIP_PRESENTATION_H_
 #define IOS_CHROME_BROWSER_UI_TABS_REQUIREMENTS_TAB_STRIP_PRESENTATION_H_
 
+@protocol TabStripContaining;
+
 // TabStripPresentation contains methods that control how the tab strip is
 // displayed on the screen.
 @protocol TabStripPresentation
@@ -13,8 +15,9 @@
 // visible or not visible.
 - (BOOL)isTabStripFullyVisible;
 
-// Asks the implementer to show the given |tabStripView|.
-- (void)showTabStripView:(UIView*)tabStripView;
+// Asks the implementer to show the given `tabStripView`.
+- (void)showTabStripView:(UIView<TabStripContaining>*)tabStripView;
+
 @end
 
 #endif  // IOS_CHROME_BROWSER_UI_TABS_REQUIREMENTS_TAB_STRIP_PRESENTATION_H_

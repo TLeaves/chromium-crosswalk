@@ -4,6 +4,8 @@
 
 #include "device/fido/fido_constants.h"
 
+#include "base/notreached.h"
+
 namespace device {
 
 const std::array<uint8_t, 32> kBogusAppParam = {
@@ -31,9 +33,15 @@ const char kCredentialManagementMapKey[] = "credMgmt";
 const char kCredentialManagementPreviewMapKey[] = "credentialMgmtPreview";
 const char kBioEnrollmentMapKey[] = "bioEnroll";
 const char kBioEnrollmentPreviewMapKey[] = "userVerificationMgmtPreview";
+const char kPinUvTokenMapKey[] = "pinUvAuthToken";
+const char kDefaultCredProtectKey[] = "defaultCredProtect";
+const char kEnterpriseAttestationKey[] = "ep";
+const char kLargeBlobsKey[] = "largeBlobs";
+const char kAlwaysUvKey[] = "alwaysUv";
+const char kMakeCredUvNotRqdKey[] = "makeCredUvNotRqd";
 
-const base::TimeDelta kDeviceTimeout = base::TimeDelta::FromSeconds(10);
-const base::TimeDelta kU2fRetryDelay = base::TimeDelta::FromMilliseconds(200);
+const base::TimeDelta kDeviceTimeout = base::Seconds(20);
+const base::TimeDelta kU2fRetryDelay = base::Milliseconds(200);
 
 const char kFormatKey[] = "fmt";
 const char kAttestationStatementKey[] = "attStmt";
@@ -52,17 +60,23 @@ const char* CredentialTypeToString(CredentialType type) {
 }
 
 const char kCableHandshakeKeyInfo[] = "FIDO caBLE v1 handshakeKey";
-const char kCableDeviceEncryptionKeyInfo[] = "FIDO caBLE v1 sessionKey";
+const std::array<uint8_t, 24> kCableDeviceEncryptionKeyInfo = {
+    'F', 'I', 'D', 'O', ' ', 'c', 'a', 'B', 'L', 'E', ' ', 'v',
+    '1', ' ', 's', 'e', 's', 's', 'i', 'o', 'n', 'K', 'e', 'y',
+};
 const char kCableAuthenticatorHelloMessage[] = "caBLE v1 authenticator hello";
 const char kCableClientHelloMessage[] = "caBLE v1 client hello";
 
 const char kCtap2Version[] = "FIDO_2_0";
 const char kU2fVersion[] = "U2F_V2";
+const char kCtap2_1Version[] = "FIDO_2_1";
 
 const char kExtensionHmacSecret[] = "hmac-secret";
 const char kExtensionCredProtect[] = "credProtect";
+const char kExtensionLargeBlobKey[] = "largeBlobKey";
+const char kExtensionCredBlob[] = "credBlob";
+const char kExtensionMinPINLength[] = "minPinLength";
 
-const base::TimeDelta kBleDevicePairingModeWaitingInterval =
-    base::TimeDelta::FromSeconds(2);
+const base::TimeDelta kBleDevicePairingModeWaitingInterval = base::Seconds(2);
 
 }  // namespace device

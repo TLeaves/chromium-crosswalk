@@ -14,8 +14,10 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
 
 namespace {
@@ -69,7 +71,7 @@ void UserInfoFetcher::Start(const std::string& access_token) {
   resource_request->url = GaiaUrls::GetInstance()->oauth_user_info_url();
   resource_request->headers.SetHeader(net::HttpRequestHeaders::kAuthorization,
                                       MakeAuthorizationHeader(access_token));
-  resource_request->allow_credentials = false;
+  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
 
   url_loader_ = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  traffic_annotation);
@@ -104,11 +106,10 @@ void UserInfoFetcher::OnFetchComplete(
   // to the delegate.
   DCHECK(unparsed_data);
   DVLOG(1) << "Received UserInfo response: " << *unparsed_data;
-  std::unique_ptr<base::Value> parsed_value =
-      base::JSONReader::ReadDeprecated(*unparsed_data);
-  base::DictionaryValue* dict;
-  if (parsed_value.get() && parsed_value->GetAsDictionary(&dict)) {
-    delegate_->OnGetUserInfoSuccess(dict);
+  absl::optional<base::Value> parsed_value =
+      base::JSONReader::Read(*unparsed_data);
+  if (parsed_value && parsed_value->is_dict()) {
+    delegate_->OnGetUserInfoSuccess(parsed_value->GetDict());
   } else {
     NOTREACHED() << "Could not parse userinfo response from server";
     delegate_->OnGetUserInfoFailure(GoogleServiceAuthError(

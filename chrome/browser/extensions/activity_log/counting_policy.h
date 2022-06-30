@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/time/time.h"
 #include "chrome/browser/extensions/activity_log/activity_database.h"
 #include "chrome/browser/extensions/activity_log/activity_log_policy.h"
 #include "chrome/browser/extensions/activity_log/database_string_table.h"
@@ -119,7 +120,7 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   bool CleanStringTables(sql::Database* db);
 
   // API calls for which complete arguments should be logged.
-  Util::ApiSet api_arg_whitelist_;
+  Util::ApiSet api_arg_allowlist_;
 
   // Tables for mapping strings to integers for shrinking database storage
   // requirements.  URLs are kept in a separate table from other strings to

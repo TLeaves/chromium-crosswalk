@@ -25,18 +25,17 @@ ACTION_P(PostSuccessRun, task_runner) {
 MockDownloadFile::MockDownloadFile() {
   // This is here because |Initialize()| is normally called right after
   // construction.
-  ON_CALL(*this, Initialize(_, _, _, _))
+  ON_CALL(*this, Initialize(_, _, _))
       .WillByDefault(PostSuccessRun(base::ThreadTaskRunnerHandle::Get()));
 }
 
 MockDownloadFile::~MockDownloadFile() {}
 
 void MockDownloadFile::AddInputStream(std::unique_ptr<InputStream> input_stream,
-                                      int64_t offset,
-                                      int64_t length) {
+                                      int64_t offset) {
   // Gmock currently can't mock method that takes move-only parameters,
   // delegate the EXPECT_CALL count to |DoAddByteStream|.
-  DoAddInputStream(input_stream.get(), offset, length);
+  DoAddInputStream(input_stream.get(), offset);
 }
 
 }  // namespace download

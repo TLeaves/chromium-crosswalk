@@ -5,16 +5,37 @@
 #include "third_party/blink/renderer/core/css/style_color.h"
 
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
-Color StyleColor::ColorFromKeyword(CSSValueID keyword) {
+Color StyleColor::Resolve(Color current_color,
+                          mojom::blink::ColorScheme color_scheme,
+                          bool is_forced_color) const {
+  if (IsCurrentColor())
+    return current_color;
+  if (EffectiveColorKeyword() != CSSValueID::kInvalid ||
+      (is_forced_color && IsSystemColorIncludingDeprecated()))
+    return ColorFromKeyword(color_keyword_, color_scheme);
+  return color_;
+}
+
+Color StyleColor::ResolveWithAlpha(Color current_color,
+                                   mojom::blink::ColorScheme color_scheme,
+                                   int alpha,
+                                   bool is_forced_color) const {
+  Color color = Resolve(current_color, color_scheme, is_forced_color);
+  return Color(color.Red(), color.Green(), color.Blue(), alpha);
+}
+
+Color StyleColor::ColorFromKeyword(CSSValueID keyword,
+                                   mojom::blink::ColorScheme color_scheme) {
   if (const char* value_name = getValueName(keyword)) {
     if (const NamedColor* named_color =
             FindColor(value_name, static_cast<wtf_size_t>(strlen(value_name))))
       return Color(named_color->argb_value);
   }
-  return LayoutTheme::GetTheme().SystemColor(keyword);
+  return LayoutTheme::GetTheme().SystemColor(keyword, color_scheme);
 }
 
 bool StyleColor::IsColorKeyword(CSSValueID id) {
@@ -39,16 +60,49 @@ bool StyleColor::IsColorKeyword(CSSValueID id) {
   //   '-internal-inactive-list-box-selection-text'
   //   '-webkit-focus-ring-color'
   //   '-internal-quirk-inherit'
-  //   '-internal-root-color'
   //
-  return (id >= CSSValueID::kAqua && id <= CSSValueID::kInternalRootColor) ||
+  return (id >= CSSValueID::kAqua && id <= CSSValueID::kInternalQuirkInherit) ||
          (id >= CSSValueID::kAliceblue && id <= CSSValueID::kYellowgreen) ||
          id == CSSValueID::kMenu;
 }
 
-bool StyleColor::IsSystemColor(CSSValueID id) {
+bool StyleColor::IsSystemColorIncludingDeprecated(CSSValueID id) {
   return (id >= CSSValueID::kActiveborder && id <= CSSValueID::kWindowtext) ||
          id == CSSValueID::kMenu;
+}
+
+bool StyleColor::IsSystemColor(CSSValueID id) {
+  switch (id) {
+    case CSSValueID::kActivetext:
+    case CSSValueID::kButtonborder:
+    case CSSValueID::kButtonface:
+    case CSSValueID::kButtontext:
+    case CSSValueID::kCanvas:
+    case CSSValueID::kCanvastext:
+    case CSSValueID::kField:
+    case CSSValueID::kFieldtext:
+    case CSSValueID::kGraytext:
+    case CSSValueID::kHighlight:
+    case CSSValueID::kHighlighttext:
+    case CSSValueID::kLinktext:
+    case CSSValueID::kMark:
+    case CSSValueID::kMarktext:
+    case CSSValueID::kSelecteditem:
+    case CSSValueID::kSelecteditemtext:
+    case CSSValueID::kVisitedtext:
+      return true;
+    default:
+      return false;
+  }
+}
+
+CSSValueID StyleColor::EffectiveColorKeyword() const {
+  if (!RuntimeEnabledFeatures::CSSSystemColorComputeToSelfEnabled()) {
+    return IsSystemColorIncludingDeprecated(color_keyword_)
+               ? CSSValueID::kInvalid
+               : color_keyword_;
+  }
+  return color_keyword_;
 }
 
 }  // namespace blink

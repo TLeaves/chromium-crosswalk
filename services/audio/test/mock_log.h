@@ -9,7 +9,7 @@
 
 #include "base/bind.h"
 #include "media/base/audio_parameters.h"
-#include "media/mojo/interfaces/audio_logging.mojom.h"
+#include "media/mojo/mojom/audio_logging.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -19,6 +19,10 @@ namespace audio {
 class MockLog : public media::mojom::AudioLog {
  public:
   MockLog();
+
+  MockLog(const MockLog&) = delete;
+  MockLog& operator=(const MockLog&) = delete;
+
   ~MockLog() override;
 
   // Should only be called once.
@@ -47,8 +51,6 @@ class MockLog : public media::mojom::AudioLog {
 
  private:
   mojo::Receiver<media::mojom::AudioLog> receiver_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockLog);
 };
 
 }  // namespace audio

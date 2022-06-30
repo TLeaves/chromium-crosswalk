@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {dispatchSimpleEvent} from 'chrome://resources/js/cr.m.js';
+import {NativeEventTarget as EventTarget} from 'chrome://resources/js/cr/event_target.m.js';
+
+import {strf, util} from '../../../common/js/util.js';
+
 /**
  * Formatter class for file metadatas.
  */
-class FileMetadataFormatter extends cr.EventTarget {
+export class FileMetadataFormatter extends EventTarget {
   constructor() {
     super();
-    this.setDateTimeFormat(true);
 
     /** @private {?Intl.DateTimeFormat} */
     this.timeFormatter_;
@@ -22,10 +26,10 @@ class FileMetadataFormatter extends cr.EventTarget {
    * @param {boolean} use12hourClock True if 12 hours clock, False if 24 hours.
    */
   setDateTimeFormat(use12hourClock) {
+    const locale = util.getCurrentLocaleOrDefault();
     this.timeFormatter_ = new Intl.DateTimeFormat(
-        [] /* default locale */,
-        {hour: 'numeric', minute: 'numeric', hour12: use12hourClock});
-    this.dateFormatter_ = new Intl.DateTimeFormat([] /* default locale */, {
+        locale, {hour: 'numeric', minute: 'numeric', hour12: use12hourClock});
+    this.dateFormatter_ = new Intl.DateTimeFormat(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -33,7 +37,7 @@ class FileMetadataFormatter extends cr.EventTarget {
       minute: 'numeric',
       hour12: use12hourClock
     });
-    cr.dispatchSimpleEvent(this, 'date-time-format-changed');
+    dispatchSimpleEvent(this, 'date-time-format-changed');
   }
 
   /**
@@ -45,6 +49,11 @@ class FileMetadataFormatter extends cr.EventTarget {
     if (!modTime) {
       return '...';
     }
+
+    if (!(this.timeFormatter_ && this.dateFormatter_)) {
+      this.setDateTimeFormat(true);
+    }
+
     const today = new Date();
     today.setHours(0);
     today.setMinutes(0);
@@ -73,9 +82,11 @@ class FileMetadataFormatter extends cr.EventTarget {
    * Generates a formatted filesize text.
    * @param {number=} size
    * @param {boolean=} hosted
+   * @param {boolean=} addPrecision addPrecision used to optionally add more
+   *     precision digits to the formatted filesize text.
    * @return {string} A string that represents a file size.
    */
-  formatSize(size, hosted) {
+  formatSize(size, hosted, addPrecision = false) {
     if (size === null || size === undefined) {
       return '...';
     } else if (size === -1) {
@@ -83,7 +94,7 @@ class FileMetadataFormatter extends cr.EventTarget {
     } else if (size === 0 && hosted) {
       return '--';
     } else {
-      return util.bytesToString(size);
+      return util.bytesToString(size, addPrecision ? 1 : 0);
     }
   }
 }

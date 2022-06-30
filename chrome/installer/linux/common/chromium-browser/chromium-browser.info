@@ -8,11 +8,17 @@
 # Base name of the package.
 PACKAGE="chromium-browser"
 
+# Base name of the snap package
+SNAPNAME="chromium"
+
 # Filename of the main executable (for generating launcher scripts, etc.)
 PROGNAME=chrome
 
 # Base directory for package installation.
 INSTALLDIR=/opt/chromium.org/chromium
+
+# Directory for device policy enrollments.
+ENROLLMENTDIR=/etc/chromium/policies/enrollment
 
 # Display string for desktop menu/icon.
 MENUNAME="Chromium Web Browser"

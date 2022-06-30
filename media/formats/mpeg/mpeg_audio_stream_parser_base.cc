@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/time/time.h"
 #include "media/base/media_log.h"
 #include "media/base/media_tracks.h"
 #include "media/base/media_util.h"
@@ -211,16 +212,16 @@ int MPEGAudioStreamParserBase::ParseFrame(const uint8_t* data,
 
   if (!config_.IsValidConfig()) {
     config_.Initialize(audio_codec_, kSampleFormatF32, channel_layout,
-                       sample_rate, extra_data, Unencrypted(),
+                       sample_rate, extra_data, EncryptionScheme::kUnencrypted,
                        base::TimeDelta(), codec_delay_);
-    if (audio_codec_ == kCodecAAC)
+    if (audio_codec_ == AudioCodec::kAAC)
       config_.disable_discard_decoder_delay();
 
     base::TimeDelta base_timestamp;
     if (timestamp_helper_)
       base_timestamp = timestamp_helper_->GetTimestamp();
 
-    timestamp_helper_.reset(new AudioTimestampHelper(sample_rate));
+    timestamp_helper_ = std::make_unique<AudioTimestampHelper>(sample_rate);
     timestamp_helper_->SetBaseTimestamp(base_timestamp);
 
     std::unique_ptr<MediaTracks> media_tracks(new MediaTracks());
@@ -347,7 +348,7 @@ bool MPEGAudioStreamParserBase::ParseSyncSafeInt(BitReader* reader,
 }
 
 int MPEGAudioStreamParserBase::FindNextValidStartCode(const uint8_t* data,
-                                                      int size) const {
+                                                      int size) {
   const uint8_t* start = data;
   const uint8_t* end = data + size;
 

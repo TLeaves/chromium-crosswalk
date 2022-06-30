@@ -9,7 +9,6 @@
 #include <set>
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_checker.h"
@@ -37,6 +36,11 @@ class NET_EXPORT_PRIVATE URLRequestThrottlerManager
       public NetworkChangeNotifier::ConnectionTypeObserver {
  public:
   URLRequestThrottlerManager();
+
+  URLRequestThrottlerManager(const URLRequestThrottlerManager&) = delete;
+  URLRequestThrottlerManager& operator=(const URLRequestThrottlerManager&) =
+      delete;
+
   ~URLRequestThrottlerManager() override;
 
   // Must be called for every request, returns the URL request throttler entry
@@ -116,7 +120,7 @@ class NET_EXPORT_PRIVATE URLRequestThrottlerManager
 
   // This keeps track of how many requests have been made. Used with
   // GarbageCollectEntries.
-  unsigned int requests_since_last_gc_;
+  unsigned int requests_since_last_gc_ = 0;
 
   // Valid after construction.
   GURL::Replacements url_id_replacements_;
@@ -131,17 +135,15 @@ class NET_EXPORT_PRIVATE URLRequestThrottlerManager
 
   // Initially false, switches to true once we have logged because of back-off
   // being disabled for localhost.
-  bool logged_for_localhost_disabled_;
+  bool logged_for_localhost_disabled_ = false;
 
   // NetLog to use, if configured.
   NetLogWithSource net_log_;
 
   // Valid once we've registered for network notifications.
-  base::PlatformThreadId registered_from_thread_;
+  base::PlatformThreadId registered_from_thread_ = base::kInvalidThreadId;
 
   THREAD_CHECKER(thread_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(URLRequestThrottlerManager);
 };
 
 }  // namespace net

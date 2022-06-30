@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "base/compiler_specific.h"
 #include "base/component_export.h"
 #include "ui/base/ime/init/input_method_initializer.h"
 #include "ui/gfx/native_widget_types.h"
@@ -26,9 +25,19 @@ std::unique_ptr<InputMethod> CreateInputMethod(
     gfx::AcceleratedWidget widget);
 
 // Makes CreateInputMethod return a MockInputMethod.
-COMPONENT_EXPORT(UI_BASE_IME_INIT) void SetUpInputMethodFactoryForTesting();
 COMPONENT_EXPORT(UI_BASE_IME_INIT)
 void SetUpInputMethodForTesting(InputMethod* input_method);
+
+class COMPONENT_EXPORT(UI_BASE_IME_INIT) ScopedTestInputMethodFactory {
+ public:
+  ScopedTestInputMethodFactory();
+
+  ScopedTestInputMethodFactory(const ScopedTestInputMethodFactory&) = delete;
+  ScopedTestInputMethodFactory& operator=(const ScopedTestInputMethodFactory&) =
+      delete;
+
+  ~ScopedTestInputMethodFactory();
+};
 
 }  // namespace ui;
 

@@ -5,7 +5,8 @@
 package org.chromium.ui.resources.dynamics;
 
 import android.graphics.Bitmap;
-import android.support.annotation.CallSuper;
+
+import androidx.annotation.CallSuper;
 
 import org.chromium.ui.resources.Resource;
 import org.chromium.ui.resources.ResourceLoader.ResourceLoaderCallback;
@@ -25,6 +26,11 @@ public abstract class DynamicResource implements Resource {
     public Bitmap getBitmap() {
         assert isDirty() : "getBitmap() should not be called when not dirty";
         return null;
+    }
+
+    @Override
+    public boolean shouldRemoveResourceOnNullBitmap() {
+        return false;
     }
 
     /**

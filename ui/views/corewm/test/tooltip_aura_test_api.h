@@ -7,15 +7,22 @@
 
 #include <stddef.h>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 
 namespace gfx {
+class Rect;
 class RenderText;
+class Size;
+}
+
+namespace ui {
+struct AXNodeData;
 }
 
 namespace views {
 namespace corewm {
 class TooltipAura;
+struct TooltipPosition;
 
 namespace test {
 
@@ -24,12 +31,18 @@ class TooltipAuraTestApi {
   explicit TooltipAuraTestApi(TooltipAura* tooltip_aura)
       : tooltip_aura_(tooltip_aura) {}
 
+  TooltipAuraTestApi(const TooltipAuraTestApi&) = delete;
+  TooltipAuraTestApi& operator=(const TooltipAuraTestApi&) = delete;
+
   gfx::RenderText* GetRenderText();
 
- private:
-  TooltipAura* tooltip_aura_;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data);
 
-  DISALLOW_COPY_AND_ASSIGN(TooltipAuraTestApi);
+  gfx::Rect GetTooltipBounds(const gfx::Size& tooltip_size,
+                             const TooltipPosition& position);
+
+ private:
+  raw_ptr<TooltipAura> tooltip_aura_;
 };
 
 }  // namespace test

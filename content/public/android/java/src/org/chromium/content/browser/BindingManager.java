@@ -7,7 +7,8 @@ package org.chromium.content.browser;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.res.Configuration;
-import android.support.v4.util.ArraySet;
+
+import androidx.collection.ArraySet;
 
 import org.chromium.base.Log;
 import org.chromium.base.library_loader.LibraryLoader;
@@ -22,7 +23,7 @@ import java.util.Set;
  * This object must only be accessed from the launcher thread.
  */
 class BindingManager implements ComponentCallbacks2 {
-    private static final String TAG = "cr_BindingManager";
+    private static final String TAG = "BindingManager";
 
     // Low reduce ratio of moderate binding.
     private static final float MODERATE_BINDING_LOW_REDUCE_RATIO = 0.25f;
@@ -108,7 +109,7 @@ class BindingManager implements ComponentCallbacks2 {
         if (connection == mWaivedConnection) {
             mWaivedConnection = null;
         } else {
-            connection.removeModerateBinding();
+            removeModerateBinding(connection);
         }
     }
 
@@ -120,11 +121,11 @@ class BindingManager implements ComponentCallbacks2 {
         if (lowestRanked == mWaivedConnection) return;
         if (mWaivedConnection != null) {
             assert mConnections.contains(mWaivedConnection);
-            mWaivedConnection.addModerateBinding();
+            addModerateBinding(mWaivedConnection);
             mWaivedConnection = null;
         }
         if (!mConnections.contains(lowestRanked)) return;
-        lowestRanked.removeModerateBinding();
+        removeModerateBinding(lowestRanked);
         mWaivedConnection = lowestRanked;
     }
 
@@ -176,7 +177,7 @@ class BindingManager implements ComponentCallbacks2 {
                 // Tests may not load the native library which is required for
                 // recording histograms.
                 if (LibraryLoader.getInstance().isInitialized()) {
-                    RecordHistogram.recordCountHistogram(
+                    RecordHistogram.recordCount1MHistogram(
                             "Android.ModerateBindingCount", mConnections.size());
                 }
                 removeAllConnections();
@@ -194,7 +195,7 @@ class BindingManager implements ComponentCallbacks2 {
         // Note that the size of connections is currently fairly small (40).
         // If it became bigger we should consider using an alternate data structure.
         boolean alreadyInQueue = !mConnections.add(connection);
-        if (!alreadyInQueue) connection.addModerateBinding();
+        if (!alreadyInQueue) addModerateBinding(connection);
         assert mMaxSize == -1 || mConnections.size() <= mMaxSize;
     }
 
@@ -209,5 +210,13 @@ class BindingManager implements ComponentCallbacks2 {
     // adding and removing connection.
     public void rankingChanged() {
         ensureLowestRankIsWaived();
+    }
+
+    private void addModerateBinding(ChildProcessConnection connection) {
+        connection.addModerateBinding();
+    }
+
+    private void removeModerateBinding(ChildProcessConnection connection) {
+        connection.removeModerateBinding();
     }
 }

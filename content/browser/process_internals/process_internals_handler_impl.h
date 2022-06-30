@@ -5,9 +5,11 @@
 #ifndef CONTENT_BROWSER_PROCESS_INTERNALS_PROCESS_INTERNALS_HANDLER_IMPL_H_
 #define CONTENT_BROWSER_PROCESS_INTERNALS_PROCESS_INTERNALS_HANDLER_IMPL_H_
 
+#include "base/memory/raw_ptr.h"
 #include "content/browser/process_internals/process_internals.mojom.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 
 namespace content {
 
@@ -18,22 +20,27 @@ class ProcessInternalsHandlerImpl : public ::mojom::ProcessInternalsHandler {
  public:
   ProcessInternalsHandlerImpl(
       BrowserContext* browser_context,
-      mojo::InterfaceRequest<::mojom::ProcessInternalsHandler> request);
+      mojo::PendingReceiver<::mojom::ProcessInternalsHandler> receiver);
+
+  ProcessInternalsHandlerImpl(const ProcessInternalsHandlerImpl&) = delete;
+  ProcessInternalsHandlerImpl& operator=(const ProcessInternalsHandlerImpl&) =
+      delete;
+
   ~ProcessInternalsHandlerImpl() override;
 
   // mojom::ProcessInternalsHandler overrides:
   void GetIsolationMode(GetIsolationModeCallback callback) override;
   void GetUserTriggeredIsolatedOrigins(
       GetUserTriggeredIsolatedOriginsCallback callback) override;
+  void GetWebTriggeredIsolatedOrigins(
+      GetWebTriggeredIsolatedOriginsCallback callback) override;
   void GetGloballyIsolatedOrigins(
       GetGloballyIsolatedOriginsCallback callback) override;
   void GetAllWebContentsInfo(GetAllWebContentsInfoCallback callback) override;
 
  private:
-  BrowserContext* browser_context_;
-  mojo::Binding<::mojom::ProcessInternalsHandler> binding_;
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessInternalsHandlerImpl);
+  raw_ptr<BrowserContext> browser_context_;
+  mojo::Receiver<::mojom::ProcessInternalsHandler> receiver_;
 };
 
 }  // namespace content

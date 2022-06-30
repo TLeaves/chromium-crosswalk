@@ -9,6 +9,9 @@
 
 syntax = "proto2";
 
+option java_multiple_files = true;
+option java_package = "org.chromium.components.sync.protocol";
+
 option optimize_for = LITE_RUNTIME;
 
 package sync_pb;
@@ -32,15 +35,15 @@ message ExtensionSpecifics {
   // Whether or not this extension is enabled in incognito mode.
   optional bool incognito_enabled = 5;
 
-  // The name of the extension. Used for bookmark apps.
-  optional string name = 6;
+  // DEPRECATED. See https://crbug.com/1233303.
+  optional string name = 6 [deprecated = true];
 
   // Whether this extension was installed remotely, and hasn't been approved by
   // a user in chrome yet.
   optional bool remote_install = 7;
 
-  // Whether this extension was installed by the custodian of a supervised user.
-  optional bool installed_by_custodian = 8;
+  // DEPRECATED. See https://crbug.com/1014183.
+  optional bool installed_by_custodian = 8 [deprecated = true];
 
   // DEPRECATED. See https://crbug.com/839681.
   optional bool all_urls_enabled = 9 [deprecated = true];

@@ -8,14 +8,13 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs_factory.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/prefs/pref_service.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 
@@ -41,19 +40,17 @@ AppListSyncableServiceFactory* AppListSyncableServiceFactory::GetInstance() {
 std::unique_ptr<KeyedService> AppListSyncableServiceFactory::BuildInstanceFor(
     content::BrowserContext* browser_context) {
   Profile* profile = static_cast<Profile*>(browser_context);
-  if (chromeos::ProfileHelper::IsSigninProfile(profile) ||
-      chromeos::ProfileHelper::IsLockScreenAppProfile(profile)) {
+  if (!ash::ProfileHelper::IsRegularProfile(profile)) {
     return nullptr;
   }
   VLOG(1) << "BuildInstanceFor: " << profile->GetDebugName()
           << " (" << profile << ")";
-  return std::make_unique<AppListSyncableService>(
-      profile, extensions::ExtensionSystem::Get(profile));
+  return std::make_unique<AppListSyncableService>(profile);
 }
 
 // static
-void AppListSyncableServiceFactory::SetUseInTesting() {
-  use_in_testing = true;
+void AppListSyncableServiceFactory::SetUseInTesting(bool use) {
+  use_in_testing = use;
 }
 
 AppListSyncableServiceFactory::AppListSyncableServiceFactory()
@@ -98,12 +95,15 @@ content::BrowserContext* AppListSyncableServiceFactory::GetBrowserContextToUse(
     return nullptr;
 
   // No service for sign in profile.
-  if (chromeos::ProfileHelper::IsSigninProfile(profile))
+  if (ash::ProfileHelper::IsSigninProfile(profile))
     return nullptr;
 
-  // Use profile as-is for guest session.
-  if (profile->IsGuestSession())
-    return chrome::GetBrowserContextOwnInstanceInIncognito(context);
+  // Use OTR profile for Guest Session.
+  if (profile->IsGuestSession()) {
+    return profile->IsOffTheRecord()
+               ? chrome::GetBrowserContextOwnInstanceInIncognito(context)
+               : nullptr;
+  }
 
   // This matches the logic in ExtensionSyncServiceFactory, which uses the
   // orginal browser context.

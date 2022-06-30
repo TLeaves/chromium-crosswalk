@@ -12,10 +12,12 @@ import static org.junit.Assert.fail;
 
 import static org.chromium.net.CronetTestRule.getContext;
 
+import android.net.TrafficStats;
 import android.os.Build;
 import android.os.Process;
-import android.support.test.filters.SmallTest;
 import android.support.test.runner.AndroidJUnit4;
+
+import androidx.test.filters.SmallTest;
 
 import org.junit.After;
 import org.junit.Before;
@@ -41,7 +43,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
-import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ServerSocket;
@@ -227,9 +228,6 @@ public class CronetHttpURLConnectionTest {
         connection.disconnect();
     }
 
-    /**
-     * Tests that using reflection to find {@code fixedContentLengthLong} works.
-     */
     @Test
     @SmallTest
     @Feature({"Cronet"})
@@ -240,20 +238,35 @@ public class CronetHttpURLConnectionTest {
                 (HttpURLConnection) url.openConnection();
         connection.setDoOutput(true);
         connection.setRequestMethod("POST");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            String dataString = "some very important data";
-            byte[] data = dataString.getBytes();
-            Class<?> c = connection.getClass();
-            Method method = c.getMethod("setFixedLengthStreamingMode",
-                    new Class[] {long.class});
-            method.invoke(connection, (long) data.length);
-            OutputStream out = connection.getOutputStream();
-            out.write(data);
-            assertEquals(200, connection.getResponseCode());
-            assertEquals("OK", connection.getResponseMessage());
-            assertEquals(dataString, TestUtil.getResponseAsString(connection));
-            connection.disconnect();
-        }
+        String dataString = "some very important data";
+        byte[] data = dataString.getBytes();
+        connection.setFixedLengthStreamingMode((long) data.length);
+        OutputStream out = connection.getOutputStream();
+        out.write(data);
+        assertEquals(200, connection.getResponseCode());
+        assertEquals("OK", connection.getResponseMessage());
+        assertEquals(dataString, TestUtil.getResponseAsString(connection));
+        connection.disconnect();
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"Cronet"})
+    @OnlyRunCronetHttpURLConnection
+    public void testSetFixedLengthStreamingModeInt() throws Exception {
+        URL url = new URL(NativeTestServer.getEchoBodyURL());
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setDoOutput(true);
+        connection.setRequestMethod("POST");
+        String dataString = "some very important data";
+        byte[] data = dataString.getBytes();
+        connection.setFixedLengthStreamingMode((int) data.length);
+        OutputStream out = connection.getOutputStream();
+        out.write(data);
+        assertEquals(200, connection.getResponseCode());
+        assertEquals("OK", connection.getResponseMessage());
+        assertEquals(dataString, TestUtil.getResponseAsString(connection));
+        connection.disconnect();
     }
 
     @Test
@@ -1396,6 +1409,15 @@ public class CronetHttpURLConnectionTest {
         urlConnection.disconnect();
         assertTrue(CronetTestUtil.nativeGetTaggedBytes(tag) > priorBytes);
 
+        // Test tagging with TrafficStats.
+        tag = 0x12348765;
+        priorBytes = CronetTestUtil.nativeGetTaggedBytes(tag);
+        urlConnection = (CronetHttpURLConnection) url.openConnection();
+        TrafficStats.setThreadStatsTag(tag);
+        assertEquals(200, urlConnection.getResponseCode());
+        urlConnection.disconnect();
+        assertTrue(CronetTestUtil.nativeGetTaggedBytes(tag) > priorBytes);
+
         // Test tagging with our UID.
         // NOTE(pauljensen): Explicitly setting the UID to the current UID isn't a particularly
         // thorough test of this API but at least provides coverage of the underlying code, and
@@ -1412,6 +1434,20 @@ public class CronetHttpURLConnectionTest {
         assertEquals(200, urlConnection.getResponseCode());
         urlConnection.disconnect();
         assertTrue(CronetTestUtil.nativeGetTaggedBytes(tag) > priorBytes);
+
+        // TrafficStats.getThreadStatsUid() which is required for this feature is added in API level
+        // 28.
+        // Note, currently this part won't run as CronetTestUtil.nativeCanGetTaggedBytes() will
+        // return false on P+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            tag = 0;
+            priorBytes = CronetTestUtil.nativeGetTaggedBytes(tag);
+            urlConnection = (CronetHttpURLConnection) url.openConnection();
+            TrafficStats.setThreadStatsUid(Process.myUid());
+            assertEquals(200, urlConnection.getResponseCode());
+            urlConnection.disconnect();
+            assertTrue(CronetTestUtil.nativeGetTaggedBytes(tag) > priorBytes);
+        }
     }
 
     @Test

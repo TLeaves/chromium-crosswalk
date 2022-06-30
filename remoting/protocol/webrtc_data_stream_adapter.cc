@@ -8,11 +8,9 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "net/base/net_errors.h"
@@ -24,7 +22,7 @@ namespace protocol {
 
 WebrtcDataStreamAdapter::WebrtcDataStreamAdapter(
     rtc::scoped_refptr<webrtc::DataChannelInterface> channel)
-    : channel_(channel.get()), weak_ptr_factory_(this) {
+    : channel_(channel.get()) {
   channel_->RegisterObserver(this);
   DCHECK_EQ(channel_->state(), webrtc::DataChannelInterface::kConnecting);
 }
@@ -35,10 +33,10 @@ WebrtcDataStreamAdapter::~WebrtcDataStreamAdapter() {
     channel_->Close();
 
     // Destroy |channel_| asynchronously as it may be on stack.
+    // TODO(dcheng): This could probably be ReleaseSoon.
     base::SequencedTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::BindOnce(base::DoNothing::Once<
-                           rtc::scoped_refptr<webrtc::DataChannelInterface>>(),
+        base::BindOnce([](rtc::scoped_refptr<webrtc::DataChannelInterface>) {},
                        std::move(channel_)));
   }
 }
@@ -52,16 +50,9 @@ void WebrtcDataStreamAdapter::Start(EventHandler* event_handler) {
 
 void WebrtcDataStreamAdapter::Send(google::protobuf::MessageLite* message,
                                    base::OnceClosure done) {
-  // This shouldn't DCHECK in the CLOSED case, because the connection may be
-  // abruptly closed at any time and the caller may not have been notified, yet.
-  // The message will still be enqueued so that the outstanding done callbacks
-  // are dropped at the expected time in the expected order.
-  DCHECK(state_ != State::CONNECTING);
-
   rtc::CopyOnWriteBuffer buffer;
   buffer.SetSize(message->ByteSize());
-  message->SerializeWithCachedSizesToArray(
-      reinterpret_cast<uint8_t*>(buffer.data()));
+  message->SerializeWithCachedSizesToArray(buffer.MutableData());
   pending_messages_.emplace(
       webrtc::DataBuffer(std::move(buffer), true /* binary */),
       std::move(done));

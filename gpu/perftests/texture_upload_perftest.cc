@@ -16,7 +16,7 @@
 #include "gpu/perftests/measurements.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "testing/perf/perf_test.h"
+#include "testing/perf/perf_result_reporter.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gl/gl_bindings.h"
@@ -151,7 +151,7 @@ bool CompareBufferToRGBABuffer(GLenum format,
         case GL_LUMINANCE:  // (L_t, L_t, L_t, 1)
           expected[1] = pixels[pixels_index];
           expected[2] = pixels[pixels_index];
-          FALLTHROUGH;
+          [[fallthrough]];
         case GL_RED:  // (R_t, 0, 0, 1)
           expected[0] = pixels[pixels_index];
           expected[3] = 255;
@@ -404,27 +404,29 @@ class TextureUploadPerfTest : public testing::Test {
       }
       successful_runs++;
       for (const Measurement& measurement : run) {
-        auto& aggregate = aggregates[measurement.name];
-        aggregate.name = measurement.name;
+        auto& aggregate = aggregates[measurement.metric_basename];
+        aggregate.metric_basename = measurement.metric_basename;
         aggregate.Increment(measurement);
       }
     }
     glDeleteTextures(1, &texture_id);
 
-    std::string graph_name = base::StringPrintf(
+    std::string story_name = base::StringPrintf(
         "%d_%s", size.width(), gl::GLEnums::GetStringEnum(format).c_str());
     if (subimage) {
-      graph_name += "_sub";
+      story_name += "_sub";
     }
 
     if (successful_runs) {
       for (const auto& entry : aggregates) {
         const auto m = entry.second.Divide(successful_runs);
-        m.PrintResult(graph_name);
+        m.PrintResult(story_name);
       }
     }
-    perf_test::PrintResult("sample_runs", "", graph_name,
-                           static_cast<size_t>(successful_runs), "laps", true);
+    auto reporter = std::make_unique<perf_test::PerfResultReporter>(
+        "sample_runs", story_name);
+    reporter->RegisterImportantMetric("", "count");
+    reporter->AddResult("", static_cast<size_t>(successful_runs));
   }
 
   const gfx::Size fbo_size_;  // for the fbo

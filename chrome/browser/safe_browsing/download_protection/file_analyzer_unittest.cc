@@ -10,12 +10,14 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/safe_browsing/file_type_policies_test_util.h"
+#include "chrome/common/safe_browsing/archive_analyzer_results.h"
 #include "chrome/common/safe_browsing/mock_binary_feature_extractor.h"
-#include "components/safe_browsing/features.h"
-#include "content/public/test/test_browser_thread_bundle.h"
+#include "components/safe_browsing/content/common/file_type_policies_test_util.h"
+#include "components/safe_browsing/core/common/features.h"
+#include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,7 +57,7 @@ class FileAnalyzerTest : public testing::Test {
   base::ScopedTempDir temp_dir_;
 
  private:
-  content::TestBrowserThreadBundle test_browser_thread_bundle_;
+  content::BrowserTaskEnvironment task_environment_;
   content::InProcessUtilityThreadHelper in_process_utility_thread_helper_;
 };
 
@@ -242,7 +244,7 @@ TEST_F(FileAnalyzerTest, TypeInvalidZip) {
 
 // Since we only inspect contents of DMGs on OS X, we only get
 // MAC_ARCHIVE_FAILED_PARSING on OS X.
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 TEST_F(FileAnalyzerTest, TypeInvalidDmg) {
   scoped_refptr<MockBinaryFeatureExtractor> extractor =
       new testing::StrictMock<MockBinaryFeatureExtractor>();
@@ -631,7 +633,7 @@ TEST_F(FileAnalyzerTest, ExtractsImageHeadersForExe) {
   EXPECT_EQ(result_.image_headers.pe_headers().file_header(), "image header");
 }
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 
 TEST_F(FileAnalyzerTest, ExtractsSignatureForDmg) {
   scoped_refptr<MockBinaryFeatureExtractor> extractor =
@@ -913,5 +915,94 @@ TEST_F(FileAnalyzerTest, LargeZipSkipsContentInspection) {
   EXPECT_EQ(result_.archive_is_valid, FileAnalyzer::ArchiveValid::INVALID);
   ASSERT_EQ(0, result_.archived_binaries.size());
 }
+
+TEST_F(FileAnalyzerTest, ZipAnalysisResultMetric) {
+  scoped_refptr<MockBinaryFeatureExtractor> extractor =
+      new testing::StrictMock<MockBinaryFeatureExtractor>();
+  FileAnalyzer analyzer(extractor);
+  base::HistogramTester histogram_tester;
+  base::RunLoop run_loop;
+
+  base::FilePath target_path(FILE_PATH_LITERAL("target.zip"));
+  base::FilePath tmp_path =
+      temp_dir_.GetPath().Append(FILE_PATH_LITERAL("tmp.crdownload"));
+
+  base::ScopedTempDir zip_source_dir;
+  ASSERT_TRUE(zip_source_dir.CreateUniqueTempDir());
+  std::string file_contents = "dummy file";
+  ASSERT_EQ(static_cast<int>(file_contents.size()),
+            base::WriteFile(
+                zip_source_dir.GetPath().Append(FILE_PATH_LITERAL("file.exe")),
+                file_contents.data(), file_contents.size()));
+  ASSERT_TRUE(zip::Zip(zip_source_dir.GetPath(), tmp_path,
+                       /* include_hidden_files= */ false));
+
+  analyzer.Start(
+      target_path, tmp_path,
+      base::BindOnce(&FileAnalyzerTest::DoneCallback, base::Unretained(this),
+                     run_loop.QuitClosure()));
+  run_loop.Run();
+
+  ASSERT_TRUE(has_result_);
+  histogram_tester.ExpectBucketCount(
+      "SBClientDownload.ZipArchiveAnalysisResult",
+      ArchiveAnalysisResult::kValid, 1);
+}
+
+TEST_F(FileAnalyzerTest, RarAnalysisResultMetric) {
+  scoped_refptr<MockBinaryFeatureExtractor> extractor =
+      new testing::StrictMock<MockBinaryFeatureExtractor>();
+  FileAnalyzer analyzer(extractor);
+  base::HistogramTester histogram_tester;
+  base::RunLoop run_loop;
+
+  base::FilePath target_path(FILE_PATH_LITERAL("has_exe.rar"));
+  base::FilePath rar_path;
+  EXPECT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &rar_path));
+  rar_path = rar_path.AppendASCII("safe_browsing")
+                 .AppendASCII("rar")
+                 .AppendASCII("has_exe.rar");
+
+  analyzer.Start(
+      target_path, rar_path,
+      base::BindOnce(&FileAnalyzerTest::DoneCallback, base::Unretained(this),
+                     run_loop.QuitClosure()));
+
+  run_loop.Run();
+
+  ASSERT_TRUE(has_result_);
+  histogram_tester.ExpectBucketCount(
+      "SBClientDownload.RarArchiveAnalysisResult",
+      ArchiveAnalysisResult::kValid, 1);
+}
+
+#if BUILDFLAG(IS_MAC)
+TEST_F(FileAnalyzerTest, DmgAnalysisResultMetric) {
+  scoped_refptr<MockBinaryFeatureExtractor> extractor =
+      new testing::StrictMock<MockBinaryFeatureExtractor>();
+  FileAnalyzer analyzer(extractor);
+  base::HistogramTester histogram_tester;
+  base::RunLoop run_loop;
+
+  base::FilePath target_path(FILE_PATH_LITERAL("target.dmg"));
+  base::FilePath signed_dmg;
+  EXPECT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &signed_dmg));
+  signed_dmg = signed_dmg.AppendASCII("safe_browsing")
+                   .AppendASCII("mach_o")
+                   .AppendASCII("signed-archive.dmg");
+
+  analyzer.Start(
+      target_path, signed_dmg,
+      base::BindOnce(&FileAnalyzerTest::DoneCallback, base::Unretained(this),
+                     run_loop.QuitClosure()));
+
+  run_loop.Run();
+
+  ASSERT_TRUE(has_result_);
+  histogram_tester.ExpectBucketCount(
+      "SBClientDownload.DmgArchiveAnalysisResult",
+      ArchiveAnalysisResult::kValid, 1);
+}
+#endif
 
 }  // namespace safe_browsing

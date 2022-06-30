@@ -6,7 +6,7 @@
 
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "media/capture/content/android/thread_safe_capture_oracle.h"
 
 namespace content {
@@ -68,11 +68,14 @@ void ScreenCaptureDeviceAndroid::RequestRefreshFrame() {
   capture_machine_.MaybeCaptureForRefresh();
 }
 
-void ScreenCaptureDeviceAndroid::OnUtilizationReport(int frame_feedback_id,
-                                                     double utilization) {
+void ScreenCaptureDeviceAndroid::OnUtilizationReport(
+    media::VideoCaptureFeedback feedback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(oracle_proxy_);
-  oracle_proxy_->OnConsumerReportingUtilization(frame_feedback_id, utilization);
+  DCHECK(feedback.frame_id.has_value());
+
+  oracle_proxy_->OnConsumerReportingUtilization(feedback.frame_id.value(),
+                                                feedback);
 }
 
 }  // namespace content

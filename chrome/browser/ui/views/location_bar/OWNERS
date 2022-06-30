@@ -1,6 +1,3 @@
 estade@chromium.org
+olesiamarukhno@google.com
 file://components/omnibox/OWNERS
-
-per-file custom_tab_bar_view*=harrisjay@chromium.org
-
-# COMPONENT: UI>Browser>Omnibox

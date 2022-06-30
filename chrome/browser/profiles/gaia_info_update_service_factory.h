@@ -5,16 +5,11 @@
 #ifndef CHROME_BROWSER_PROFILES_GAIA_INFO_UPDATE_SERVICE_FACTORY_H_
 #define CHROME_BROWSER_PROFILES_GAIA_INFO_UPDATE_SERVICE_FACTORY_H_
 
-#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class GAIAInfoUpdateService;
 class Profile;
-
-namespace user_prefs {
-class PrefRegistrySyncable;
-}
 
 // Singleton that owns all GAIAInfoUpdateServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
@@ -29,6 +24,10 @@ class GAIAInfoUpdateServiceFactory : public BrowserContextKeyedServiceFactory {
   // Returns an instance of the GAIAInfoUpdateServiceFactory singleton.
   static GAIAInfoUpdateServiceFactory* GetInstance();
 
+  GAIAInfoUpdateServiceFactory(const GAIAInfoUpdateServiceFactory&) = delete;
+  GAIAInfoUpdateServiceFactory& operator=(const GAIAInfoUpdateServiceFactory&) =
+      delete;
+
  private:
   friend struct base::DefaultSingletonTraits<GAIAInfoUpdateServiceFactory>;
 
@@ -38,12 +37,8 @@ class GAIAInfoUpdateServiceFactory : public BrowserContextKeyedServiceFactory {
   // BrowserContextKeyedServiceFactory:
   KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const override;
-
-  void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) override;
   bool ServiceIsNULLWhileTesting() const override;
-
-  DISALLOW_COPY_AND_ASSIGN(GAIAInfoUpdateServiceFactory);
+  bool ServiceIsCreatedWithBrowserContext() const override;
 };
 
 #endif  // CHROME_BROWSER_PROFILES_GAIA_INFO_UPDATE_SERVICE_FACTORY_H_

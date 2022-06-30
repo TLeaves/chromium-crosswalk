@@ -10,7 +10,9 @@
 #include "base/strings/utf_string_conversions.h"
 #import "ios/chrome/browser/chrome_url_util.h"
 #include "ios/web/public/deprecated/url_verification_constants.h"
-#import "ios/web/public/test/fakes/test_web_state.h"
+#import "ios/web/public/test/fakes/fake_web_frame.h"
+#import "ios/web/public/test/fakes/fake_web_frames_manager.h"
+#import "ios/web/public/test/fakes/fake_web_state.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -19,16 +21,6 @@
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
-
-namespace {
-
-// Mocks ExecuteJavaScript method.
-class WebStateMock : public web::TestWebState {
- public:
-  MOCK_METHOD1(ExecuteJavaScript, void(const base::string16&));
-};
-
-}  // namespace
 
 class U2FControllerTest : public PlatformTest {
  protected:
@@ -62,6 +54,7 @@ class U2FControllerTest : public PlatformTest {
   }
 
   U2FController* _U2FController;
+  url::ScopedSchemeRegistryForTests scoped_registry_;
 };
 
 TEST_F(U2FControllerTest, XCallbackFromRequestURLWithCorrectFlowTest) {
@@ -127,8 +120,8 @@ TEST_F(U2FControllerTest, XCallbackFromRequestURLWithDuplicatedParamsTest) {
   EXPECT_EQ(1u, [duplicatedParamsMatches count]);
 }
 
-TEST_F(U2FControllerTest, XCallbackFromRequestURLWithNonWhitelistedURLTest) {
-  // Test when request site is not whitelisted.
+TEST_F(U2FControllerTest, XCallbackFromRequestURLWithNonAllowListedURLTest) {
+  // Test when request site is not in an allow-listed domain.
   GURL requestURL("u2f://accounts.google.com?data=abc&def%26ghi");
   GURL evilOriginURL("https://evil.appspot.com");
   GURL tabURL("https://accounts.google.com");
@@ -165,18 +158,26 @@ TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithCorrectFlowTest) {
                                                         tabID:tabID];
   NSString* requestUUIDString = this->requestUUIDFromXCallbackURL(XCallbackURL);
 
-  WebStateMock webState;
+  web::FakeWebState webState;
   webState.SetTrustLevel(web::URLVerificationTrustLevel::kAbsolute);
   webState.SetCurrentURL(tabURL);
+
+  auto webFramesManager = std::make_unique<web::FakeWebFramesManager>();
+  web::FakeWebFramesManager* webFramesManagerPtr = webFramesManager.get();
+  webState.SetWebFramesManager(std::move(webFramesManager));
+
+  auto mainFrame = web::FakeWebFrame::CreateMainWebFrame(tabURL);
+  web::FakeWebFrame* mainFramePtr = mainFrame.get();
+  webFramesManagerPtr->AddWebFrame(std::move(mainFrame));
 
   // Test when U2F callback has correct information, Tab URL has not changed and
   // is trusted.
   GURL correctRequestUUIDURL("chromium://u2f-callback?requestUUID=" +
                              base::SysNSStringToUTF8(requestUUIDString) +
                              "&tabID=" + base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(1);
   [_U2FController evaluateU2FResultFromU2FURL:correctRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(1ul, mainFramePtr->GetJavaScriptCallHistory().size());
 }
 
 TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithReplayAttackTest) {
@@ -190,24 +191,32 @@ TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithReplayAttackTest) {
                                                         tabID:tabID];
   NSString* requestUUIDString = this->requestUUIDFromXCallbackURL(XCallbackURL);
 
-  WebStateMock webState;
+  web::FakeWebState webState;
   webState.SetTrustLevel(web::URLVerificationTrustLevel::kAbsolute);
   webState.SetCurrentURL(tabURL);
+
+  auto webFramesManager = std::make_unique<web::FakeWebFramesManager>();
+  web::FakeWebFramesManager* webFramesManagerPtr = webFramesManager.get();
+  webState.SetWebFramesManager(std::move(webFramesManager));
+
+  auto mainFrame = web::FakeWebFrame::CreateMainWebFrame(tabURL);
+  web::FakeWebFrame* mainFramePtr = mainFrame.get();
+  webFramesManagerPtr->AddWebFrame(std::move(mainFrame));
 
   // Test when U2F callback has correct information, Tab URL has not changed and
   // is trusted.
   GURL correctRequestUUIDURL("chromium://u2f-callback?requestUUID=" +
                              base::SysNSStringToUTF8(requestUUIDString) +
                              "&tabID=" + base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(1);
   [_U2FController evaluateU2FResultFromU2FURL:correctRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(1ul, mainFramePtr->GetJavaScriptCallHistory().size());
 
   // Test when requestUUID is used for multiple times. Subsequent calls with the
   // same requestUUID should not do anything.
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
   [_U2FController evaluateU2FResultFromU2FURL:correctRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(1ul, mainFramePtr->GetJavaScriptCallHistory().size());
 }
 
 TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithBadURLFormatTest) {
@@ -221,31 +230,39 @@ TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithBadURLFormatTest) {
                                                         tabID:tabID];
   NSString* requestUUIDString = this->requestUUIDFromXCallbackURL(XCallbackURL);
 
-  WebStateMock webState;
+  web::FakeWebState webState;
   webState.SetTrustLevel(web::URLVerificationTrustLevel::kAbsolute);
   webState.SetCurrentURL(tabURL);
+
+  auto webFramesManager = std::make_unique<web::FakeWebFramesManager>();
+  web::FakeWebFramesManager* webFramesManagerPtr = webFramesManager.get();
+  webState.SetWebFramesManager(std::move(webFramesManager));
+
+  auto mainFrame = web::FakeWebFrame::CreateMainWebFrame(tabURL);
+  web::FakeWebFrame* mainFramePtr = mainFrame.get();
+  webFramesManagerPtr->AddWebFrame(std::move(mainFrame));
 
   // Test when U2F callback has no requestUUID info.
   GURL noRequestUUIDURL("chromium://u2f-callback?tabID=" +
                         base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
   [_U2FController evaluateU2FResultFromU2FURL:noRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(0ul, mainFramePtr->GetJavaScriptCallHistory().size());
 
   // Test when U2F callback has wrong requestUUID value.
   GURL wrongRequestUUIDURL("chromium://u2f-callback?requestUUID=123&tabID=" +
                            base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
   [_U2FController evaluateU2FResultFromU2FURL:wrongRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(0ul, mainFramePtr->GetJavaScriptCallHistory().size());
 
   // Test when U2F callback hostname is unexpected.
   GURL wrongHostnameURL("chromium://evil-callback?requestUUID=" +
-                        base::SysNSStringToUTF8(requestUUIDString) + "&tabID=" +
-                        base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
+                        base::SysNSStringToUTF8(requestUUIDString) +
+                        "&tabID=" + base::SysNSStringToUTF8(tabID));
   [_U2FController evaluateU2FResultFromU2FURL:wrongHostnameURL
                                      webState:&webState];
+  EXPECT_EQ(0ul, mainFramePtr->GetJavaScriptCallHistory().size());
 }
 
 TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithBadTabStateTest) {
@@ -259,21 +276,36 @@ TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithBadTabStateTest) {
                                                         tabID:tabID];
   NSString* requestUUIDString = this->requestUUIDFromXCallbackURL(XCallbackURL);
 
-  WebStateMock webState;
+  web::FakeWebState webState;
+
+  auto webFramesManager = std::make_unique<web::FakeWebFramesManager>();
+  web::FakeWebFramesManager* webFramesManagerPtr = webFramesManager.get();
+  webState.SetWebFramesManager(std::move(webFramesManager));
 
   // Test when U2F callback has correct information but Tab URL changed.
   webState.SetTrustLevel(web::URLVerificationTrustLevel::kAbsolute);
-  webState.SetCurrentURL(GURL("http://www.dummy.com"));
+  auto url = GURL("http://www.dummy.com");
+  webState.SetCurrentURL(url);
+
+  auto mainFrame = web::FakeWebFrame::CreateMainWebFrame(url);
+  web::FakeWebFrame* mainFramePtr = mainFrame.get();
+  webFramesManagerPtr->AddWebFrame(std::move(mainFrame));
+
   GURL correctRequestUUIDURL("chromium://u2f-callback?requestUUID=" +
                              base::SysNSStringToUTF8(requestUUIDString) +
                              "&tabID=" + base::SysNSStringToUTF8(tabID));
   [_U2FController evaluateU2FResultFromU2FURL:correctRequestUUIDURL
                                      webState:&webState];
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
+  EXPECT_EQ(0ul, mainFramePtr->GetJavaScriptCallHistory().size());
+
+  webFramesManagerPtr->RemoveWebFrame(mainFramePtr->GetFrameId());
 
   // Test when U2F callback has correct information but Tab URL not trusted.
   webState.SetTrustLevel(web::URLVerificationTrustLevel::kNone);
   webState.SetCurrentURL(tabURL);
+  auto mainFrame2 = web::FakeWebFrame::CreateMainWebFrame(tabURL);
+  web::FakeWebFrame* mainFramePtr2 = mainFrame2.get();
+  webFramesManagerPtr->AddWebFrame(std::move(mainFrame2));
   XCallbackURL = [_U2FController XCallbackFromRequestURL:requestURL
                                                originURL:originURL
                                                   tabURL:tabURL
@@ -282,7 +314,7 @@ TEST_F(U2FControllerTest, EvaluateU2FResultFromU2FURLWithBadTabStateTest) {
   correctRequestUUIDURL = GURL("chromium://u2f-callback?requestUUID=" +
                                base::SysNSStringToUTF8(requestUUIDString) +
                                "&tabID=" + base::SysNSStringToUTF8(tabID));
-  EXPECT_CALL(webState, ExecuteJavaScript(testing::_)).Times(0);
   [_U2FController evaluateU2FResultFromU2FURL:correctRequestUUIDURL
                                      webState:&webState];
+  EXPECT_EQ(0ul, mainFramePtr2->GetJavaScriptCallHistory().size());
 }

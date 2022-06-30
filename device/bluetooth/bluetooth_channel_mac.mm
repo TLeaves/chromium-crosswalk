@@ -6,13 +6,12 @@
 
 #import <IOBluetooth/IOBluetooth.h>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "device/bluetooth/bluetooth_classic_device_mac.h"
 
 namespace device {
 
-BluetoothChannelMac::BluetoothChannelMac() : socket_(NULL) {
-}
+BluetoothChannelMac::BluetoothChannelMac() : socket_(nullptr) {}
 
 BluetoothChannelMac::~BluetoothChannelMac() {
 }

@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/wrong_hwid_screen_handler.h"
 
-#include "chrome/browser/chromeos/login/oobe_screen.h"
-#include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
+#include "chrome/browser/ash/login/oobe_screen.h"
+#include "chrome/browser/ash/login/screens/wrong_hwid_screen.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/login/localized_values_builder.h"
 
@@ -13,31 +13,36 @@ namespace chromeos {
 
 constexpr StaticOobeScreenId WrongHWIDScreenView::kScreenId;
 
-WrongHWIDScreenHandler::WrongHWIDScreenHandler(
-    JSCallsContainer* js_calls_container)
-    : BaseScreenHandler(kScreenId, js_calls_container) {
+WrongHWIDScreenHandler::WrongHWIDScreenHandler()
+    : BaseScreenHandler(kScreenId) {
+  set_user_acted_method_path_deprecated(
+      "login.WrongHWIDMessageScreen.userActed");
 }
 
 WrongHWIDScreenHandler::~WrongHWIDScreenHandler() {
-  if (delegate_)
-    delegate_->OnViewDestroyed(this);
+  if (screen_)
+    screen_->OnViewDestroyed(this);
 }
 
 void WrongHWIDScreenHandler::Show() {
-  if (!page_is_ready()) {
+  if (!IsJavascriptAllowed()) {
     show_on_init_ = true;
     return;
   }
-  ShowScreen(kScreenId);
+  ShowInWebUI();
 }
 
 void WrongHWIDScreenHandler::Hide() {
 }
 
-void WrongHWIDScreenHandler::SetDelegate(WrongHWIDScreen* delegate) {
-  delegate_ = delegate;
-  if (page_is_ready())
-    Initialize();
+void WrongHWIDScreenHandler::Bind(WrongHWIDScreen* screen) {
+  screen_ = screen;
+  BaseScreenHandler::SetBaseScreenDeprecated(screen_);
+}
+
+void WrongHWIDScreenHandler::Unbind() {
+  screen_ = nullptr;
+  BaseScreenHandler::SetBaseScreenDeprecated(nullptr);
 }
 
 void WrongHWIDScreenHandler::DeclareLocalizedValues(
@@ -51,23 +56,11 @@ void WrongHWIDScreenHandler::DeclareLocalizedValues(
                 IDS_WRONG_HWID_SCREEN_SKIP_LINK);
 }
 
-void WrongHWIDScreenHandler::Initialize() {
-  if (!page_is_ready() || !delegate_)
-    return;
-
+void WrongHWIDScreenHandler::InitializeDeprecated() {
   if (show_on_init_) {
-    Show();
     show_on_init_ = false;
+    Show();
   }
-}
-
-void WrongHWIDScreenHandler::RegisterMessages() {
-  AddCallback("wrongHWIDOnSkip", &WrongHWIDScreenHandler::HandleOnSkip);
-}
-
-void WrongHWIDScreenHandler::HandleOnSkip() {
-  if (delegate_)
-    delegate_->OnExit();
 }
 
 }  // namespace chromeos

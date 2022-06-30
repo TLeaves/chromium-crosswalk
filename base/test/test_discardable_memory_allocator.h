@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include "base/macros.h"
 #include "base/memory/discardable_memory_allocator.h"
 
 namespace base {
@@ -17,14 +16,22 @@ namespace base {
 // DiscardableMemory instances backed by heap memory.
 class TestDiscardableMemoryAllocator : public DiscardableMemoryAllocator {
  public:
-  constexpr TestDiscardableMemoryAllocator() = default;
+  TestDiscardableMemoryAllocator() = default;
+
+  TestDiscardableMemoryAllocator(const TestDiscardableMemoryAllocator&) =
+      delete;
+  TestDiscardableMemoryAllocator& operator=(
+      const TestDiscardableMemoryAllocator&) = delete;
 
   // Overridden from DiscardableMemoryAllocator:
   std::unique_ptr<DiscardableMemory> AllocateLockedDiscardableMemory(
       size_t size) override;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestDiscardableMemoryAllocator);
+  size_t GetBytesAllocated() const override;
+
+  void ReleaseFreeMemory() override {
+    // Do nothing since it is backed by heap memory.
+  }
 };
 
 }  // namespace base

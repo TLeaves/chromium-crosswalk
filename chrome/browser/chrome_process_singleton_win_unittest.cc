@@ -5,6 +5,7 @@
 #include "chrome/browser/chrome_process_singleton.h"
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -37,11 +38,11 @@ TEST(ChromeProcessSingletonTest, Basic) {
 
   ChromeProcessSingleton ps1(
       profile_dir.GetPath(),
-      base::Bind(&ServerCallback, base::Unretained(&callback_count)));
+      base::BindRepeating(&ServerCallback, base::Unretained(&callback_count)));
   ps1.Unlock();
 
   ChromeProcessSingleton ps2(profile_dir.GetPath(),
-                             base::Bind(&ClientCallback));
+                             base::BindRepeating(&ClientCallback));
   ps2.Unlock();
 
   ProcessSingleton::NotifyResult result = ps1.NotifyOtherProcessOrCreate();
@@ -63,10 +64,10 @@ TEST(ChromeProcessSingletonTest, Lock) {
 
   ChromeProcessSingleton ps1(
       profile_dir.GetPath(),
-      base::Bind(&ServerCallback, base::Unretained(&callback_count)));
+      base::BindRepeating(&ServerCallback, base::Unretained(&callback_count)));
 
   ChromeProcessSingleton ps2(profile_dir.GetPath(),
-                             base::Bind(&ClientCallback));
+                             base::BindRepeating(&ClientCallback));
   ps2.Unlock();
 
   ProcessSingleton::NotifyResult result = ps1.NotifyOtherProcessOrCreate();
@@ -82,7 +83,7 @@ TEST(ChromeProcessSingletonTest, Lock) {
   ASSERT_EQ(1, callback_count);
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if BUILDFLAG(IS_WIN) && !defined(USE_AURA)
 namespace {
 
 void ModalNotificationHandler(bool* flag) {
@@ -100,13 +101,13 @@ TEST(ChromeProcessSingletonTest, LockWithModalDialog) {
 
   ChromeProcessSingleton ps1(
       profile_dir.GetPath(),
-      base::Bind(&ServerCallback, base::Unretained(&callback_count)));
-  ps1.SetModalDialogNotificationHandler(
-      base::Bind(&ModalNotificationHandler,
-                 base::Unretained(&called_modal_notification_handler)));
+      base::BindRepeating(&ServerCallback, base::Unretained(&callback_count)));
+  ps1.SetModalDialogNotificationHandler(base::BindRepeating(
+      &ModalNotificationHandler,
+      base::Unretained(&called_modal_notification_handler)));
 
   ChromeProcessSingleton ps2(profile_dir.GetPath(),
-                             base::Bind(&ClientCallback));
+                             base::BindRepeating(&ClientCallback));
   ps2.Unlock();
 
   ProcessSingleton::NotifyResult result = ps1.NotifyOtherProcessOrCreate();
@@ -120,7 +121,7 @@ TEST(ChromeProcessSingletonTest, LockWithModalDialog) {
   ASSERT_TRUE(called_modal_notification_handler);
 
   ASSERT_EQ(0, callback_count);
-  ps1.SetModalDialogNotificationHandler(base::Closure());
+  ps1.SetModalDialogNotificationHandler(base::RepeatingClosure());
   ps1.Unlock();
   // The notifications sent while a modal dialog was open were processed after
   // unlock.
@@ -131,4 +132,4 @@ TEST(ChromeProcessSingletonTest, LockWithModalDialog) {
   ASSERT_EQ(ProcessSingleton::PROCESS_NOTIFIED, result);
   ASSERT_EQ(3, callback_count);
 }
-#endif  // defined(OS_WIN) && !defined(USE_AURA)
+#endif  // BUILDFLAG(IS_WIN) && !defined(USE_AURA)

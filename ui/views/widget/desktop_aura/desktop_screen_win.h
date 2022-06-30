@@ -5,25 +5,26 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_SCREEN_WIN_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_SCREEN_WIN_H_
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/views/views_export.h"
 
 namespace views {
 
 class VIEWS_EXPORT DesktopScreenWin : public display::win::ScreenWin {
-public:
+ public:
   DesktopScreenWin();
+  DesktopScreenWin(const DesktopScreenWin&) = delete;
+  DesktopScreenWin& operator=(const DesktopScreenWin&) = delete;
   ~DesktopScreenWin() override;
 
  private:
-  // Overridden from display::win::ScreenWin:
-  display::Display GetDisplayMatching(
-      const gfx::Rect& match_rect) const override;
-  HWND GetHWNDFromNativeView(gfx::NativeView window) const override;
+  // display::win::ScreenWin:
+  HWND GetHWNDFromNativeWindow(gfx::NativeWindow window) const override;
   gfx::NativeWindow GetNativeWindowFromHWND(HWND hwnd) const override;
-
-  DISALLOW_COPY_AND_ASSIGN(DesktopScreenWin);
+  bool IsNativeWindowOccluded(gfx::NativeWindow window) const override;
+  absl::optional<bool> IsWindowOnCurrentVirtualDesktop(
+      gfx::NativeWindow window) const override;
 };
 
 }  // namespace views

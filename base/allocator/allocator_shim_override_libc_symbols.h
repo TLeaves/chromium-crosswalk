@@ -10,11 +10,26 @@
 #endif
 #define BASE_ALLOCATOR_ALLOCATOR_SHIM_OVERRIDE_LIBC_SYMBOLS_H_
 
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_APPLE)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 
 #include "base/allocator/allocator_shim_internals.h"
 
 extern "C" {
+
+// WARNING: Whenever a new function is added there (which, surprisingly enough,
+// happens. For instance glibc 2.33 introduced mallinfo2(), which we don't
+// support... yet?), it MUST be added to build/linux/chrome.map.
+//
+// Otherwise the new symbol is not exported from Chromium's main binary, which
+// is necessary to override libc's weak symbol, which in turn is necessary to
+// intercept calls made by dynamic libraries. See crbug.com/1292206 for such
+// an example.
 
 SHIM_ALWAYS_EXPORT void* malloc(size_t size) __THROW {
   return ShimMalloc(size, nullptr);
@@ -40,6 +55,10 @@ SHIM_ALWAYS_EXPORT void* memalign(size_t align, size_t s) __THROW {
   return ShimMemalign(align, s, nullptr);
 }
 
+SHIM_ALWAYS_EXPORT void* aligned_alloc(size_t align, size_t s) __THROW {
+  return ShimMemalign(align, s, nullptr);
+}
+
 SHIM_ALWAYS_EXPORT void* valloc(size_t size) __THROW {
   return ShimValloc(size, nullptr);
 }
@@ -52,7 +71,7 @@ SHIM_ALWAYS_EXPORT int posix_memalign(void** r, size_t a, size_t s) __THROW {
   return ShimPosixMemalign(r, a, s);
 }
 
-SHIM_ALWAYS_EXPORT size_t malloc_size(void* address) __THROW {
+SHIM_ALWAYS_EXPORT size_t malloc_size(const void* address) __THROW {
   return ShimGetSizeEstimate(address, nullptr);
 }
 

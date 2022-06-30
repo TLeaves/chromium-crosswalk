@@ -12,9 +12,11 @@
 // defined by the core verification/path building code).
 //
 // Errors may be defined for other domains.
-namespace net {
+namespace net::cert_errors {
 
-namespace cert_errors {
+// An internal error occurred which prevented path building or verification
+// from finishing.
+NET_EXPORT extern const CertErrorId kInternalError;
 
 // The verification time is after the certificate's notAfter time.
 NET_EXPORT extern const CertErrorId kValidityFailedNotAfter;
@@ -126,8 +128,18 @@ NET_EXPORT extern const CertErrorId kNoRevocationMechanism;
 // affirmatively say whether the certificate was unrevoked.
 NET_EXPORT extern const CertErrorId kUnableToCheckRevocation;
 
-}  // namespace cert_errors
+// Path building was unable to find any issuers for the certificate.
+NET_EXPORT extern const CertErrorId kNoIssuersFound;
 
-}  // namespace net
+// Deadline was reached during path building.
+NET_EXPORT extern const CertErrorId kDeadlineExceeded;
+
+// Iteration limit was reached during path building.
+NET_EXPORT extern const CertErrorId kIterationLimitExceeded;
+
+// Depth limit was reached during path building.
+NET_EXPORT extern const CertErrorId kDepthLimitExceeded;
+
+}  // namespace net::cert_errors
 
 #endif  // NET_CERT_INTERNAL_COMMON_CERT_ERRORS_H_

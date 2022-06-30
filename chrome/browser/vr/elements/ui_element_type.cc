@@ -4,8 +4,7 @@
 
 #include "chrome/browser/vr/elements/ui_element_type.h"
 
-#include "base/logging.h"
-#include "base/stl_util.h"
+#include "base/check_op.h"
 
 namespace vr {
 
@@ -50,7 +49,7 @@ static const char* g_ui_element_type_strings[] = {
 };
 
 static_assert(
-    kNumUiElementTypes == base::size(g_ui_element_type_strings),
+    kNumUiElementTypes == std::size(g_ui_element_type_strings),
     "Mismatch between the kUiElementType enum and the corresponding array "
     "of strings.");
 

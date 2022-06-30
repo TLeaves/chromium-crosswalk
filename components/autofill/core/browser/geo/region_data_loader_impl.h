@@ -37,10 +37,9 @@ class RegionDataLoaderImpl : public RegionDataLoader {
 
   ~RegionDataLoaderImpl() override;
 
-  // autofill::RegionDataLoader.
+  // RegionDataLoader.
   void LoadRegionData(const std::string& country_code,
-                      RegionDataLoader::RegionDataLoaded callback,
-                      int64_t timeout_ms) override;
+                      RegionDataLoader::RegionDataLoaded callback) override;
   void ClearCallback() override;
 
  private:
@@ -58,7 +57,6 @@ class RegionDataLoaderImpl : public RegionDataLoader {
 
   std::string app_locale_;
   RegionDataLoader::RegionDataLoaded callback_;
-  base::OneShotTimer timer_;
 };
 
 }  // namespace autofill

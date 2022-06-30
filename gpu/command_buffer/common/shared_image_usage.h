@@ -6,9 +6,14 @@
 #define GPU_COMMAND_BUFFER_COMMON_SHARED_IMAGE_USAGE_H_
 
 #include <stdint.h>
+#include <string>
+
+#include "gpu/gpu_export.h"
 
 namespace gpu {
 
+// Please update the function, CreateLabelForSharedImageUsage, when adding a new
+// enum value.
 enum SharedImageUsage : uint32_t {
   // Image will be used in GLES2Interface
   SHARED_IMAGE_USAGE_GLES2 = 1 << 0,
@@ -29,7 +34,35 @@ enum SharedImageUsage : uint32_t {
   SHARED_IMAGE_USAGE_RGB_EMULATION = 1 << 6,
   // Image will be used by Dawn (for WebGPU)
   SHARED_IMAGE_USAGE_WEBGPU = 1 << 7,
+  // Image will be used in a protected Vulkan context on Fuchsia.
+  SHARED_IMAGE_USAGE_PROTECTED = 1 << 8,
+  // Image may use concurrent read/write access. Used by single buffered canvas.
+  // TODO(crbug.com/969114): This usage is currently not supported in GL/Vulkan
+  // interop cases.
+  SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE = 1 << 9,
+  // Image will be used for video decode acceleration on Chrome OS.
+  SHARED_IMAGE_USAGE_VIDEO_DECODE = 1 << 10,
+  // Image will be used as a WebGPU swapbuffer
+  SHARED_IMAGE_USAGE_WEBGPU_SWAP_CHAIN_TEXTURE = 1 << 11,
+  // Image will be used by VideoToolbox on macOS. If this is set, then
+  // GLImage::DisableInUseByWindowServer should be called on any GLImages that
+  // use this SharedImage.
+  SHARED_IMAGE_USAGE_MACOS_VIDEO_TOOLBOX = 1 << 12,
+  // Image will be used with mipmap enabled
+  SHARED_IMAGE_USAGE_MIPMAP = 1 << 13,
+  // Image will be used for CPU Writes by client
+  SHARED_IMAGE_USAGE_CPU_WRITE = 1 << 14,
+  // Image will be used in RasterInterface with RawDraw.
+  SHARED_IMAGE_USAGE_RAW_DRAW = 1 << 15,
+  // Image will be used in RasterInterface for DelegatedCompositing.
+  // TODO(crbug.com/1254033): this usage shall be removed after cc is able to
+  // set a single (duplicated) fence for bunch of tiles instead of having the SI
+  // framework creating fences for each single message when write access ends.
+  SHARED_IMAGE_USAGE_RASTER_DELEGATED_COMPOSITING = 1 << 16,
 };
+
+// Create a string to label SharedImageUsage.
+GPU_EXPORT std::string CreateLabelForSharedImageUsage(uint32_t usage);
 
 }  // namespace gpu
 

@@ -7,7 +7,7 @@
 
 #include "base/bind.h"
 #include "base/run_loop.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "components/component_updater/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,12 +19,12 @@ namespace component_updater {
 class ComponentUpdaterTimerTest : public testing::Test {
  public:
   ComponentUpdaterTimerTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
-  ~ComponentUpdaterTimerTest() override {}
+      : task_environment_(
+            base::test::SingleThreadTaskEnvironment::MainThreadType::UI) {}
+  ~ComponentUpdaterTimerTest() override = default;
 
  private:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::SingleThreadTaskEnvironment task_environment_;
 };
 
 TEST_F(ComponentUpdaterTimerTest, Start) {
@@ -55,7 +55,7 @@ TEST_F(ComponentUpdaterTimerTest, Start) {
   EXPECT_EQ(0, timer_client_fake.count());
 
   Timer timer;
-  const base::TimeDelta delay(base::TimeDelta::FromMilliseconds(1));
+  const base::TimeDelta delay(base::Milliseconds(1));
   timer.Start(delay, delay,
               base::BindRepeating(&TimerClientMock::OnTimerEvent,
                                   base::Unretained(&timer_client_fake)));

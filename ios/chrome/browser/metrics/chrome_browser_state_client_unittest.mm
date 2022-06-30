@@ -12,7 +12,7 @@
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state_manager.h"
 #include "ios/chrome/test/ios_chrome_scoped_testing_chrome_browser_state_manager.h"
-#include "ios/web/public/test/test_web_thread_bundle.h"
+#include "ios/web/public/test/web_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -33,14 +33,14 @@ class ChromeBrowserStateClientTest : public PlatformTest {
   void SetUp() override { PlatformTest::SetUp(); }
 
  private:
-  web::TestWebThreadBundle test_web_thread_bundle_;
+  web::WebTaskEnvironment task_environment_;
   IOSChromeScopedTestingChromeBrowserStateManager scoped_browser_state_manager_;
 };
 
 TEST_F(ChromeBrowserStateClientTest, GetNetworkTime) {
   // Set initial time of the network clock.
-  base::TimeDelta resolution = base::TimeDelta::FromMilliseconds(17);
-  base::TimeDelta latency = base::TimeDelta::FromMilliseconds(50);
+  base::TimeDelta resolution = base::Milliseconds(17);
+  base::TimeDelta latency = base::Milliseconds(50);
   base::DefaultClock clock;
   base::DefaultTickClock tick_clock;
   GetApplicationContext()->GetNetworkTimeTracker()->UpdateNetworkTime(
@@ -60,6 +60,9 @@ TEST_F(ChromeBrowserStateClientTest, GetSyncService) {
 
 TEST_F(ChromeBrowserStateClientTest, GetNumberOfProfilesOnDisk) {
   ChromeBrowserStateClient profile_client;
+  // On ChromeBrowserState was created and registered with the
+  // ChromeBrowserStateManager, check the client returns the correct
+  // value.
   EXPECT_EQ(1, profile_client.GetNumberOfProfilesOnDisk());
 }
 

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ash/public/cpp/ash_public_export.h"
+#include "base/time/time.h"
 
 namespace base {
 struct Feature;
@@ -18,37 +19,14 @@ namespace app_list_features {
 // Please keep these features sorted.
 // TODO(newcomer|weidongg): Sort these features.
 
-// Enables the answer card in the app list.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableAnswerCard;
+// Enable app ranking models.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppRanker;
 
-// Enables background blur for the app list, lock screen, and tab switcher, also
-// enables the AppsGridView mask layer. In this mode, slower devices may have
-// choppier app list animations. crbug.com/765292.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableBackgroundBlur;
-
-// Enables the Play Store app search.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnablePlayStoreAppSearch;
-
-// Enables in-app data search.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppDataSearch;
-
-// Enables the Settings shortcut search.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableSettingsShortcutSearch;
-
-// Enables the feature to display zero state suggestions.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableZeroStateSuggestions;
-
-// Enables the feature to autocomplete text typed in the AppList search box.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppListSearchAutocomplete;
-
-// Enable an model that ranks query based apps search result.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableQueryBasedAppsRanker;
-
-// Enable an model that ranks zero-state apps search result.
+// Enable a model that ranks zero-state apps search result.
+// TODO(crbug.com/989350): This flag can be removed once the
+// AppSearchResultRanker is removed. Same with the
+// AppSearchResultRankerPredictorName.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableZeroStateAppsRanker;
-
-// Enable an model that ranks query based non-apps result.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableQueryBasedMixedTypesRanker;
 
 // Enable a model that ranks zero-state files and recent queries.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableZeroStateMixedTypesRanker;
@@ -57,37 +35,82 @@ ASH_PUBLIC_EXPORT extern const base::Feature kEnableZeroStateMixedTypesRanker;
 // zero-state.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppReinstallZeroState;
 
-// Enables the embedded Assistant UI in the app list.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableEmbeddedAssistantUI;
+// Enables Drive file suggestions in the suggestion chips.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableSuggestedFiles;
 
-// Enables ghosting in any AppsGridView (folder or root) when dragging an item.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppGridGhost;
+// Enables local file suggestions in the suggestion chips.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableSuggestedLocalFiles;
 
 // Enables hashed recording of a app list launches.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppListLaunchRecording;
 
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableSearchBoxSelection;
+// Enables using the fuzzy search algorithm for app search provider.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableFuzzyAppSearch;
 
-bool ASH_PUBLIC_EXPORT IsAnswerCardEnabled();
-bool ASH_PUBLIC_EXPORT IsBackgroundBlurEnabled();
-bool ASH_PUBLIC_EXPORT IsPlayStoreAppSearchEnabled();
-bool ASH_PUBLIC_EXPORT IsAppDataSearchEnabled();
-bool ASH_PUBLIC_EXPORT IsSettingsShortcutSearchEnabled();
-bool ASH_PUBLIC_EXPORT IsZeroStateSuggestionsEnabled();
-bool ASH_PUBLIC_EXPORT IsAppListSearchAutocompleteEnabled();
-bool ASH_PUBLIC_EXPORT IsQueryBasedAppsRankerEnabled();
-bool ASH_PUBLIC_EXPORT IsZeroStateAppsRankerEnabled();
-bool ASH_PUBLIC_EXPORT IsQueryBasedMixedTypesRankerEnabled();
-bool ASH_PUBLIC_EXPORT IsZeroStateMixedTypesRankerEnabled();
-bool ASH_PUBLIC_EXPORT IsAppReinstallZeroStateEnabled();
-bool ASH_PUBLIC_EXPORT IsEmbeddedAssistantUIEnabled();
-bool ASH_PUBLIC_EXPORT IsAppGridGhostEnabled();
-bool ASH_PUBLIC_EXPORT IsAppListLaunchRecordingEnabled();
-bool ASH_PUBLIC_EXPORT IsSearchBoxSelectionEnabled();
+// Enables using exact string search for non latin locales.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableExactMatchForNonLatinLocale;
 
-std::string ASH_PUBLIC_EXPORT AnswerServerUrl();
-std::string ASH_PUBLIC_EXPORT AnswerServerQuerySuffix();
-std::string ASH_PUBLIC_EXPORT AppSearchResultRankerPredictorName();
+// Enables launcher search results for OS settings.
+ASH_PUBLIC_EXPORT extern const base::Feature kLauncherSettingsSearch;
+
+// Enables using aggregated model in ranking non-app results for
+// non empty queries.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableAggregatedMlSearchRanking;
+
+// Enables normalization of search results in the launcher.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableLauncherSearchNormalization;
+
+// Enables categorical search in the launcher.
+ASH_PUBLIC_EXPORT extern const base::Feature kCategoricalSearch;
+
+// Forces the launcher to show the continue section even if there are no file
+// suggestions.
+ASH_PUBLIC_EXPORT extern const base::Feature kForceShowContinueSection;
+
+// Enables iconified text and inline icons in launcher search.
+ASH_PUBLIC_EXPORT extern const base::Feature kSearchResultInlineIcon;
+
+// Enable shortened search result update animations when in progress animations
+// are interrupted by search model updates.
+ASH_PUBLIC_EXPORT extern const base::Feature kDynamicSearchUpdateAnimation;
+
+// Forces the Launcher provider to send Omnibox search queries to the lacros
+// browser. If disabled, queries are sent to the ash browser.
+ASH_PUBLIC_EXPORT extern const base::Feature kLauncherLacrosIntegration;
+
+// Controls the bubble launcher (productivity launcher in clamshell) width. When
+// enabled, the bubble UI will be narrower.
+ASH_PUBLIC_EXPORT extern const base::Feature kCompactBubbleLauncher;
+
+// Enables Play Store search in the launcher.
+ASH_PUBLIC_EXPORT extern const base::Feature kLauncherPlayStoreSearch;
+
+ASH_PUBLIC_EXPORT bool IsAppRankerEnabled();
+ASH_PUBLIC_EXPORT bool IsZeroStateAppsRankerEnabled();
+ASH_PUBLIC_EXPORT bool IsQueryBasedMixedTypesRankerEnabled();
+ASH_PUBLIC_EXPORT bool IsZeroStateMixedTypesRankerEnabled();
+ASH_PUBLIC_EXPORT bool IsAppReinstallZeroStateEnabled();
+ASH_PUBLIC_EXPORT bool IsSuggestedFilesEnabled();
+ASH_PUBLIC_EXPORT bool IsSuggestedLocalFilesEnabled();
+ASH_PUBLIC_EXPORT bool IsAppListLaunchRecordingEnabled();
+ASH_PUBLIC_EXPORT bool IsFuzzyAppSearchEnabled();
+ASH_PUBLIC_EXPORT bool IsExactMatchForNonLatinLocaleEnabled();
+ASH_PUBLIC_EXPORT bool IsForceShowContinueSectionEnabled();
+ASH_PUBLIC_EXPORT bool IsLauncherSettingsSearchEnabled();
+ASH_PUBLIC_EXPORT bool IsAggregatedMlSearchRankingEnabled();
+ASH_PUBLIC_EXPORT bool IsLauncherSearchNormalizationEnabled();
+ASH_PUBLIC_EXPORT bool IsCategoricalSearchEnabled();
+ASH_PUBLIC_EXPORT bool IsSearchResultInlineIconEnabled();
+ASH_PUBLIC_EXPORT bool IsDynamicSearchUpdateAnimationEnabled();
+ASH_PUBLIC_EXPORT base::TimeDelta DynamicSearchUpdateAnimationDuration();
+ASH_PUBLIC_EXPORT bool IsLauncherLacrosIntegrationEnabled();
+ASH_PUBLIC_EXPORT bool IsCompactBubbleLauncherEnabled();
+ASH_PUBLIC_EXPORT bool IsLauncherPlayStoreSearchEnabled();
+
+ASH_PUBLIC_EXPORT std::string AnswerServerUrl();
+ASH_PUBLIC_EXPORT std::string AnswerServerQuerySuffix();
+ASH_PUBLIC_EXPORT std::string AppSearchResultRankerPredictorName();
+ASH_PUBLIC_EXPORT std::string CategoricalSearchType();
 
 }  // namespace app_list_features
 

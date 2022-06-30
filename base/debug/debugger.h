@@ -29,6 +29,10 @@ BASE_EXPORT bool BeingDebugged();
 
 // Break into the debugger, assumes a debugger is present.
 BASE_EXPORT void BreakDebugger();
+// Async-safe version of BreakDebugger(). In particular, this does not allocate
+// any memory. More broadly, must be safe to call from anywhere, including
+// signal handlers.
+BASE_EXPORT void BreakDebuggerAsyncSafe();
 
 // Used in test code, this controls whether showing dialogs and breaking into
 // the debugger is suppressed for debug errors, even in debug mode (normally
@@ -40,7 +44,8 @@ BASE_EXPORT bool IsDebugUISuppressed();
 
 // If a debugger is present, verifies that it is properly set up, and DCHECK()s
 // if misconfigured.  Currently only verifies that //tools/gdb/gdbinit has been
-// sourced when using gdb on Linux.
+// sourced when using gdb on Linux and //tools/lldb/lldbinit.py has been sourced
+// when using lldb on macOS.
 BASE_EXPORT void VerifyDebugger();
 
 }  // namespace debug

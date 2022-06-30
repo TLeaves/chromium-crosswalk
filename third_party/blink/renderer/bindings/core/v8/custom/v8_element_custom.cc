@@ -1,83 +1,68 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/bindings/core/v8/v8_element.h"
 
+#include "base/metrics/histogram_macros.h"
+#include "base/timer/elapsed_timer.h"
+#include "third_party/blink/renderer/bindings/core/v8/generated_code_helper.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_trusted_html.h"
+#include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
+#include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/custom/ce_reactions_scope.h"
-#include "third_party/blink/renderer/core/html/custom/v0_custom_element_processing_stack.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "v8/include/v8.h"
 
 namespace blink {
 
-// HTMLElement -----------------------------------------------------------------
-
+// TODO(https://crbug.com/1335986): Custom setter is needed to collect metrics,
+// and can be removed once metrics are captured.
+// static
 void V8Element::InnerHTMLAttributeSetterCustom(
-    v8::Local<v8::Value> value,
+    v8::Local<v8::Value> html_value,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
+  const ExceptionState::ContextType exception_state_context_type =
+      ExceptionContext::Context::kAttributeSet;
+  const char* const class_like_name = "Element";
+  const char* const property_name = "innerHTML";
+  ExceptionState exception_state(isolate, exception_state_context_type,
+                                 class_like_name, property_name);
 
-  v8::Local<v8::Object> holder = info.Holder();
-
-  Element* impl = V8Element::ToImpl(holder);
-
-  V0CustomElementProcessingStack::CallbackDeliveryScope delivery_scope;
-
-  ExceptionState exception_state(isolate, ExceptionState::kSetterContext,
-                                 "Element", "innerHTML");
+  // [CEReactions]
   CEReactionsScope ce_reactions_scope;
 
-  // Prepare the value to be set.
-  StringOrTrustedHTML cpp_value;
-  // This if statement is the only difference to the generated code and ensures
-  // that only null but not undefined is treated as the empty string.
-  // https://crbug.com/783916
-  if (value->IsNull()) {
-    cpp_value.SetString(String());
-  } else {
-    V8StringOrTrustedHTML::ToImpl(isolate, value, cpp_value,
-                                  UnionTypeConversionMode::kNotNullable,
-                                  exception_state);
+  v8::Local<v8::Object> v8_receiver = info.This();
+  Element* blink_receiver = V8Element::ToWrappableUnsafe(v8_receiver);
+  ExecutionContext* execution_context_of_document_tree =
+      bindings::ExecutionContextFromV8Wrappable(blink_receiver);
+  const bool is_high_resolution_timer = base::TimeTicks::IsHighResolution();
+  base::ElapsedTimer timer;
+  auto&& html = NativeValueTraits<
+      IDLStringStringContextTrustedHTMLTreatNullAsEmptyString>::
+      NativeValue(isolate, html_value, exception_state,
+                  execution_context_of_document_tree);
+  if (is_high_resolution_timer) {
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Blink.SetInnerHtml.ConversionTime", timer.Elapsed(),
+        base::Microseconds(1), base::Seconds(1), 100);
   }
-  if (exception_state.HadException())
+  if (UNLIKELY(exception_state.HadException())) {
     return;
-
-  impl->setInnerHTML(cpp_value, exception_state);
-}
-
-void V8Element::OuterHTMLAttributeSetterCustom(
-    v8::Local<v8::Value> value,
-    const v8::FunctionCallbackInfo<v8::Value>& info) {
-  v8::Isolate* isolate = info.GetIsolate();
-
-  v8::Local<v8::Object> holder = info.Holder();
-
-  Element* impl = V8Element::ToImpl(holder);
-
-  V0CustomElementProcessingStack::CallbackDeliveryScope delivery_scope;
-
-  ExceptionState exception_state(isolate, ExceptionState::kSetterContext,
-                                 "Element", "outerHTML");
-  CEReactionsScope ce_reactions_scope;
-
-  // Prepare the value to be set.
-  StringOrTrustedHTML cpp_value;
-  // This if statement is the only difference to the generated code and ensures
-  // that only null but not undefined is treated as the empty string.
-  // https://crbug.com/783916
-  if (value->IsNull()) {
-    cpp_value.SetString(String());
-  } else {
-    V8StringOrTrustedHTML::ToImpl(isolate, value, cpp_value,
-                                  UnionTypeConversionMode::kNotNullable,
-                                  exception_state);
   }
-  if (exception_state.HadException())
+  timer = base::ElapsedTimer();
+  blink_receiver->setInnerHTML(html, exception_state);
+  if (is_high_resolution_timer) {
+    UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
+        "Blink.SetInnerHtml.ExecutionTime", timer.Elapsed(),
+        base::Microseconds(1), base::Seconds(10), 100);
+    UMA_HISTOGRAM_COUNTS_1M("Blink.SetInnerHtml.StringLength", html.length());
+  }
+  if (UNLIKELY(exception_state.HadException())) {
     return;
-
-  impl->setOuterHTML(cpp_value, exception_state);
+  }
 }
 
 }  // namespace blink

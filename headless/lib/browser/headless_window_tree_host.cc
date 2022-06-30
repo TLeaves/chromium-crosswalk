@@ -4,6 +4,8 @@
 
 #include "headless/lib/browser/headless_window_tree_host.h"
 
+#include <memory>
+
 #include "base/containers/flat_set.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "headless/lib/browser/headless_focus_client.h"
@@ -15,13 +17,11 @@
 namespace headless {
 
 HeadlessWindowTreeHost::HeadlessWindowTreeHost(
-    const gfx::Rect& bounds,
-    ui::ExternalBeginFrameClient* external_begin_frame_client)
-    : bounds_(bounds) {
-  CreateCompositor(viz::FrameSinkId(), false, external_begin_frame_client);
+    bool use_external_begin_frame_control) {
+  CreateCompositor(false, use_external_begin_frame_control);
   OnAcceleratedWidgetAvailable();
 
-  focus_client_.reset(new HeadlessFocusClient());
+  focus_client_ = std::make_unique<HeadlessFocusClient>();
   aura::client::SetFocusClient(window(), focus_client_.get());
 }
 
@@ -32,7 +32,8 @@ HeadlessWindowTreeHost::~HeadlessWindowTreeHost() {
 }
 
 void HeadlessWindowTreeHost::SetParentWindow(gfx::NativeWindow window) {
-  window_parenting_client_.reset(new HeadlessWindowParentingClient(window));
+  window_parenting_client_ =
+      std::make_unique<HeadlessWindowParentingClient>(window);
 }
 
 bool HeadlessWindowTreeHost::CanDispatchEvent(const ui::PlatformEvent& event) {
@@ -78,7 +79,7 @@ void HeadlessWindowTreeHost::SetCapture() {}
 void HeadlessWindowTreeHost::ReleaseCapture() {}
 
 bool HeadlessWindowTreeHost::CaptureSystemKeyEventsImpl(
-    base::Optional<base::flat_set<ui::DomCode>> codes) {
+    absl::optional<base::flat_set<ui::DomCode>> codes) {
   return false;
 }
 

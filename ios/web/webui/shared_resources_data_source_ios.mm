@@ -6,14 +6,15 @@
 
 #include <stddef.h>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
 #import "ios/web/public/web_client.h"
 #include "net/base/mime_util.h"
+#include "ui/base/webui/resource_path.h"
 #include "ui/base/webui/web_ui_util.h"
-#include "ui/resources/grit/webui_resources.h"
-#include "ui/resources/grit/webui_resources_map.h"
+#include "ui/resources/grit/webui_generated_resources.h"
+#include "ui/resources/grit/webui_generated_resources_map.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -29,10 +30,10 @@ const char kWebUIResourcesHost[] = "resources";
 
 // Maps a path name (i.e. "/js/path.js") to a resource map entry. Returns
 // nullptr if not found.
-const GritResourceMap* PathToResource(const std::string& path) {
-  for (size_t i = 0; i < kWebuiResourcesSize; ++i) {
-    if (path == kWebuiResources[i].name)
-      return &kWebuiResources[i];
+const webui::ResourcePath* PathToResource(const std::string& path) {
+  for (size_t i = 0; i < kWebuiGeneratedResourcesSize; ++i) {
+    if (path == kWebuiGeneratedResources[i].path)
+      return &kWebuiGeneratedResources[i];
   }
   return nullptr;
 }
@@ -49,22 +50,22 @@ std::string SharedResourcesDataSourceIOS::GetSource() const {
 
 void SharedResourcesDataSourceIOS::StartDataRequest(
     const std::string& path,
-    const URLDataSourceIOS::GotDataCallback& callback) {
-  const GritResourceMap* resource = PathToResource(path);
+    URLDataSourceIOS::GotDataCallback callback) {
+  const webui::ResourcePath* resource = PathToResource(path);
   DCHECK(resource) << " path: " << path;
   scoped_refptr<base::RefCountedMemory> bytes;
 
   WebClient* web_client = GetWebClient();
 
-  int idr = resource ? resource->value : -1;
-  if (idr == IDR_WEBUI_CSS_TEXT_DEFAULTS) {
+  int idr = resource ? resource->id : -1;
+  if (idr == IDR_WEBUI_CSS_TEXT_DEFAULTS_CSS) {
     std::string css = webui::GetWebUiCssTextDefaults();
     bytes = base::RefCountedString::TakeString(&css);
   } else {
     bytes = web_client->GetDataResourceBytes(idr);
   }
 
-  callback.Run(bytes.get());
+  std::move(callback).Run(bytes.get());
 }
 
 std::string SharedResourcesDataSourceIOS::GetMimeType(
@@ -72,12 +73,6 @@ std::string SharedResourcesDataSourceIOS::GetMimeType(
   std::string mime_type;
   net::GetMimeTypeFromFile(base::FilePath().AppendASCII(path), &mime_type);
   return mime_type;
-}
-
-bool SharedResourcesDataSourceIOS::IsGzipped(const std::string& path) const {
-  const GritResourceMap* resource = PathToResource(path);
-  int idr = resource ? resource->value : -1;
-  return idr == -1 ? false : GetWebClient()->IsDataResourceGzipped(idr);
 }
 
 }  // namespace web

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/sequence_checker.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/thread_annotations.h"
@@ -36,18 +37,14 @@ namespace test {
 // will be deprecated soon.
 class FrameRendererThumbnail : public FrameRenderer {
  public:
+  FrameRendererThumbnail(const FrameRendererThumbnail&) = delete;
+  FrameRendererThumbnail& operator=(const FrameRendererThumbnail&) = delete;
+
   ~FrameRendererThumbnail() override;
 
   // Create an instance of the thumbnail frame renderer.
   static std::unique_ptr<FrameRendererThumbnail> Create(
       const std::vector<std::string> thumbnail_checksums,
-      const base::FilePath& output_folder);
-
-  // Create an instance of the thumbnail frame renderer. The |video_file_path|
-  // should point to a file containing all golden thumbnail hashes for the video
-  // being rendered.
-  static std::unique_ptr<FrameRendererThumbnail> Create(
-      const base::FilePath& video_file_path,
       const base::FilePath& output_folder);
 
   // FrameRenderer implementation
@@ -134,8 +131,6 @@ class FrameRendererThumbnail : public FrameRenderer {
 
   SEQUENCE_CHECKER(client_sequence_checker_);
   SEQUENCE_CHECKER(renderer_sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(FrameRendererThumbnail);
 };
 
 }  // namespace test

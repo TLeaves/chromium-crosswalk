@@ -5,35 +5,33 @@
 #ifndef CONTENT_PUBLIC_BROWSER_WEB_UI_MESSAGE_HANDLER_H_
 #define CONTENT_PUBLIC_BROWSER_WEB_UI_MESSAGE_HANDLER_H_
 
+#include <ostream>
+#include <string>
 #include <vector>
 
+#include "base/check.h"
 #include "base/gtest_prod_util.h"
-#include "base/logging.h"
-#include "base/strings/string16.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/web_ui.h"
 
 class WebUIBrowserTest;
 class MojoWebUIBrowserTest;
-
-namespace base {
-class ListValue;
-}
+class CertificateHandlerTest;
 
 namespace content {
 
 class TestWebUI;
 class WebUI;
-class WebUIImpl;
 
 // Messages sent from the DOM are forwarded via the WebUI to handler
 // classes. These objects are owned by WebUI and destroyed when the
 // host is destroyed.
 class CONTENT_EXPORT WebUIMessageHandler {
  public:
-  WebUIMessageHandler() : javascript_allowed_(false), web_ui_(nullptr) {}
-  virtual ~WebUIMessageHandler() {}
+  WebUIMessageHandler() = default;
+  virtual ~WebUIMessageHandler() = default;
 
   // Call this when a page should not receive JavaScript messages.
   void DisallowJavascript();
@@ -42,13 +40,9 @@ class CONTENT_EXPORT WebUIMessageHandler {
   // is needed from production code, just publicize AllowJavascript() instead.
   void AllowJavascriptForTesting();
 
-  bool IsJavascriptAllowed() const;
+  bool IsJavascriptAllowed();
 
  protected:
-  FRIEND_TEST_ALL_PREFIXES(WebUIMessageHandlerTest, ExtractIntegerValue);
-  FRIEND_TEST_ALL_PREFIXES(WebUIMessageHandlerTest, ExtractDoubleValue);
-  FRIEND_TEST_ALL_PREFIXES(WebUIMessageHandlerTest, ExtractStringValue);
-
   // This method must be called once the handler's corresponding JavaScript
   // component is initialized. In practice, it should be called from a WebUI
   // message handler similar to: 'initializeFooPage' or 'getInitialState'.
@@ -61,18 +55,6 @@ class CONTENT_EXPORT WebUIMessageHandler {
   // This should never be called from a C++ callback used as a reply for a
   // posted task or asynchronous operation.
   void AllowJavascript();
-
-  // Helper methods:
-
-  // Extract an integer value from a list Value.
-  static bool ExtractIntegerValue(const base::ListValue* value, int* out_int);
-
-  // Extract a floating point (double) value from a list Value.
-  static bool ExtractDoubleValue(const base::ListValue* value,
-                                 double* out_value);
-
-  // Extract a string value from a list Value.
-  static base::string16 ExtractStringValue(const base::ListValue* value);
 
   // This is where subclasses specify which messages they'd like to handle and
   // perform any additional initialization.. At this point web_ui() will return
@@ -88,6 +70,8 @@ class CONTENT_EXPORT WebUIMessageHandler {
   // from the allowed state. This will never be called before
   // OnJavascriptAllowed has been called. Subclasses should override this method
   // to deregister or disabled observers that push JavaScript calls to the page.
+  // Any WeakPtrFactory used for async tasks that would talk to the renderer
+  // must by invalidated by the subclass when this is called.
   virtual void OnJavascriptDisallowed() {}
 
   // Helper method for responding to Javascript requests initiated with
@@ -129,7 +113,7 @@ class CONTENT_EXPORT WebUIMessageHandler {
   }
 
   // Returns the attached WebUI for this handler.
-  WebUI* web_ui() const { return web_ui_; }
+  WebUI* web_ui() { return web_ui_; }
 
   // Sets the attached WebUI - exposed to subclasses for testing purposes.
   void set_web_ui(WebUI* web_ui) { web_ui_ = web_ui; }
@@ -141,14 +125,15 @@ class CONTENT_EXPORT WebUIMessageHandler {
   friend class WebUIImpl;
   friend class ::WebUIBrowserTest;
   friend class ::MojoWebUIBrowserTest;
+  friend class ::CertificateHandlerTest;
 
   // TODO(dbeam): disallow JavaScript when a renderer process crashes.
   // http://crbug.com/610450
 
   // True if the page is for JavaScript calls from this handler.
-  bool javascript_allowed_;
+  bool javascript_allowed_ = false;
 
-  WebUI* web_ui_;
+  WebUI* web_ui_ = nullptr;
 };
 
 }  // namespace content

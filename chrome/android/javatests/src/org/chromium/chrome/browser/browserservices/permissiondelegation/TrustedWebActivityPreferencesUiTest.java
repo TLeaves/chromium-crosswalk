@@ -5,7 +5,8 @@
 package org.chromium.chrome.browser.browserservices.permissiondelegation;
 
 import android.support.test.InstrumentationRegistry;
-import android.support.test.filters.SmallTest;
+
+import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -14,49 +15,46 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.base.test.util.CriteriaHelper;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.RetryOnFailure;
-import org.chromium.chrome.browser.ChromeActivity;
-import org.chromium.chrome.browser.ChromeApplication;
-import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.browserservices.Origin;
-import org.chromium.chrome.browser.preferences.ChromeImageViewPreferenceCompat;
-import org.chromium.chrome.browser.preferences.ExpandablePreferenceGroup;
-import org.chromium.chrome.browser.preferences.Preferences;
-import org.chromium.chrome.browser.preferences.website.SingleCategoryPreferences;
-import org.chromium.chrome.browser.preferences.website.SingleWebsitePreferences;
-import org.chromium.chrome.browser.preferences.website.SiteSettingsCategory;
-import org.chromium.chrome.browser.preferences.website.SiteSettingsTestUtils;
-import org.chromium.chrome.browser.preferences.website.Website;
-import org.chromium.chrome.browser.preferences.website.WebsiteAddress;
-import org.chromium.chrome.test.ChromeActivityTestRule;
+import org.chromium.chrome.browser.ChromeApplicationImpl;
+import org.chromium.chrome.browser.flags.ChromeSwitches;
+import org.chromium.chrome.browser.settings.SettingsActivity;
+import org.chromium.chrome.browser.site_settings.SiteSettingsTestUtils;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
-import org.chromium.content_public.browser.test.util.Criteria;
-import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
+import org.chromium.components.browser_ui.settings.ChromeImageViewPreference;
+import org.chromium.components.browser_ui.settings.ExpandablePreferenceGroup;
+import org.chromium.components.browser_ui.site_settings.SingleCategorySettings;
+import org.chromium.components.browser_ui.site_settings.SingleWebsiteSettings;
+import org.chromium.components.browser_ui.site_settings.SiteSettingsCategory;
+import org.chromium.components.browser_ui.site_settings.Website;
+import org.chromium.components.browser_ui.site_settings.WebsiteAddress;
+import org.chromium.components.content_settings.ContentSettingsType;
+import org.chromium.components.embedder_support.util.Origin;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 /**
  * Tests for TrustedWebActivity functionality under Settings > Site Settings.
  */
 @RunWith(ChromeJUnit4ClassRunner.class)
-@RetryOnFailure
 @CommandLineFlags.Add({
         ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE,
 })
 public class TrustedWebActivityPreferencesUiTest {
     @Rule
-    public ChromeActivityTestRule<ChromeActivity> mActivityTestRule =
-            new ChromeActivityTestRule<>(ChromeActivity.class);
+    public ChromeTabbedActivityTestRule mActivityTestRule = new ChromeTabbedActivityTestRule();
 
     private String mPackage;
-    private TrustedWebActivityPermissionManager mPermissionMananger;
+    private InstalledWebappPermissionManager mPermissionMananger;
 
     @Before
     public void setUp() throws Exception {
         mActivityTestRule.startMainActivityOnBlankPage();
 
         mPackage = InstrumentationRegistry.getTargetContext().getPackageName();
-        mPermissionMananger = ChromeApplication.getComponent().resolveTwaPermissionManager();
+        mPermissionMananger = ChromeApplicationImpl.getComponent().resolvePermissionManager();
     }
 
     /**
@@ -67,77 +65,78 @@ public class TrustedWebActivityPreferencesUiTest {
     @Test
     @SmallTest
     @Feature({"Preferences"})
+    @DisabledTest(message = "https://crbug.com/1202711")
     public void testSingleCategoryManagedBy() throws Exception {
         final String site = "http://example.com";
-        final Origin origin = new Origin(site);
+        final Origin origin = Origin.create(site);
 
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> mPermissionMananger.register(origin, mPackage, true));
+                ()
+                        -> mPermissionMananger.updatePermission(
+                                origin, mPackage, ContentSettingsType.NOTIFICATIONS, true));
 
-        Preferences preferenceActivity = SiteSettingsTestUtils.startSiteSettingsCategory(
+        SettingsActivity settingsActivity = SiteSettingsTestUtils.startSiteSettingsCategory(
                 SiteSettingsCategory.Type.NOTIFICATIONS);
         final String groupName = "managed_group";
 
-        final SingleCategoryPreferences websitePreferences =
+        final SingleCategorySettings websitePreferences =
                 TestThreadUtils.runOnUiThreadBlocking(() -> {
-                    final SingleCategoryPreferences preferences =
-                            (SingleCategoryPreferences) preferenceActivity.getMainFragmentCompat();
+                    final SingleCategorySettings preferences =
+                            (SingleCategorySettings) settingsActivity.getMainFragment();
                     final ExpandablePreferenceGroup group =
                             (ExpandablePreferenceGroup) preferences.findPreference(groupName);
                     preferences.onPreferenceClick(group);
                     return preferences;
                 });
 
-        CriteriaHelper.pollUiThread(new Criteria() {
-            @Override
-            public boolean isSatisfied() {
-                // The preference group gets recreated in onPreferenceClick, so we need to find it
-                // again.
-                final ExpandablePreferenceGroup group =
-                        (ExpandablePreferenceGroup) websitePreferences.findPreference(groupName);
-                return group.isExpanded();
-            }
+        CriteriaHelper.pollUiThread(() -> {
+            // The preference group gets recreated in onPreferenceClick, so we need to find it
+            // again.
+            final ExpandablePreferenceGroup group =
+                    (ExpandablePreferenceGroup) websitePreferences.findPreference(groupName);
+            return group.isExpanded();
         });
 
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             final ExpandablePreferenceGroup group =
                     (ExpandablePreferenceGroup) websitePreferences.findPreference(groupName);
             Assert.assertEquals(1, group.getPreferenceCount());
-            android.support.v7.preference.Preference preference = group.getPreference(0);
+            androidx.preference.Preference preference = group.getPreference(0);
             CharSequence title = preference.getTitle();
             Assert.assertEquals("example.com", title.toString());
         });
 
         TestThreadUtils.runOnUiThreadBlocking(() -> mPermissionMananger.unregister(origin));
 
-        preferenceActivity.finish();
+        settingsActivity.finish();
     }
 
     /**
      * Tests that registered sites show 'Managed by' in the title when viewing the details for a
      * single website.
-     * @throws Exception
      */
     @Test
     @SmallTest
     @Feature({"Preferences"})
-    public void testWebsitePreferencesManagedBy() throws Exception {
+    public void testWebsitePreferencesManagedBy() {
         final String site = "http://example.com";
-        final Origin origin = new Origin(site);
+        final Origin origin = Origin.create(site);
 
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> mPermissionMananger.register(origin, mPackage, true));
+                ()
+                        -> mPermissionMananger.updatePermission(
+                                origin, mPackage, ContentSettingsType.NOTIFICATIONS, true));
 
         WebsiteAddress address = WebsiteAddress.create(site);
         Website website = new Website(address, address);
-        final Preferences preferenceActivity =
+        final SettingsActivity settingsActivity =
                 SiteSettingsTestUtils.startSingleWebsitePreferences(website);
 
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            final SingleWebsitePreferences websitePreferences =
-                    (SingleWebsitePreferences) preferenceActivity.getMainFragmentCompat();
-            final ChromeImageViewPreferenceCompat notificationPreference =
-                    (ChromeImageViewPreferenceCompat) websitePreferences.findPreference(
+            final SingleWebsiteSettings websitePreferences =
+                    (SingleWebsiteSettings) settingsActivity.getMainFragment();
+            final ChromeImageViewPreference notificationPreference =
+                    (ChromeImageViewPreference) websitePreferences.findPreference(
                             "push_notifications_list");
             CharSequence summary = notificationPreference.getSummary();
             Assert.assertTrue(summary.toString().startsWith("Managed by "));
@@ -145,6 +144,6 @@ public class TrustedWebActivityPreferencesUiTest {
 
         TestThreadUtils.runOnUiThreadBlocking(() -> mPermissionMananger.unregister(origin));
 
-        preferenceActivity.finish();
+        settingsActivity.finish();
     }
 }

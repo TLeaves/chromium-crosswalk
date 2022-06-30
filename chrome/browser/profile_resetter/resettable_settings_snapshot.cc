@@ -10,15 +10,16 @@
 #include "base/bind.h"
 #include "base/guid.h"
 #include "base/hash/md5.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/atomic_flag.h"
-#include "base/task/post_task.h"
+#include "base/task/task_runner_util.h"
 #include "base/task/task_traits.h"
-#include "base/task_runner_util.h"
+#include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/profile_resetter/profile_reset_report.pb.h"
 #include "chrome/browser/profile_resetter/reset_report_uploader.h"
 #include "chrome/browser/profile_resetter/reset_report_uploader_factory.h"
@@ -28,6 +29,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/embedder_support/user_agent_utils.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/strings/grit/components_strings.h"
@@ -40,12 +42,12 @@ namespace {
 
 template <class StringType>
 void AddPair(base::ListValue* list,
-             const base::string16& key,
+             const std::u16string& key,
              const StringType& value) {
-  std::unique_ptr<base::DictionaryValue> results(new base::DictionaryValue());
-  results->SetString("key", key);
-  results->SetString("value", value);
-  list->Append(std::move(results));
+  base::Value::Dict results;
+  results.Set("key", key);
+  results.Set("value", value);
+  list->GetList().Append(std::move(results));
 }
 
 }  // namespace
@@ -129,41 +131,40 @@ int ResettableSettingsSnapshot::FindDifferentFields(
   return bit_mask;
 }
 
-void ResettableSettingsSnapshot::RequestShortcuts(
-    const base::Closure& callback) {
+void ResettableSettingsSnapshot::RequestShortcuts(base::OnceClosure callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(!cancellation_flag_.get() && !shortcuts_determined());
 
   cancellation_flag_ = new SharedCancellationFlag;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   base::PostTaskAndReplyWithResult(
-      base::CreateCOMSTATaskRunnerWithTraits(
+      base::ThreadPool::CreateCOMSTATaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE})
           .get(),
-      FROM_HERE, base::Bind(&GetChromeLaunchShortcuts, cancellation_flag_),
-      base::Bind(&ResettableSettingsSnapshot::SetShortcutsAndReport,
-                 weak_ptr_factory_.GetWeakPtr(), callback));
-#else   // defined(OS_WIN)
+      FROM_HERE, base::BindOnce(&GetChromeLaunchShortcuts, cancellation_flag_),
+      base::BindOnce(&ResettableSettingsSnapshot::SetShortcutsAndReport,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+#else   // BUILDFLAG(IS_WIN)
   // Shortcuts are only supported on Windows.
   std::vector<ShortcutCommand> no_shortcuts;
   base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&ResettableSettingsSnapshot::SetShortcutsAndReport,
-                     weak_ptr_factory_.GetWeakPtr(), callback,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
                      std::move(no_shortcuts)));
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 void ResettableSettingsSnapshot::SetShortcutsAndReport(
-    const base::Closure& callback,
+    base::OnceClosure callback,
     const std::vector<ShortcutCommand>& shortcuts) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   shortcuts_ = shortcuts;
   shortcuts_determined_ = true;
-  cancellation_flag_ = NULL;
+  cancellation_flag_.reset();
 
   if (!callback.is_null())
-    callback.Run();
+    std::move(callback).Run();
 }
 
 std::unique_ptr<reset_report::ChromeResetReport> SerializeSettingsReportToProto(
@@ -189,6 +190,10 @@ std::unique_ptr<reset_report::ChromeResetReport> SerializeSettingsReportToProto(
         report->set_startup_type(
             reset_report::ChromeResetReport_SessionStartupType_URLS);
         break;
+      case SessionStartupPref::LAST_AND_URLS:
+        report->set_startup_type(
+            reset_report::ChromeResetReport_SessionStartupType_LAST_AND_URLS);
+        break;
     }
   }
 
@@ -212,7 +217,7 @@ std::unique_ptr<reset_report::ChromeResetReport> SerializeSettingsReportToProto(
 
   if (field_mask & ResettableSettingsSnapshot::SHORTCUTS) {
     for (const auto& shortcut_command : snapshot.shortcuts())
-      report->add_shortcuts(base::UTF16ToUTF8(shortcut_command.second));
+      report->add_shortcuts(base::WideToUTF8(shortcut_command.second));
   }
 
   report->set_guid(snapshot.guid());
@@ -237,11 +242,10 @@ std::unique_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
   AddPair(list.get(),
           l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_LOCALE),
           g_browser_process->GetApplicationLocale());
-  AddPair(list.get(),
-          l10n_util::GetStringUTF16(IDS_VERSION_UI_USER_AGENT),
-          GetUserAgent());
+  AddPair(list.get(), l10n_util::GetStringUTF16(IDS_VERSION_UI_USER_AGENT),
+          embedder_support::GetUserAgent());
   std::string version = version_info::GetVersionNumber();
-  version += chrome::GetChannelName();
+  version += chrome::GetChannelName(chrome::WithExtendedStable(true));
   AddPair(list.get(),
           l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
           version);
@@ -260,7 +264,7 @@ std::unique_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
             startup_urls);
   }
 
-  base::string16 startup_type;
+  std::u16string startup_type;
   switch (snapshot.startup_type()) {
     case SessionStartupPref::DEFAULT:
       startup_type =
@@ -273,6 +277,10 @@ std::unique_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
     case SessionStartupPref::URLS:
       startup_type =
           l10n_util::GetStringUTF16(IDS_SETTINGS_ON_STARTUP_OPEN_SPECIFIC);
+      break;
+    case SessionStartupPref::LAST_AND_URLS:
+      startup_type = l10n_util::GetStringUTF16(
+          IDS_SETTINGS_ON_STARTUP_CONTINUE_AND_OPEN_SPECIFIC);
       break;
     default:
       break;
@@ -313,13 +321,13 @@ std::unique_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
   }
 
   if (snapshot.shortcuts_determined()) {
-    base::string16 shortcut_targets;
+    std::u16string shortcut_targets;
     const std::vector<ShortcutCommand>& shortcuts = snapshot.shortcuts();
     for (auto i = shortcuts.begin(); i != shortcuts.end(); ++i) {
       if (!shortcut_targets.empty())
-        shortcut_targets += base::ASCIIToUTF16("\n");
-      shortcut_targets += base::ASCIIToUTF16("chrome.exe ");
-      shortcut_targets += i->second;
+        shortcut_targets += u"\n";
+      shortcut_targets += u"chrome.exe ";
+      shortcut_targets += base::WideToUTF16(i->second);
     }
     if (!shortcut_targets.empty()) {
       AddPair(list.get(),

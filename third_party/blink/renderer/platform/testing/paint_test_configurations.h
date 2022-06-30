@@ -6,54 +6,40 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_TESTING_PAINT_TEST_CONFIGURATIONS_H_
 
 #include <gtest/gtest.h>
+#include "base/task/thread_pool/thread_pool_instance.h"
+#include "base/test/task_environment.h"
 #include "third_party/blink/public/web/web_heap.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
-enum {
-  kBlinkGenPropertyTrees = 1 << 0,
-  kCompositeAfterPaint = 1 << 1,
-  kUnderInvalidationChecking = 1 << 2,
-  kFastBorderRadius = 1 << 3,
-};
+enum { kUnderInvalidationChecking = 1 << 0, kScrollUnification = 1 << 1 };
 
 class PaintTestConfigurations
     : public testing::WithParamInterface<unsigned>,
-      private ScopedBlinkGenPropertyTreesForTest,
-      private ScopedCompositeAfterPaintForTest,
       private ScopedPaintUnderInvalidationCheckingForTest,
-      private ScopedFastBorderRadiusForTest {
+      private ScopedScrollUnificationForTest {
  public:
   PaintTestConfigurations()
-      : ScopedBlinkGenPropertyTreesForTest(GetParam() & kBlinkGenPropertyTrees),
-        ScopedCompositeAfterPaintForTest(GetParam() & kCompositeAfterPaint),
-        ScopedPaintUnderInvalidationCheckingForTest(GetParam() &
+      : ScopedPaintUnderInvalidationCheckingForTest(GetParam() &
                                                     kUnderInvalidationChecking),
-        ScopedFastBorderRadiusForTest(GetParam() & kFastBorderRadius) {}
-  ~PaintTestConfigurations() {
+        ScopedScrollUnificationForTest(GetParam() & kScrollUnification) {}
+  ~PaintTestConfigurations() override {
     // Must destruct all objects before toggling back feature flags.
+    std::unique_ptr<base::test::TaskEnvironment> task_environment;
+    if (!base::ThreadPoolInstance::Get()) {
+      // Create a TaskEnvironment for the garbage collection below.
+      task_environment = std::make_unique<base::test::TaskEnvironment>();
+    }
     WebHeap::CollectAllGarbageForTesting();
   }
 };
 
+// For now this has only one configuration, but can be extended in the future
+// to include more configurations.
 #define INSTANTIATE_PAINT_TEST_SUITE_P(test_class) \
-  INSTANTIATE_TEST_SUITE_P(                        \
-      All, test_class,                             \
-      ::testing::Values(0, kBlinkGenPropertyTrees, \
-                        kBlinkGenPropertyTrees | kCompositeAfterPaint))
-
-#define INSTANTIATE_CAP_TEST_SUITE_P(test_class) \
-  INSTANTIATE_TEST_SUITE_P(                      \
-      All, test_class,                           \
-      ::testing::Values(kBlinkGenPropertyTrees | kCompositeAfterPaint))
-
-#define INSTANTIATE_LAYER_LIST_TEST_SUITE_P(test_class)                \
-  INSTANTIATE_TEST_SUITE_P(                                            \
-      All, test_class,                                                 \
-      ::testing::Values(kBlinkGenPropertyTrees,                        \
-                        kBlinkGenPropertyTrees | kCompositeAfterPaint, \
-                        kBlinkGenPropertyTrees | kFastBorderRadius))
+  INSTANTIATE_TEST_SUITE_P(All, test_class,        \
+                           ::testing::Values(0, kScrollUnification))
 
 }  // namespace blink
 

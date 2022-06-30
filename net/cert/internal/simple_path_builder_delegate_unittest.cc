@@ -48,19 +48,13 @@ class SimplePathBuilderDelegate1024SuccessTest
     : public ::testing::TestWithParam<const char*> {};
 
 const char* kSuccess1024Filenames[] = {
-    "rsa-pkcs1-sha1.pem",
-    "rsa-pkcs1-sha256.pem",
-    "rsa2048-pkcs1-sha512.pem",
-    "ecdsa-secp384r1-sha256.pem",
-    "ecdsa-prime256v1-sha512.pem",
-    "rsa-pss-sha1-salt20.pem",
-    "rsa-pss-sha256-mgf1-sha512-salt33.pem",
-    "rsa-pss-sha256-salt10.pem",
-    "ecdsa-secp384r1-sha256.pem",
-    "ecdsa-prime256v1-sha512.pem",
+    "rsa-pkcs1-sha1.pem",          "rsa-pkcs1-sha256.pem",
+    "rsa2048-pkcs1-sha512.pem",    "ecdsa-secp384r1-sha256.pem",
+    "ecdsa-prime256v1-sha512.pem", "rsa-pss-sha256.pem",
+    "ecdsa-secp384r1-sha256.pem",  "ecdsa-prime256v1-sha512.pem",
 };
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          SimplePathBuilderDelegate1024SuccessTest,
                          ::testing::ValuesIn(kSuccess1024Filenames));
 
@@ -87,7 +81,7 @@ class SimplePathBuilderDelegate2048FailTest
 const char* kFail2048Filenames[] = {"rsa-pkcs1-sha1.pem",
                                     "rsa-pkcs1-sha256.pem"};
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          SimplePathBuilderDelegate2048FailTest,
                          ::testing::ValuesIn(kFail2048Filenames));
 

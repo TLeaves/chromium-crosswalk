@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
@@ -26,16 +27,30 @@ namespace test {
 // list and initialize it anew, destroy an existing scoped list and init
 // a new one.
 //
-// ScopedFeatureList needs to be initialized (via one of Init*() methods)
-// before running code that inspects the state of features, such as in the
-// constructor of the test harness.
-//
 // If multiple instances of this class are used in a nested fashion, they
 // should be destroyed in the opposite order of their Init*() methods being
 // called.
+//
+// ScopedFeatureList needs to be initialized on the main thread (via one of
+// Init*() methods) before running code that inspects the state of features,
+// such as in the constructor of the test harness.
+//
+// WARNING: To be clear, in multithreaded test environments (such as browser
+// tests) there may background threads using FeatureList before the test body is
+// even entered. In these cases it is imperative that ScopedFeatureList be
+// initialized BEFORE those threads are started, hence the recommendation to do
+// initialization in the test harness's constructor.
 class ScopedFeatureList final {
  public:
+  // Constructs the instance in a non-initialized state.
   ScopedFeatureList();
+
+  // Shorthand for immediately initializing with InitAndEnableFeature().
+  explicit ScopedFeatureList(const Feature& enable_feature);
+
+  ScopedFeatureList(const ScopedFeatureList&) = delete;
+  ScopedFeatureList& operator=(const ScopedFeatureList&) = delete;
+
   ~ScopedFeatureList();
 
   struct FeatureAndParams {
@@ -66,7 +81,9 @@ class ScopedFeatureList final {
   // default values, which can hide feature interaction bugs. Please use
   // sparingly.  https://crbug.com/713390
   // Initializes and registers a FeatureList instance with only the given
-  // enabled and disabled features (comma-separated names).
+  // enabled and disabled features (comma-separated names). If feature params
+  // are provided in the |enable_features|, this also associates features to
+  // their params.
   void InitFromCommandLine(const std::string& enable_features,
                            const std::string& disable_features);
 
@@ -124,20 +141,11 @@ class ScopedFeatureList final {
       const std::vector<FeatureAndParams>& enabled_features_and_params,
       const std::vector<Feature>& disabled_features);
 
-  // Initializes and registers a FeatureList instance based on present
-  // FeatureList and overridden with single enabled feature and associated field
-  // trial override.
-  // |trial| is expected to outlive the ScopedFeatureList.
-  void InitAndEnableFeatureWithFieldTrialOverride(const Feature& feature,
-                                                  FieldTrial* trial);
-
   bool init_called_ = false;
   std::unique_ptr<FeatureList> original_feature_list_;
-  base::FieldTrialList* original_field_trial_list_;
+  raw_ptr<base::FieldTrialList> original_field_trial_list_ = nullptr;
   std::string original_params_;
   std::unique_ptr<base::FieldTrialList> field_trial_list_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedFeatureList);
 };
 
 }  // namespace test

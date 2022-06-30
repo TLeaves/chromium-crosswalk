@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_repeating_callback.h"
 #include "remoting/protocol/datagram_channel_factory.h"
@@ -36,6 +35,10 @@ namespace protocol {
 class FakeDatagramSocket : public P2PDatagramSocket {
  public:
   FakeDatagramSocket();
+
+  FakeDatagramSocket(const FakeDatagramSocket&) = delete;
+  FakeDatagramSocket& operator=(const FakeDatagramSocket&) = delete;
+
   ~FakeDatagramSocket() override;
 
   const std::vector<std::string>& written_packets() const {
@@ -92,14 +95,17 @@ class FakeDatagramSocket : public P2PDatagramSocket {
   int input_pos_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<FakeDatagramSocket> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeDatagramSocket);
+  base::WeakPtrFactory<FakeDatagramSocket> weak_factory_{this};
 };
 
 class FakeDatagramChannelFactory : public DatagramChannelFactory {
  public:
   FakeDatagramChannelFactory();
+
+  FakeDatagramChannelFactory(const FakeDatagramChannelFactory&) = delete;
+  FakeDatagramChannelFactory& operator=(const FakeDatagramChannelFactory&) =
+      delete;
+
   ~FakeDatagramChannelFactory() override;
 
   void set_asynchronous_create(bool asynchronous_create) {
@@ -120,7 +126,7 @@ class FakeDatagramChannelFactory : public DatagramChannelFactory {
 
   // DatagramChannelFactory interface.
   void CreateChannel(const std::string& name,
-                     const ChannelCreatedCallback& callback) override;
+                     ChannelCreatedCallback callback) override;
   void CancelChannelCreation(const std::string& name) override;
 
  private:
@@ -128,7 +134,7 @@ class FakeDatagramChannelFactory : public DatagramChannelFactory {
 
   void NotifyChannelCreated(std::unique_ptr<FakeDatagramSocket> owned_socket,
                             const std::string& name,
-                            const ChannelCreatedCallback& callback);
+                            ChannelCreatedCallback callback);
 
   base::WeakPtr<FakeDatagramChannelFactory> peer_factory_;
 
@@ -138,9 +144,7 @@ class FakeDatagramChannelFactory : public DatagramChannelFactory {
 
   bool fail_create_;
 
-  base::WeakPtrFactory<FakeDatagramChannelFactory> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeDatagramChannelFactory);
+  base::WeakPtrFactory<FakeDatagramChannelFactory> weak_factory_{this};
 };
 
 }  // namespace protocol

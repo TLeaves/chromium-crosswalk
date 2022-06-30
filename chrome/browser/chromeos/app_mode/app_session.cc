@@ -8,32 +8,24 @@
 #include <signal.h>
 
 #include "base/bind.h"
+#include "base/callback_forward.h"
+#include "base/json/values_util.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
-#include "base/macros.h"
-#include "base/single_thread_task_runner.h"
-#include "base/task/post_task.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_app_update_service.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
+#include "chrome/browser/chromeos/app_mode/app_session_browser_window_handler.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_session_plugin_handler.h"
-#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_list_observer.h"
-#include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/dbus/power/power_manager_client.h"
-#include "chromeos/network/network_state.h"
-#include "chromeos/network/network_state_handler.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
-#include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -46,10 +38,36 @@
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/ash_switches.h"
+#include "base/command_line.h"
+#include "chromeos/dbus/power/power_manager_client.h"
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chrome/browser/lacros/app_mode/kiosk_session_service_lacros.h"
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
 using extensions::AppWindow;
 using extensions::AppWindowRegistry;
 
 namespace chromeos {
+
+const char kKioskSessionStateHistogram[] = "Kiosk.SessionState";
+const char kKioskSessionCountPerDayHistogram[] = "Kiosk.Session.CountPerDay";
+const char kKioskSessionDurationNormalHistogram[] =
+    "Kiosk.SessionDuration.Normal";
+const char kKioskSessionDurationInDaysNormalHistogram[] =
+    "Kiosk.SessionDurationInDays.Normal";
+const char kKioskSessionDurationCrashedHistogram[] =
+    "Kiosk.SessionDuration.Crashed";
+const char kKioskSessionDurationInDaysCrashedHistogram[] =
+    "Kiosk.SessionDurationInDays.Crashed";
+const char kKioskSessionLastDayList[] = "last-day-sessions";
+const char kKioskSessionStartTime[] = "session-start-time";
+
+const int kKioskHistogramBucketCount = 100;
+const base::TimeDelta kKioskSessionDurationHistogramLimit = base::Days(1);
 
 namespace {
 
@@ -61,14 +79,18 @@ bool IsPepperPlugin(const base::FilePath& plugin_path) {
 }
 
 void RebootDevice() {
-  PowerManagerClient::Get()->RequestRestart(
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  chromeos::PowerManagerClient::Get()->RequestRestart(
       power_manager::REQUEST_RESTART_OTHER, "kiosk app session");
+#elif BUILDFLAG(IS_CHROMEOS_LACROS)
+  KioskSessionServiceLacros::Get()->RestartDevice("kiosk app session");
+#endif
 }
 
 // Sends a SIGFPE signal to plugin subprocesses that matches |child_ids|
 // to trigger a dump.
-void DumpPluginProcessOnIOThread(const std::set<int>& child_ids) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+void DumpPluginProcess(const std::set<int>& child_ids) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   bool dump_requested = false;
 
@@ -92,17 +114,202 @@ void DumpPluginProcessOnIOThread(const std::set<int>& child_ids) {
 
   // Wait a bit to let dump finish (if requested) before rebooting the device.
   const int kDumpWaitSeconds = 10;
-  base::PostDelayedTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::UI}, base::BindOnce(&RebootDevice),
-      base::TimeDelta::FromSeconds(dump_requested ? kDumpWaitSeconds : 0));
+  content::GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE, base::BindOnce(&RebootDevice),
+      base::Seconds(dump_requested ? kDumpWaitSeconds : 0));
+}
+
+bool IsRestoredSession() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // Return true for a kiosk session restored after crash.
+  // The kiosk session gets restored to a state that was prior to crash:
+  // * no --login-manager command line flag, since no login screen is shown
+  //   in the middle of a kiosk session.
+  // * --login-user command line flag is present, because the session is
+  //   re-started in the middle and kiosk profile is already logged in.
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+             ash::switches::kLoginManager) &&
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             ash::switches::kLoginUser);
+#else
+  return false;
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
 }  // namespace
+
+class AppSessionMetricsService {
+ public:
+  explicit AppSessionMetricsService(PrefService* prefs) : prefs_(prefs) {}
+  AppSessionMetricsService(AppSessionMetricsService&) = delete;
+  AppSessionMetricsService& operator=(const AppSessionMetricsService&) = delete;
+  ~AppSessionMetricsService() = default;
+
+  void RecordKioskSessionStarted() {
+    RecordKioskSessionStarted(KioskSessionState::kStarted);
+  }
+
+  void RecordKioskSessionWebStarted() {
+    RecordKioskSessionStarted(KioskSessionState::kWebStarted);
+  }
+
+  void RecordKioskSessionStopped() {
+    if (!IsKioskSessionRunning())
+      return;
+    RecordKioskSessionState(KioskSessionState::kStopped);
+    RecordKioskSessionDuration(kKioskSessionDurationNormalHistogram,
+                               kKioskSessionDurationInDaysNormalHistogram);
+  }
+
+  void RecordKioskSessionCrashed() {
+    if (!IsKioskSessionRunning())
+      return;
+    RecordKioskSessionState(KioskSessionState::kCrashed);
+    RecordKioskSessionDuration(kKioskSessionDurationCrashedHistogram,
+                               kKioskSessionDurationInDaysCrashedHistogram);
+  }
+
+  void RecordKioskSessionPluginCrashed() {
+    RecordKioskSessionState(KioskSessionState::kPluginCrashed);
+    RecordKioskSessionDuration(kKioskSessionDurationCrashedHistogram,
+                               kKioskSessionDurationInDaysCrashedHistogram);
+  }
+
+  void RecordKioskSessionPluginHung() {
+    RecordKioskSessionState(KioskSessionState::kPluginHung);
+    RecordKioskSessionDuration(kKioskSessionDurationCrashedHistogram,
+                               kKioskSessionDurationInDaysCrashedHistogram);
+  }
+
+ private:
+  // Returns true if |start_time_| is set meaning the kiosk session has been
+  // started and not ended yet.
+  bool IsKioskSessionRunning() const { return !start_time_.is_null(); }
+
+  void RecordKioskSessionStarted(KioskSessionState started_state) {
+    RecordPreviousKioskSessionCrashIfAny();
+    if (IsRestoredSession()) {
+      RecordKioskSessionState(KioskSessionState::kRestored);
+    } else {
+      RecordKioskSessionState(started_state);
+    }
+    RecordKioskSessionCountPerDay();
+  }
+
+  void RecordKioskSessionState(KioskSessionState state) const {
+    base::UmaHistogramEnumeration(kKioskSessionStateHistogram, state);
+  }
+
+  void RecordKioskSessionCountPerDay() {
+    base::UmaHistogramCounts100(kKioskSessionCountPerDayHistogram,
+                                RetrieveLastDaySessionCount(base::Time::Now()));
+  }
+
+  void RecordKioskSessionDuration(
+      const std::string& kiosk_session_duration_histogram,
+      const std::string& kiosk_session_duration_in_days_histogram) {
+    if (!IsKioskSessionRunning())
+      return;
+    base::TimeDelta duration = base::Time::Now() - start_time_;
+    if (duration >= kKioskSessionDurationHistogramLimit) {
+      base::UmaHistogramCounts100(kiosk_session_duration_in_days_histogram,
+                                  std::min(100, duration.InDays()));
+      duration = kKioskSessionDurationHistogramLimit;
+    }
+    base::UmaHistogramCustomTimes(
+        kiosk_session_duration_histogram, duration, base::Seconds(1),
+        kKioskSessionDurationHistogramLimit, kKioskHistogramBucketCount);
+    ClearStartTime();
+  }
+
+  void RecordPreviousKioskSessionCrashIfAny() {
+    const auto* metrics_value = prefs_->GetDictionary(prefs::kKioskMetrics);
+
+    if (!metrics_value)
+      return;
+    const auto* metrics_dict = metrics_value->GetIfDict();
+    DCHECK(metrics_dict);
+
+    const auto* previous_start_time_value =
+        metrics_dict->Find(kKioskSessionStartTime);
+    if (!previous_start_time_value)
+      return;
+    auto previous_start_time = base::ValueToTime(previous_start_time_value);
+    if (!previous_start_time.has_value())
+      return;
+    // Setup |start_time_| to the previous not correctly completed session's
+    // start time. |start_time_| will be cleared once the crash session metrics
+    // are recorded.
+    start_time_ = previous_start_time.value();
+    RecordKioskSessionCrashed();
+  }
+
+  size_t RetrieveLastDaySessionCount(base::Time session_start_time) {
+    const auto* metrics_value = prefs_->GetDictionary(prefs::kKioskMetrics);
+    const base::Value::List* previous_times = nullptr;
+    if (metrics_value) {
+      const auto* metrics_dict = metrics_value->GetIfDict();
+      DCHECK(metrics_dict);
+
+      const auto* times_value = metrics_dict->Find(kKioskSessionLastDayList);
+      if (times_value) {
+        previous_times = times_value->GetIfList();
+        DCHECK(previous_times);
+      }
+    }
+
+    base::Value::List times;
+    if (previous_times) {
+      for (const auto& time : *previous_times) {
+        if (base::ValueToTime(time).has_value() &&
+            session_start_time - base::ValueToTime(time).value() <=
+                base::Days(1)) {
+          times.Append(time.Clone());
+        }
+      }
+    }
+    times.Append(base::TimeToValue(session_start_time));
+    size_t result = times.size();
+
+    start_time_ = session_start_time;
+
+    base::Value::Dict result_value;
+    result_value.Set(kKioskSessionLastDayList, std::move(times));
+    result_value.Set(kKioskSessionStartTime, base::TimeToValue(start_time_));
+    prefs_->SetDict(prefs::kKioskMetrics, std::move(result_value));
+    return result;
+  }
+
+  void ClearStartTime() {
+    start_time_ = base::Time();
+    const auto* metrics_value = prefs_->GetDictionary(prefs::kKioskMetrics);
+    if (!metrics_value)
+      return;
+    const auto* metrics_dict = metrics_value->GetIfDict();
+    DCHECK(metrics_dict);
+
+    base::Value::Dict new_metrics_dict = metrics_dict->Clone();
+    DCHECK(new_metrics_dict.Remove(kKioskSessionStartTime));
+
+    prefs_->SetDict(prefs::kKioskMetrics, std::move(new_metrics_dict));
+    prefs_->CommitPendingWrite(base::DoNothing(), base::DoNothing());
+  }
+
+  PrefService* prefs_;
+  // Initialized once the kiosk session is started or during recording of the
+  // previously crashed kiosk session metrics.
+  // Cleared once the session's duration metric is recorded:
+  // either the session is successfully finished or crashed or on the next
+  // session startup.
+  base::Time start_time_;
+};
 
 class AppSession::AppWindowHandler : public AppWindowRegistry::Observer {
  public:
   explicit AppWindowHandler(AppSession* app_session)
       : app_session_(app_session) {}
+  AppWindowHandler(const AppWindowHandler&) = delete;
+  AppWindowHandler& operator=(const AppWindowHandler&) = delete;
   ~AppWindowHandler() override {}
 
   void Init(Profile* profile, const std::string& app_id) {
@@ -129,16 +336,6 @@ class AppSession::AppWindowHandler : public AppWindowRegistry::Observer {
       return;
     }
 
-    if (DemoAppLauncher::IsDemoAppSession(user_manager::UserManager::Get()
-                                              ->GetActiveUser()
-                                              ->GetAccountId())) {
-      // If we were in demo mode, we disabled all our network technologies,
-      // re-enable them.
-      NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-          NetworkTypePattern::Physical(), true,
-          chromeos::network_handler::ErrorCallback());
-    }
-
     app_session_->OnLastAppWindowClosed();
     window_registry_->RemoveObserver(this);
   }
@@ -147,78 +344,66 @@ class AppSession::AppWindowHandler : public AppWindowRegistry::Observer {
   AppWindowRegistry* window_registry_ = nullptr;
   std::string app_id_;
   bool app_window_created_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(AppWindowHandler);
 };
 
-class AppSession::BrowserWindowHandler : public BrowserListObserver {
- public:
-  BrowserWindowHandler() {
-    BrowserList::AddObserver(this);
-  }
-  ~BrowserWindowHandler() override { BrowserList::RemoveObserver(this); }
+AppSession::AppSession()
+    : attempt_user_exit_(base::BindOnce(chrome::AttemptUserExit)),
+      metrics_service_(std::make_unique<AppSessionMetricsService>(
+          g_browser_process->local_state())) {}
+AppSession::AppSession(base::OnceClosure attempt_user_exit,
+                       PrefService* local_state)
+    : attempt_user_exit_(std::move(attempt_user_exit)),
+      metrics_service_(
+          std::make_unique<AppSessionMetricsService>(local_state)) {}
+AppSession::~AppSession() {
+  if (!is_shutting_down_)
+    metrics_service_->RecordKioskSessionStopped();
+}
 
- private:
-  void HandleBrowser(Browser* browser) {
-    content::WebContents* active_tab =
-        browser->tab_strip_model()->GetActiveWebContents();
-    std::string url_string =
-        active_tab ? active_tab->GetURL().spec() : std::string();
-    LOG(WARNING) << "Browser opened in kiosk session"
-                 << ", url=" << url_string;
-
-    browser->window()->Close();
-  }
-
-  // BrowserListObserver overrides:
-  void OnBrowserAdded(Browser* browser) override {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&BrowserWindowHandler::HandleBrowser,
-                       base::Unretained(this),  // LazyInstance, always valid
-                       browser));
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(BrowserWindowHandler);
-};
-
-AppSession::AppSession() {}
-AppSession::~AppSession() {}
+void AppSession::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterDictionaryPref(prefs::kKioskMetrics);
+}
 
 void AppSession::Init(Profile* profile, const std::string& app_id) {
-  app_window_handler_.reset(new AppWindowHandler(this));
+  SetProfile(profile);
+  app_window_handler_ = std::make_unique<AppWindowHandler>(this);
   app_window_handler_->Init(profile, app_id);
+  CreateBrowserWindowHandler(nullptr);
+  plugin_handler_ = std::make_unique<KioskSessionPluginHandler>(this);
+  metrics_service_->RecordKioskSessionStarted();
+}
 
-  browser_window_handler_.reset(new BrowserWindowHandler);
+void AppSession::InitForWebKiosk(Browser* browser) {
+  SetProfile(browser->profile());
+  CreateBrowserWindowHandler(browser);
+  metrics_service_->RecordKioskSessionWebStarted();
+}
 
-  plugin_handler_.reset(new KioskSessionPluginHandler(this));
+void AppSession::SetAttemptUserExitForTesting(base::OnceClosure closure) {
+  attempt_user_exit_ = std::move(closure);
+}
 
-  // For a demo app, we don't need to either setup the update service or
-  // the idle app name notification.
-  if (DemoAppLauncher::IsDemoAppSession(
-          user_manager::UserManager::Get()->GetActiveUser()->GetAccountId()))
-    return;
+void AppSession::SetOnHandleBrowserCallbackForTesting(
+    base::RepeatingClosure closure) {
+  on_handle_browser_callback_ = std::move(closure);
+}
 
-  // Set the app_id for the current instance of KioskAppUpdateService.
-  KioskAppUpdateService* update_service =
-      KioskAppUpdateServiceFactory::GetForProfile(profile);
-  DCHECK(update_service);
-  if (update_service)
-    update_service->Init(app_id);
+void AppSession::SetProfile(Profile* profile) {
+  profile_ = profile;
+}
 
-  // Start to monitor external update from usb stick.
-  KioskAppManager::Get()->MonitorKioskExternalUpdate();
+void AppSession::CreateBrowserWindowHandler(Browser* browser) {
+  browser_window_handler_ = std::make_unique<AppSessionBrowserWindowHandler>(
+      profile_, browser,
+      base::BindRepeating(&AppSession::OnHandledNewBrowserWindow,
+                          weak_ptr_factory_.GetWeakPtr()),
+      base::BindRepeating(&AppSession::OnLastAppWindowClosed,
+                          weak_ptr_factory_.GetWeakPtr()));
+}
 
-  // If the device is not enterprise managed, set prefs to reboot after update
-  // and create a user security message which shows the user the application
-  // name and author after some idle timeout.
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  if (!connector->IsEnterpriseManaged()) {
-    PrefService* local_state = g_browser_process->local_state();
-    local_state->SetBoolean(prefs::kRebootAfterUpdate, true);
-    KioskModeIdleAppNameNotification::Initialize();
-  }
+void AppSession::OnHandledNewBrowserWindow() {
+  if (on_handle_browser_callback_)
+    on_handle_browser_callback_.Run();
 }
 
 void AppSession::OnAppWindowAdded(AppWindow* app_window) {
@@ -244,19 +429,21 @@ void AppSession::OnLastAppWindowClosed() {
   if (is_shutting_down_)
     return;
   is_shutting_down_ = true;
+  metrics_service_->RecordKioskSessionStopped();
 
-  chrome::AttemptUserExit();
+  std::move(attempt_user_exit_).Run();
 }
 
 bool AppSession::ShouldHandlePlugin(const base::FilePath& plugin_path) const {
-  // Note that BrowserChildProcessHostIterator in DumpPluginProcessOnIOThread
-  // also needs to be updated when adding more plugin types here.
+  // Note that BrowserChildProcessHostIterator in DumpPluginProcess also needs
+  // to be updated when adding more plugin types here.
   return IsPepperPlugin(plugin_path);
 }
 
 void AppSession::OnPluginCrashed(const base::FilePath& plugin_path) {
   if (is_shutting_down_)
     return;
+  metrics_service_->RecordKioskSessionPluginCrashed();
   is_shutting_down_ = true;
 
   LOG(ERROR) << "Reboot due to plugin crash, path=" << plugin_path.value();
@@ -266,12 +453,18 @@ void AppSession::OnPluginCrashed(const base::FilePath& plugin_path) {
 void AppSession::OnPluginHung(const std::set<int>& hung_plugins) {
   if (is_shutting_down_)
     return;
+  metrics_service_->RecordKioskSessionPluginHung();
   is_shutting_down_ = true;
 
   LOG(ERROR) << "Plugin hung detected. Dump and reboot.";
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::IO},
-      base::BindOnce(&DumpPluginProcessOnIOThread, hung_plugins));
+  DumpPluginProcess(hung_plugins);
+}
+
+Browser* AppSession::GetSettingsBrowserForTesting() {
+  if (browser_window_handler_) {
+    return browser_window_handler_->GetSettingsBrowserForTesting();  // IN-TEST
+  }
+  return nullptr;
 }
 
 }  // namespace chromeos

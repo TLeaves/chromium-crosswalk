@@ -25,9 +25,12 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/loader/fetch/render_blocking_behavior.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
@@ -40,15 +43,14 @@ class CSSStyleSheet;
 class CSSStyleSheetResource;
 class Document;
 class Node;
-class SecurityOrigin;
 class StyleRuleBase;
 class StyleRuleFontFace;
 class StyleRuleImport;
 class StyleRuleNamespace;
 enum class ParseSheetResult;
 
-class CORE_EXPORT StyleSheetContents
-    : public GarbageCollectedFinalized<StyleSheetContents> {
+class CORE_EXPORT StyleSheetContents final
+    : public GarbageCollected<StyleSheetContents> {
  public:
   static const Document* SingleOwnerDocument(const StyleSheetContents*);
 
@@ -59,17 +61,15 @@ class CORE_EXPORT StyleSheetContents
   StyleSheetContents() = delete;
   ~StyleSheetContents();
 
+  // TODO(xiaochengh): |parser_context_| should never be null. Make it return a
+  // const reference here to avoid confusion.
   const CSSParserContext* ParserContext() const { return parser_context_; }
 
   const AtomicString& DefaultNamespace() const { return default_namespace_; }
   const AtomicString& NamespaceURIFromPrefix(const AtomicString& prefix) const;
 
-  void ParseAuthorStyleSheet(const CSSStyleSheetResource*,
-                             const SecurityOrigin*);
+  void ParseAuthorStyleSheet(const CSSStyleSheetResource*);
   ParseSheetResult ParseString(const String&, bool allow_import_rules = true);
-  ParseSheetResult ParseStringAtPosition(const String&,
-                                         const TextPosition&,
-                                         bool allow_import_rules = true);
 
   bool IsCacheableForResource() const;
   bool IsCacheableForStyleElement() const;
@@ -77,7 +77,10 @@ class CORE_EXPORT StyleSheetContents
   bool IsLoading() const;
 
   void CheckLoaded();
-  void StartLoadingDynamicSheet();
+
+  // Called if this sheet has finished loading and then a dynamically added
+  // @import rule starts loading a child stylesheet.
+  void SetToPendingState();
 
   StyleSheetContents* RootStyleSheet() const;
   bool HasSingleOwnerNode() const;
@@ -117,6 +120,10 @@ class CORE_EXPORT StyleSheetContents
   // Rules other than @import.
   const HeapVector<Member<StyleRuleBase>>& ChildRules() const {
     return child_rules_;
+  }
+  const HeapVector<Member<StyleRuleLayerStatement>>&
+  PreImportLayerStatementRules() const {
+    return pre_import_layer_statement_rules_;
   }
   const HeapVector<Member<StyleRuleImport>>& ImportRules() const {
     return import_rules_;
@@ -189,7 +196,14 @@ class CORE_EXPORT StyleSheetContents
 
   String SourceMapURL() const { return source_map_url_; }
 
-  void Trace(blink::Visitor*);
+  void SetRenderBlocking(RenderBlockingBehavior behavior) {
+    render_blocking_behavior_ = behavior;
+  }
+  RenderBlockingBehavior GetRenderBlockingBehavior() const {
+    return render_blocking_behavior_;
+  }
+
+  void Trace(Visitor*) const;
 
  private:
   StyleSheetContents& operator=(const StyleSheetContents&) = delete;
@@ -202,6 +216,7 @@ class CORE_EXPORT StyleSheetContents
 
   String original_url_;
 
+  HeapVector<Member<StyleRuleLayerStatement>> pre_import_layer_statement_rules_;
   HeapVector<Member<StyleRuleImport>> import_rules_;
   HeapVector<Member<StyleRuleNamespace>> namespace_rules_;
   HeapVector<Member<StyleRuleBase>> child_rules_;
@@ -226,8 +241,10 @@ class CORE_EXPORT StyleSheetContents
 
   Member<RuleSet> rule_set_;
   String source_map_url_;
+  RenderBlockingBehavior render_blocking_behavior_ =
+      RenderBlockingBehavior::kUnset;
 };
 
 }  // namespace blink
 
-#endif
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_CSS_STYLE_SHEET_CONTENTS_H_

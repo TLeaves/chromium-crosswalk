@@ -3,9 +3,10 @@
 # found in the LICENSE file.
 
 source_set("update_client") {
+  configs += [ "//build/config/compiler:enable_arc" ]
   sources = [
-    "ios_chrome_update_query_params_delegate.cc",
     "ios_chrome_update_query_params_delegate.h",
+    "ios_chrome_update_query_params_delegate.mm",
   ]
   deps = [
     "//base",
@@ -18,9 +19,7 @@ source_set("update_client") {
 
 source_set("unit_tests") {
   testonly = true
-  sources = [
-    "ios_chrome_update_query_params_delegate_unittest.cc",
-  ]
+  sources = [ "ios_chrome_update_query_params_delegate_unittest.cc" ]
   deps = [
     ":update_client",
     "//base",

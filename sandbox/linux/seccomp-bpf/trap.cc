@@ -17,6 +17,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
@@ -28,7 +29,7 @@
 namespace {
 
 struct arch_sigsys {
-  void* ip;
+  raw_ptr<void> ip;
   int nr;
   unsigned int arch;
 };
@@ -60,7 +61,7 @@ bool GetIsInSigHandler(const ucontext_t* ctx) {
 void SetIsInSigHandler() {
   sigset_t mask;
   if (sigemptyset(&mask) || sigaddset(&mask, LINUX_SIGBUS) ||
-      sandbox::sys_sigprocmask(LINUX_SIG_BLOCK, &mask, NULL)) {
+      sandbox::sys_sigprocmask(LINUX_SIG_BLOCK, &mask, nullptr)) {
     SANDBOX_DIE("Failed to block SIGBUS");
   }
 }
@@ -77,7 +78,7 @@ bool IsDefaultSignalAction(const struct sigaction& sa) {
 namespace sandbox {
 
 Trap::Trap()
-    : trap_array_(NULL),
+    : trap_array_(nullptr),
       trap_array_size_(0),
       trap_array_capacity_(0),
       has_unsafe_traps_(false) {
@@ -104,7 +105,7 @@ Trap::Trap()
   // Unmask SIGSYS
   sigset_t mask;
   if (sigemptyset(&mask) || sigaddset(&mask, LINUX_SIGSYS) ||
-      sys_sigprocmask(LINUX_SIG_UNBLOCK, &mask, NULL)) {
+      sys_sigprocmask(LINUX_SIG_UNBLOCK, &mask, nullptr)) {
     SANDBOX_DIE("Failed to configure SIGSYS handler");
   }
 }
@@ -164,11 +165,18 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
   }
 
 
-  // Obtain the siginfo information that is specific to SIGSYS. Unfortunately,
-  // most versions of glibc don't include this information in siginfo_t. So,
-  // we need to explicitly copy it into a arch_sigsys structure.
+  // Obtain the siginfo information that is specific to SIGSYS.
   struct arch_sigsys sigsys;
+#if defined(si_call_addr)
+  sigsys.ip = info->si_call_addr;
+  sigsys.nr = info->si_syscall;
+  sigsys.arch = info->si_arch;
+#else
+  // If the version of glibc doesn't include this information in
+  // siginfo_t (older than 2.17), we need to explicitly copy it
+  // into an arch_sigsys structure.
   memcpy(&sigsys, &info->_sifields, sizeof(sigsys));
+#endif
 
 #if defined(__mips__)
   // When indirect syscall (syscall(__NR_foo, ...)) is made on Mips, the
@@ -231,7 +239,7 @@ void Trap::SigSys(int nr, LinuxSigInfo* info, ucontext_t* ctx) {
     struct arch_seccomp_data data = {
         static_cast<int>(SECCOMP_SYSCALL(ctx)),
         SECCOMP_ARCH,
-        reinterpret_cast<uint64_t>(sigsys.ip),
+        reinterpret_cast<uint64_t>(sigsys.ip.get()),
         {static_cast<uint64_t>(SECCOMP_PARM1(ctx)),
          static_cast<uint64_t>(SECCOMP_PARM2(ctx)),
          static_cast<uint64_t>(SECCOMP_PARM3(ctx)),
@@ -273,8 +281,6 @@ uint16_t Trap::Add(TrapFnc fnc, const void* aux, bool safe) {
     SANDBOX_DIE(
         "Cannot use unsafe traps unless CHROME_SANDBOX_DEBUGGING "
         "is enabled");
-
-    return 0;
   }
 
   // Each unique pair of TrapFnc and auxiliary data make up a distinct instance

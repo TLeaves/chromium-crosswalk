@@ -26,15 +26,22 @@
 #include "third_party/blink/renderer/core/script/script_runner.h"
 
 #include <algorithm>
+
+#include "base/feature_list.h"
+#include "base/trace_event/typed_macros.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/script/script_loader.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/cooperative_scheduling_manager.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 
 namespace blink {
 
@@ -47,7 +54,6 @@ ScriptRunner::ScriptRunner(Document* document)
 void ScriptRunner::QueueScriptForExecution(PendingScript* pending_script) {
   DCHECK(pending_script);
   document_->IncrementLoadEventDelayCount();
-  pending_script->StartStreamingIfPossible();
   switch (pending_script->GetSchedulingType()) {
     case ScriptSchedulingType::kAsync:
       pending_async_scripts_.insert(pending_script);
@@ -55,76 +61,40 @@ void ScriptRunner::QueueScriptForExecution(PendingScript* pending_script) {
 
     case ScriptSchedulingType::kInOrder:
       pending_in_order_scripts_.push_back(pending_script);
-      number_of_in_order_scripts_with_pending_notification_++;
       break;
 
     default:
       NOTREACHED();
       break;
   }
+
+  // Note that WatchForLoad() can immediately call PendingScriptFinished().
+  pending_script->WatchForLoad(this);
 }
 
-void ScriptRunner::PostTask(const base::Location& web_trace_location) {
-  task_runner_->PostTask(
-      web_trace_location,
-      WTF::Bind(&ScriptRunner::ExecuteTask, WrapWeakPersistent(this)));
-}
+void ScriptRunner::PendingScriptFinished(PendingScript* pending_script) {
+  pending_script->StopWatchingForLoad();
 
-void ScriptRunner::Suspend() {
-#ifndef NDEBUG
-  // Resume will re-post tasks for all available scripts.
-  number_of_extra_tasks_ += async_scripts_to_execute_soon_.size() +
-                            in_order_scripts_to_execute_soon_.size();
-#endif
-
-  is_suspended_ = true;
-}
-
-void ScriptRunner::Resume() {
-  DCHECK(is_suspended_);
-
-  is_suspended_ = false;
-
-  for (size_t i = 0; i < async_scripts_to_execute_soon_.size(); ++i) {
-    PostTask(FROM_HERE);
-  }
-  for (size_t i = 0; i < in_order_scripts_to_execute_soon_.size(); ++i) {
-    PostTask(FROM_HERE);
-  }
-}
-
-void ScriptRunner::ScheduleReadyInOrderScripts() {
-  while (!pending_in_order_scripts_.IsEmpty() &&
-         pending_in_order_scripts_.front()
-             ->IsReady()) {
-    in_order_scripts_to_execute_soon_.push_back(
-        pending_in_order_scripts_.TakeFirst());
-    PostTask(FROM_HERE);
-  }
-}
-
-void ScriptRunner::NotifyScriptReady(PendingScript* pending_script) {
-  SECURITY_CHECK(pending_script);
   switch (pending_script->GetSchedulingType()) {
     case ScriptSchedulingType::kAsync:
-      // SECURITY_CHECK() makes us crash in a controlled way in error cases
-      // where the PendingScript is associated with the wrong ScriptRunner
-      // (otherwise we'd cause a use-after-free in ~ScriptRunner when it tries
-      // to detach).
-      SECURITY_CHECK(pending_async_scripts_.Contains(pending_script));
-
+      CHECK(pending_async_scripts_.Contains(pending_script));
       pending_async_scripts_.erase(pending_script);
-      async_scripts_to_execute_soon_.push_back(pending_script);
 
-      PostTask(FROM_HERE);
+      task_runner_->PostTask(
+          FROM_HERE,
+          WTF::Bind(&ScriptRunner::ExecutePendingScript,
+                    WrapWeakPersistent(this), WrapPersistent(pending_script)));
       break;
 
     case ScriptSchedulingType::kInOrder:
-      SECURITY_CHECK(number_of_in_order_scripts_with_pending_notification_ > 0);
-      number_of_in_order_scripts_with_pending_notification_--;
-
-      ScheduleReadyInOrderScripts();
-
+      while (!pending_in_order_scripts_.IsEmpty() &&
+             pending_in_order_scripts_.front()->IsReady()) {
+        PendingScript* pending_in_order = pending_in_order_scripts_.TakeFirst();
+        task_runner_->PostTask(FROM_HERE,
+                               WTF::Bind(&ScriptRunner::ExecutePendingScript,
+                                         WrapWeakPersistent(this),
+                                         WrapPersistent(pending_in_order)));
+      }
       break;
 
     default:
@@ -133,135 +103,22 @@ void ScriptRunner::NotifyScriptReady(PendingScript* pending_script) {
   }
 }
 
-bool ScriptRunner::RemovePendingInOrderScript(PendingScript* pending_script) {
-  auto it = std::find(pending_in_order_scripts_.begin(),
-                      pending_in_order_scripts_.end(), pending_script);
-  if (it == pending_in_order_scripts_.end())
-    return false;
-  pending_in_order_scripts_.erase(it);
-  SECURITY_CHECK(number_of_in_order_scripts_with_pending_notification_ > 0);
-  number_of_in_order_scripts_with_pending_notification_--;
-  return true;
-}
+void ScriptRunner::ExecutePendingScript(PendingScript* pending_script) {
+  TRACE_EVENT("blink", "ScriptRunner::ExecutePendingScript");
 
-void ScriptRunner::MovePendingScript(Document& old_document,
-                                     Document& new_document,
-                                     ScriptLoader* script_loader) {
-  Document* new_context_document = new_document.ContextDocument();
-  if (!new_context_document) {
-    // Document's contextDocument() method will return no Document if the
-    // following conditions both hold:
-    //
-    //   - The Document wasn't created with an explicit context document
-    //     and that document is otherwise kept alive.
-    //   - The Document itself is detached from its frame.
-    //
-    // The script element's loader is in that case moved to document() and
-    // its script runner, which is the non-null Document that contextDocument()
-    // would return if not detached.
-    DCHECK(!new_document.GetFrame());
-    new_context_document = &new_document;
-  }
-  Document* old_context_document = old_document.ContextDocument();
-  if (!old_context_document) {
-    DCHECK(!old_document.GetFrame());
-    old_context_document = &old_document;
-  }
-
-  if (old_context_document == new_context_document)
-    return;
-
-  PendingScript* pending_script =
-      script_loader
-          ->GetPendingScriptIfControlledByScriptRunnerForCrossDocMove();
-  if (!pending_script) {
-    // The ScriptLoader is not controlled by ScriptRunner. This can happen
-    // because MovePendingScript() is called for all <script> elements
-    // moved between Documents, not only for those controlled by ScriptRunner.
-    return;
-  }
-
-  old_context_document->GetScriptRunner()->MovePendingScript(
-      new_context_document->GetScriptRunner(), pending_script);
-}
-
-void ScriptRunner::MovePendingScript(ScriptRunner* new_runner,
-                                     PendingScript* pending_script) {
-  auto it = pending_async_scripts_.find(pending_script);
-  if (it != pending_async_scripts_.end()) {
-    new_runner->QueueScriptForExecution(pending_script);
-    pending_async_scripts_.erase(it);
-    document_->DecrementLoadEventDelayCount();
-    return;
-  }
-  if (RemovePendingInOrderScript(pending_script)) {
-    new_runner->QueueScriptForExecution(pending_script);
-    document_->DecrementLoadEventDelayCount();
-  }
-}
-
-bool ScriptRunner::ExecuteInOrderTask() {
-  TRACE_EVENT0("blink", "ScriptRunner::ExecuteInOrderTask");
-  if (in_order_scripts_to_execute_soon_.IsEmpty())
-    return false;
-
-  PendingScript* pending_script = in_order_scripts_to_execute_soon_.TakeFirst();
+  DCHECK(!document_->domWindow() || !document_->domWindow()->IsContextPaused());
   DCHECK(pending_script);
-  DCHECK_EQ(pending_script->GetSchedulingType(), ScriptSchedulingType::kInOrder)
-      << "In-order scripts queue should not contain any async script.";
 
   pending_script->ExecuteScriptBlock(NullURL());
 
   document_->DecrementLoadEventDelayCount();
-  return true;
 }
 
-bool ScriptRunner::ExecuteAsyncTask() {
-  TRACE_EVENT0("blink", "ScriptRunner::ExecuteAsyncTask");
-  if (async_scripts_to_execute_soon_.IsEmpty())
-    return false;
-
-  // Remove the async script loader from the ready-to-exec set and execute.
-  PendingScript* pending_script = async_scripts_to_execute_soon_.TakeFirst();
-
-  DCHECK_EQ(pending_script->GetSchedulingType(), ScriptSchedulingType::kAsync)
-      << "Async scripts queue should not contain any in-order script.";
-
-  pending_script->ExecuteScriptBlock(NullURL());
-
-  document_->DecrementLoadEventDelayCount();
-  return true;
-}
-
-void ScriptRunner::ExecuteTask() {
-  // This method is triggered by ScriptRunner::PostTask, and runs directly from
-  // the scheduler. So, the call stack is safe to reenter.
-  scheduler::CooperativeSchedulingManager::AllowedStackScope
-      whitelisted_stack_scope(
-          scheduler::CooperativeSchedulingManager::Instance());
-
-  if (is_suspended_)
-    return;
-
-  if (ExecuteAsyncTask())
-    return;
-
-  if (ExecuteInOrderTask())
-    return;
-
-#ifndef NDEBUG
-  // Extra tasks should be posted only when we resume after suspending. These
-  // should all be accounted for in number_of_extra_tasks_.
-  DCHECK_GT(number_of_extra_tasks_--, 0);
-#endif
-}
-
-void ScriptRunner::Trace(Visitor* visitor) {
+void ScriptRunner::Trace(Visitor* visitor) const {
   visitor->Trace(document_);
   visitor->Trace(pending_in_order_scripts_);
   visitor->Trace(pending_async_scripts_);
-  visitor->Trace(async_scripts_to_execute_soon_);
-  visitor->Trace(in_order_scripts_to_execute_soon_);
+  PendingScriptClient::Trace(visitor);
 }
 
 }  // namespace blink

@@ -4,11 +4,19 @@
 
 #include "net/cert/internal/trust_store.h"
 
+#include "base/notreached.h"
+
 namespace net {
 
 CertificateTrust CertificateTrust::ForTrustAnchor() {
   CertificateTrust result;
   result.type = CertificateTrustType::TRUSTED_ANCHOR;
+  return result;
+}
+
+CertificateTrust CertificateTrust::ForTrustAnchorEnforcingExpiration() {
+  CertificateTrust result;
+  result.type = CertificateTrustType::TRUSTED_ANCHOR_WITH_EXPIRATION;
   return result;
 }
 
@@ -36,6 +44,7 @@ bool CertificateTrust::IsTrustAnchor() const {
     case CertificateTrustType::UNSPECIFIED:
       return false;
     case CertificateTrustType::TRUSTED_ANCHOR:
+    case CertificateTrustType::TRUSTED_ANCHOR_WITH_EXPIRATION:
     case CertificateTrustType::TRUSTED_ANCHOR_WITH_CONSTRAINTS:
       return true;
   }
@@ -50,6 +59,7 @@ bool CertificateTrust::IsDistrusted() const {
       return true;
     case CertificateTrustType::UNSPECIFIED:
     case CertificateTrustType::TRUSTED_ANCHOR:
+    case CertificateTrustType::TRUSTED_ANCHOR_WITH_EXPIRATION:
     case CertificateTrustType::TRUSTED_ANCHOR_WITH_CONSTRAINTS:
       return false;
   }
@@ -64,6 +74,7 @@ bool CertificateTrust::HasUnspecifiedTrust() const {
       return true;
     case CertificateTrustType::DISTRUSTED:
     case CertificateTrustType::TRUSTED_ANCHOR:
+    case CertificateTrustType::TRUSTED_ANCHOR_WITH_EXPIRATION:
     case CertificateTrustType::TRUSTED_ANCHOR_WITH_CONSTRAINTS:
       return false;
   }

@@ -6,11 +6,10 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/values.h"
 #include "chromeos/dbus/shill/shill_clients.h"
 #include "chromeos/dbus/shill/shill_manager_client.h"
@@ -22,8 +21,11 @@ namespace chromeos {
 class GeolocationHandlerTest : public testing::Test {
  public:
   GeolocationHandlerTest()
-      : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+      : task_environment_(
+            base::test::SingleThreadTaskEnvironment::MainThreadType::UI) {}
+
+  GeolocationHandlerTest(const GeolocationHandlerTest&) = delete;
+  GeolocationHandlerTest& operator=(const GeolocationHandlerTest&) = delete;
 
   ~GeolocationHandlerTest() override = default;
 
@@ -54,7 +56,7 @@ class GeolocationHandlerTest : public testing::Test {
   // This should remain in sync with the format of shill (chromeos) dict entries
   // Shill provides us Cell ID and LAC in hex, but all other fields in decimal.
   void AddAccessPoint(int idx) {
-    base::DictionaryValue properties;
+    base::Value properties(base::Value::Type::DICTIONARY);
     std::string mac_address =
         base::StringPrintf("%02X:%02X:%02X:%02X:%02X:%02X",
                            idx, 0, 0, 0, 0, 0);
@@ -70,7 +72,7 @@ class GeolocationHandlerTest : public testing::Test {
 
   // This should remain in sync with the format of shill (chromeos) dict entries
   void AddCellTower(int idx) {
-    base::DictionaryValue properties;
+    base::Value properties(base::Value::Type::DICTIONARY);
     // Multiplications, additions, and string concatenations
     // are intended solely to differentiate the various fields
     // in a predictable way, while preserving 3 digits for MCC and MNC.
@@ -89,14 +91,11 @@ class GeolocationHandlerTest : public testing::Test {
   }
 
  protected:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::SingleThreadTaskEnvironment task_environment_;
   std::unique_ptr<GeolocationHandler> geolocation_handler_;
   ShillManagerClient::TestInterface* manager_test_ = nullptr;
   WifiAccessPointVector wifi_access_points_;
   CellTowerVector cell_towers_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(GeolocationHandlerTest);
 };
 
 TEST_F(GeolocationHandlerTest, NoAccessPoints) {

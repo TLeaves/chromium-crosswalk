@@ -5,12 +5,11 @@
 #include "net/tools/huffman_trie/huffman/huffman_builder.h"
 
 #include <algorithm>
+#include <ostream>
 
-#include "base/logging.h"
+#include "base/check.h"
 
-namespace net {
-
-namespace huffman_trie {
+namespace net::huffman_trie {
 
 namespace {
 
@@ -160,6 +159,4 @@ std::unique_ptr<HuffmanNode> HuffmanBuilder::BuildTree() {
   return std::move(nodes[0]);
 }
 
-}  // namespace huffman_trie
-
-}  // namespace net
+}  // namespace net::huffman_trie

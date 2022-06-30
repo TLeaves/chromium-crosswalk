@@ -7,8 +7,7 @@
 
 #include <memory>
 
-#include "base/macros.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "ios/chrome/browser/net/net_types.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -29,6 +28,11 @@ class IOSChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   explicit IOSChromeURLRequestContextGetter(
       std::unique_ptr<IOSChromeURLRequestContextFactory> factory);
 
+  IOSChromeURLRequestContextGetter(const IOSChromeURLRequestContextGetter&) =
+      delete;
+  IOSChromeURLRequestContextGetter& operator=(
+      const IOSChromeURLRequestContextGetter&) = delete;
+
   // Note that GetURLRequestContext() can only be called from the IO
   // thread (it will assert otherwise).
   // GetIOTaskRunner however can be called from any thread.
@@ -43,13 +47,6 @@ class IOSChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   static IOSChromeURLRequestContextGetter* Create(
       const ChromeBrowserStateIOData* io_data,
       ProtocolHandlerMap* protocol_handlers);
-
-  // Create an instance for an original profile for an app with isolated
-  // storage. This is expected to get called on UI thread.
-  static IOSChromeURLRequestContextGetter* CreateForIsolatedApp(
-      net::URLRequestContextGetter* main_context,
-      const ChromeBrowserStateIOData* io_data,
-      const base::FilePath& partition_path);
 
   // Discard reference to URLRequestContext and inform observers of shutdown.
   // Must be called before destruction. May only be called on IO thread.
@@ -67,8 +64,6 @@ class IOSChromeURLRequestContextGetter : public net::URLRequestContextGetter {
   // was lazily created by GetURLRequestContext().
   // Access only from the IO thread.
   net::URLRequestContext* url_request_context_;
-
-  DISALLOW_COPY_AND_ASSIGN(IOSChromeURLRequestContextGetter);
 };
 
 #endif  // IOS_CHROME_BROWSER_NET_IOS_CHROME_URL_REQUEST_CONTEXT_GETTER_H_

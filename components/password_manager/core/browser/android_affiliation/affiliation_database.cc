@@ -6,11 +6,16 @@
 
 #include <stdint.h>
 
+#include <memory>
+
+#include <set>
 #include <vector>
 
 #include "base/bind.h"
+#include "base/containers/flat_set.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "build/build_config.h"
 #include "sql/database.h"
 #include "sql/error_delegate_util.h"
 #include "sql/meta_table.h"
@@ -30,16 +35,14 @@ const int kCompatibleVersion = 1;
 
 }  // namespace
 
-AffiliationDatabase::AffiliationDatabase() {
-}
+AffiliationDatabase::AffiliationDatabase() = default;
 
-AffiliationDatabase::~AffiliationDatabase() {
-}
+AffiliationDatabase::~AffiliationDatabase() = default;
 
 bool AffiliationDatabase::Init(const base::FilePath& path) {
-  sql_connection_.reset(new sql::Database);
+  sql_connection_ = std::make_unique<sql::Database>();
   sql_connection_->set_histogram_tag("Affiliation");
-  sql_connection_->set_error_callback(base::Bind(
+  sql_connection_->set_error_callback(base::BindRepeating(
       &AffiliationDatabase::SQLErrorCallback, base::Unretained(this)));
 
   if (!sql_connection_->Open(path))
@@ -174,24 +177,6 @@ void AffiliationDatabase::DeleteAffiliationsAndBrandingForFacetURI(
   transaction.Commit();
 }
 
-void AffiliationDatabase::DeleteAffiliationsAndBrandingOlderThan(
-    const base::Time& cutoff_threshold) {
-  // Children will get deleted due to 'ON DELETE CASCADE'.
-  sql::Statement statement_parent(sql_connection_->GetCachedStatement(
-      SQL_FROM_HERE,
-      "DELETE FROM eq_classes "
-      "WHERE eq_classes.last_update_time < ?"));
-  statement_parent.BindInt64(0, cutoff_threshold.ToInternalValue());
-  statement_parent.Run();
-}
-
-void AffiliationDatabase::DeleteAllAffiliationsAndBranding() {
-  // Children will get deleted due to 'ON DELETE CASCADE'.
-  sql::Statement statement_parent(
-      sql_connection_->GetUniqueStatement("DELETE FROM eq_classes"));
-  statement_parent.Run();
-}
-
 bool AffiliationDatabase::Store(
     const AffiliatedFacetsWithUpdateTime& affiliated_facets) {
   DCHECK(!affiliated_facets.facets.empty());
@@ -257,6 +242,43 @@ void AffiliationDatabase::StoreAndRemoveConflicting(
   transaction.Commit();
 }
 
+void AffiliationDatabase::RemoveMissingFacetURI(
+    std::vector<FacetURI> facet_uris) {
+  sql::Transaction transaction(sql_connection_.get());
+  if (!transaction.Begin())
+    return;
+
+  auto current_facets = base::MakeFlatSet<std::string>(
+      facet_uris, {}, &FacetURI::potentially_invalid_spec);
+
+  std::set<int64_t> all_ids, found_ids;
+  sql::Statement statement(sql_connection_->GetUniqueStatement(
+      "SELECT m.facet_uri, m.set_id FROM eq_class_members m"));
+
+  // For every facet in the database check if it exists in |current_facets|.
+  while (statement.Step()) {
+    std::string facet_uri = statement.ColumnString(0);
+    int64_t eq_class_id = statement.ColumnInt64(1);
+
+    all_ids.insert(eq_class_id);
+    if (current_facets.contains(facet_uri)) {
+      found_ids.insert(eq_class_id);
+    }
+  }
+
+  // Remove any equivalence class which aren't represented in |current_facets|.
+  for (const auto id : all_ids) {
+    if (found_ids.find(id) == found_ids.end()) {
+      sql::Statement statement_parent(sql_connection_->GetCachedStatement(
+          SQL_FROM_HERE, "DELETE FROM eq_classes WHERE eq_classes.id = ?"));
+      statement_parent.BindInt64(0, id);
+      statement_parent.Run();
+    }
+  }
+
+  transaction.Commit();
+}
+
 // static
 void AffiliationDatabase::Delete(const base::FilePath& path) {
   bool success = sql::Database::Delete(path);
@@ -278,7 +300,7 @@ void AffiliationDatabase::InitializeTableBuilders(
     SQLTableBuilder* eq_classes_builder,
     SQLTableBuilder* eq_class_members_builder) {
   // Version 1 of the affiliation database.
-  eq_classes_builder->AddColumnToPrimaryKey("id", "INTEGER");
+  eq_classes_builder->AddPrimaryKeyColumn("id");
   eq_classes_builder->AddColumn("last_update_time", "INTEGER");
   // The first call to |SealVersion| sets the version to 0, that's why it is
   // repeated.
@@ -286,7 +308,7 @@ void AffiliationDatabase::InitializeTableBuilders(
   unsigned eq_classes_version = eq_classes_builder->SealVersion();
   DCHECK_EQ(1u, eq_classes_version);
 
-  eq_class_members_builder->AddColumnToPrimaryKey("id", "INTEGER");
+  eq_class_members_builder->AddPrimaryKeyColumn("id");
   eq_class_members_builder->AddColumnToUniqueKey("facet_uri",
                                                  "LONGVARCHAR NOT NULL");
   eq_class_members_builder->AddColumn(

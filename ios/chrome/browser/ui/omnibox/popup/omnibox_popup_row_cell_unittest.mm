@@ -5,7 +5,6 @@
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_row_cell.h"
 
 #import "ios/chrome/browser/ui/omnibox/popup/autocomplete_suggestion.h"
-#import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_row.h"
 #include "testing/gtest_mac.h"
 #include "testing/platform_test.h"
 #include "url/gurl.h"
@@ -20,17 +19,15 @@
 @property(nonatomic, assign) BOOL supportsDeletion;
 @property(nonatomic, assign) BOOL hasAnswer;
 @property(nonatomic, assign) BOOL isURL;
-@property(nonatomic, assign, getter=isAppendable) BOOL appendable;
-@property(nonatomic, strong) UIImage* suggestionTypeIcon;
+@property(nonatomic, assign) BOOL isAppendable;
 @property(nonatomic, assign) BOOL isTabMatch;
 @property(nonatomic, strong) NSAttributedString* text;
 @property(nonatomic, strong) NSAttributedString* detailText;
 @property(nonatomic, assign) NSInteger numberOfLines;
-@property(nonatomic, assign) BOOL hasImage;
-@property(nonatomic, assign) GURL imageURL;
-@property(nonatomic, assign) GURL faviconPageURL;
 @property(nonatomic, strong) id<OmniboxIcon> icon;
-
+@property(nonatomic, assign) BOOL isTailSuggestion;
+@property(nonatomic, assign) NSString* commonPrefix;
+@property(nonatomic, assign) id<OmniboxPedal, OmniboxIcon> pedal;
 @end
 
 @implementation FakeAutocompleteMatch

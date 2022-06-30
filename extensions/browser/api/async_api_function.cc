@@ -4,8 +4,9 @@
 
 #include "extensions/browser/api/async_api_function.h"
 
+#include <memory>
+
 #include "base/bind.h"
-#include "base/task/post_task.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
@@ -16,8 +17,7 @@ namespace extensions {
 
 // AsyncApiFunction
 AsyncApiFunction::AsyncApiFunction()
-    : work_task_runner_(
-          base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO})) {}
+    : work_task_runner_(content::GetIOThreadTaskRunner({})) {}
 
 AsyncApiFunction::~AsyncApiFunction() {}
 
@@ -58,9 +58,8 @@ ExtensionFunction::ResponseAction AsyncApiFunction::Run() {
 
 void AsyncApiFunction::AsyncWorkCompleted() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    bool rv = base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::UI},
-        base::BindOnce(&AsyncApiFunction::RespondOnUIThread, this));
+    bool rv = content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&AsyncApiFunction::RespondOnUIThread, this));
     DCHECK(rv);
   } else {
     SendResponse(Respond());
@@ -68,8 +67,8 @@ void AsyncApiFunction::AsyncWorkCompleted() {
 }
 
 void AsyncApiFunction::SetResult(std::unique_ptr<base::Value> result) {
-  results_.reset(new base::ListValue());
-  results_->Append(std::move(result));
+  results_ = std::make_unique<base::ListValue>();
+  results_->Append(base::Value::FromUniquePtrValue(std::move(result)));
 }
 
 void AsyncApiFunction::SetResultList(std::unique_ptr<base::ListValue> results) {
@@ -81,7 +80,7 @@ void AsyncApiFunction::SetError(const std::string& error) {
 }
 
 const std::string& AsyncApiFunction::GetError() const {
-  return error_.empty() ? UIThreadExtensionFunction::GetError() : error_;
+  return error_.empty() ? ExtensionFunction::GetError() : error_;
 }
 
 void AsyncApiFunction::WorkOnWorkThread() {
@@ -97,12 +96,20 @@ void AsyncApiFunction::RespondOnUIThread() {
 void AsyncApiFunction::SendResponse(bool success) {
   ResponseValue response;
   if (success) {
-    response = ArgumentList(std::move(results_));
+    std::vector<base::Value> arguments;
+    if (results_) {
+      std::unique_ptr<base::ListValue> results = std::move(results_);
+      arguments = std::move(*results).TakeListDeprecated();
+    }
+    response = ArgumentList(std::move(arguments));
+  } else if (results_) {
+    std::unique_ptr<base::ListValue> results = std::move(results_);
+    response =
+        ErrorWithArguments(std::move(*results).TakeListDeprecated(), error_);
   } else {
-    response = results_ ? ErrorWithArguments(std::move(results_), error_)
-                        : Error(error_);
+    response = Error(error_);
   }
-  UIThreadExtensionFunction::Respond(std::move(response));
+  ExtensionFunction::Respond(std::move(response));
 }
 
 }  // namespace extensions

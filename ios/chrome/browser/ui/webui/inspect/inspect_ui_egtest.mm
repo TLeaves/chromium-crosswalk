@@ -2,30 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import <EarlGrey/EarlGrey.h>
 #import <Foundation/Foundation.h>
 #import <XCTest/XCTest.h>
 
 #import "base/strings/sys_string_conversions.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
-#import "ios/chrome/test/app/tab_test_util.h"
 #import "ios/chrome/test/earl_grey/chrome_actions.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
+#import "ios/testing/earl_grey/earl_grey_test.h"
 #include "ios/web/public/test/element_selector.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-using chrome_test_util::GetCurrentWebState;
-
 namespace {
-// Directory containing the |kLogoPagePath| and |kLogoPageImageSourcePath|
-// resources.
-const char kServerFilesDir[] = "ios/testing/data/http_server_files/";
-
 // Id of the "Start Logging" button.
 NSString* const kStartLoggingButtonId = @"start-logging";
 // Id of the "Stop Logging" button.
@@ -102,8 +96,6 @@ ElementSelector* StartLoggingButton() {
 
 - (void)setUp {
   [super setUp];
-  self.testServer->ServeFilesFromSourceDirectory(
-      base::FilePath(kServerFilesDir));
   GREYAssertTrue(self.testServer->Start(), @"Server did not start.");
 }
 
@@ -304,30 +296,6 @@ ElementSelector* StartLoggingButton() {
   // Reload page.
   [ChromeEarlGrey reload];
   // Ensure message was cleared.
-  [ChromeEarlGrey waitForWebStateNotContainingText:kDebugMessageLabel];
-  [ChromeEarlGrey waitForWebStateNotContainingText:kDebugMessageText];
-}
-
-// Tests that messages are cleared for a tab which is closed.
-- (void)testMessagesClearedOnTabClosure {
-  [ChromeEarlGrey loadURL:GURL(kChromeUIInspectURL)];
-
-  // Start logging.
-  [ChromeEarlGrey waitForWebStateContainingElement:StartLoggingButton()];
-  [ChromeEarlGrey tapWebStateElementWithID:kStartLoggingButtonId];
-
-  // Open console test page.
-  [ChromeEarlGrey openNewTab];
-  const GURL consoleTestsURL = self.testServer->GetURL(kConsolePage);
-  [ChromeEarlGrey loadURL:consoleTestsURL];
-  std::string debugButtonID = base::SysNSStringToUTF8(kDebugMessageButtonId);
-  [ChromeEarlGrey waitForWebStateContainingElement:
-                      [ElementSelector selectorWithElementID:debugButtonID]];
-
-  [ChromeEarlGrey tapWebStateElementWithID:kDebugMessageButtonId];
-  [ChromeEarlGrey closeCurrentTab];
-
-  // Validate message and label are not displayed.
   [ChromeEarlGrey waitForWebStateNotContainingText:kDebugMessageLabel];
   [ChromeEarlGrey waitForWebStateNotContainingText:kDebugMessageText];
 }

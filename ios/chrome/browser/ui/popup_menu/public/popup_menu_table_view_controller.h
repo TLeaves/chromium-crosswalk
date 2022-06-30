@@ -9,6 +9,7 @@
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller.h"
 
 @protocol PopupMenuItem;
+@protocol PopupMenuMetricsHandler;
 @protocol PopupMenuTableViewControllerDelegate;
 
 // TableViewController for the popup menu.
@@ -26,12 +27,12 @@
 // result of an interaction with the popup.
 @property(nonatomic, weak) UIViewController* baseViewController;
 
+// Metrics handler for tracking events happening in this view controller.
+@property(nonatomic, weak) id<PopupMenuMetricsHandler> metricsHandler;
+
 // Initializers.
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
-- (instancetype)initWithTableViewStyle:(UITableViewStyle)style
-                           appBarStyle:
-                               (ChromeTableViewControllerStyle)appBarStyle
-    NS_UNAVAILABLE;
+- (instancetype)initWithStyle:(UITableViewStyle)style NS_UNAVAILABLE;
 
 // Selects the row at |point|. This is the same as tapping the row. Point must
 // be in window base coordinates.

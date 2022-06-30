@@ -8,7 +8,7 @@ import org.chromium.chrome.browser.contextualsearch.ContextualSearchSelectionCon
 
 /**
  * Defines the interface between a {@link ContextualSearchSelectionController} and the code that
- * handles callbacks.
+ * handles callbacks in {@link ContextualSearchManager}.
  */
 interface ContextualSearchSelectionHandler {
     /**
@@ -74,14 +74,6 @@ interface ContextualSearchSelectionHandler {
      * @param tapHeuristics The set of heuristics that would suppress the Tap.
      */
     public void handleMetricsForWouldSuppressTap(ContextualSearchHeuristics tapHeuristics);
-
-    /**
-     * Logs all the features that we can obtain without accessing heuristics, i.e. from global
-     * state.
-     * @param interactionRecorder The {@link ContextualSearchInteractionRecorder} to log the
-     * features to.
-     */
-    public void logNonHeuristicFeatures(ContextualSearchInteractionRecorder interactionRecorder);
 
     /**
      * Handles a long-press gesture that may make a server Resolve request to determine the search.

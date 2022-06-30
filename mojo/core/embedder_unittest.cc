@@ -14,17 +14,13 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file.h"
-#include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/memory/writable_shared_memory_region.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
@@ -32,7 +28,6 @@
 #include "mojo/core/core.h"
 #include "mojo/core/shared_buffer_dispatcher.h"
 #include "mojo/core/test/mojo_test_base.h"
-#include "mojo/core/test_utils.h"
 #include "mojo/public/c/system/core.h"
 #include "mojo/public/cpp/system/handle.h"
 #include "mojo/public/cpp/system/message_pipe.h"
@@ -49,7 +44,7 @@ MojoResult CreateSharedBufferFromRegion(T&& region, MojoHandle* handle) {
   scoped_refptr<SharedBufferDispatcher> buffer;
   MojoResult result =
       SharedBufferDispatcher::CreateFromPlatformSharedMemoryRegion(
-          T::TakeHandleForSerialization(std::move(region)), &buffer);
+          T::TakeHandleForSerialization(std::forward<T>(region)), &buffer);
   if (result != MOJO_RESULT_OK)
     return result;
 
@@ -70,7 +65,7 @@ MojoResult ExtractRegionFromSharedBuffer(MojoHandle handle, T* region) {
 }
 
 // The multiprocess tests that use these don't compile on iOS.
-#if !defined(OS_IOS)
+#if !BUILDFLAG(IS_IOS)
 const char kHelloWorld[] = "hello world";
 const char kByeWorld[] = "bye world";
 #endif
@@ -182,7 +177,7 @@ TEST_F(EmbedderTest, ChannelsHandlePassing) {
 //  11.                                      (wait/cl.)
 //  12.                                                  (wait/cl.)
 
-#if !defined(OS_IOS)
+#if !BUILDFLAG(IS_IOS)
 
 TEST_F(EmbedderTest, MultiprocessChannels) {
   RunTestClient("MultiprocessChannelsClient", [&](MojoHandle server_mp) {
@@ -348,7 +343,7 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessSharedMemoryClient,
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT, MojoClose(sb1));
 }
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 
 enum class HandleType {
   POSIX,
@@ -364,8 +359,8 @@ TEST_F(EmbedderTest, MultiprocessMixMachAndFds) {
   const size_t kShmSize = 1234;
   RunTestClient("MultiprocessMixMachAndFdsClient", [&](MojoHandle server_mp) {
     // 1. Create fds or Mach objects and mojo handles from them.
-    MojoHandle platform_handles[base::size(kTestHandleTypes)];
-    for (size_t i = 0; i < base::size(kTestHandleTypes); i++) {
+    MojoHandle platform_handles[std::size(kTestHandleTypes)];
+    for (size_t i = 0; i < std::size(kTestHandleTypes); i++) {
       const auto type = kTestHandleTypes[i];
       PlatformHandle scoped_handle;
       if (type == HandleType::POSIX) {
@@ -391,7 +386,7 @@ TEST_F(EmbedderTest, MultiprocessMixMachAndFds) {
 
     // 2. Send all the handles to the child.
     WriteMessageWithHandles(server_mp, "hello", platform_handles,
-                            base::size(kTestHandleTypes));
+                            std::size(kTestHandleTypes));
 
     // 3. Read a message from |server_mp|.
     EXPECT_EQ("bye", ReadMessage(server_mp));
@@ -401,7 +396,7 @@ TEST_F(EmbedderTest, MultiprocessMixMachAndFds) {
 DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessMixMachAndFdsClient,
                                   EmbedderTest,
                                   client_mp) {
-  const int kNumHandles = base::size(kTestHandleTypes);
+  const int kNumHandles = std::size(kTestHandleTypes);
   MojoHandle platform_handles[kNumHandles];
 
   // 1. Read from |client_mp|, which should have a message containing
@@ -425,9 +420,9 @@ DEFINE_TEST_CLIENT_TEST_WITH_PIPE(MultiprocessMixMachAndFdsClient,
   WriteMessage(client_mp, "bye");
 }
 
-#endif  // defined(OS_MACOSX)
+#endif  // BUILDFLAG(IS_MAC)
 
-#endif  // !defined(OS_IOS)
+#endif  // !BUILDFLAG(IS_IOS)
 
 }  // namespace
 }  // namespace core

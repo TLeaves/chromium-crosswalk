@@ -5,26 +5,21 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_WORKER_WORKER_THREAD_SCHEDULER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_WORKER_WORKER_THREAD_SCHEDULER_H_
 
-#include "base/macros.h"
-#include "base/message_loop/message_loop.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/scheduling_metrics/task_duration_metric_reporter.h"
-#include "third_party/blink/public/platform/web_thread_type.h"
 #include "third_party/blink/renderer/platform/scheduler/common/idle_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_status.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread_type.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/non_main_thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/worker/worker_metrics_helper.h"
 
 namespace base {
+class TaskObserver;
 namespace sequence_manager {
 class SequenceManager;
 }
 }  // namespace base
-
-namespace service_manager {
-class Connector;
-}
 
 namespace ukm {
 class UkmRecorder;
@@ -35,7 +30,6 @@ namespace scheduler {
 
 class WorkerScheduler;
 class WorkerSchedulerProxy;
-class TaskQueueThrottler;
 class WakeUpBudgetPool;
 class CPUTimeBudgetPool;
 
@@ -45,20 +39,21 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
   // |sequence_manager| and |proxy| must remain valid for the entire lifetime of
   // this object.
   WorkerThreadScheduler(
-      WebThreadType thread_type,
+      ThreadType thread_type,
       base::sequence_manager::SequenceManager* sequence_manager,
       WorkerSchedulerProxy* proxy);
+  WorkerThreadScheduler(const WorkerThreadScheduler&) = delete;
+  WorkerThreadScheduler& operator=(const WorkerThreadScheduler&) = delete;
   ~WorkerThreadScheduler() override;
 
   // WebThreadScheduler implementation:
   scoped_refptr<base::SingleThreadTaskRunner> V8TaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
-  scoped_refptr<base::SingleThreadTaskRunner> IPCTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> NonWakingTaskRunner() override;
   bool ShouldYieldForHighPriorityWork() override;
   bool CanExceedIdleDeadlineIfRequired() const override;
-  void AddTaskObserver(base::MessageLoop::TaskObserver* task_observer) override;
-  void RemoveTaskObserver(
-      base::MessageLoop::TaskObserver* task_observer) override;
+  void AddTaskObserver(base::TaskObserver* task_observer) override;
+  void RemoveTaskObserver(base::TaskObserver* task_observer) override;
   void AddRAILModeObserver(RAILModeObserver*) override {}
   void RemoveRAILModeObserver(RAILModeObserver const*) override {}
   void Shutdown() override;
@@ -67,6 +62,7 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
 
   // NonMainThreadSchedulerImpl implementation:
+  void Init() override;
   scoped_refptr<NonMainThreadTaskQueue> DefaultTaskQueue() override;
   void OnTaskCompleted(
       NonMainThreadTaskQueue* worker_task_queue,
@@ -93,20 +89,14 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
   // task queues.
   scoped_refptr<NonMainThreadTaskQueue> ControlTaskQueue();
 
-  // TaskQueueThrottler might be null if throttling is not enabled or
-  // not supported.
-  TaskQueueThrottler* task_queue_throttler() const {
-    return task_queue_throttler_.get();
+  WakeUpBudgetPool* wake_up_budget_pool() const {
+    return wake_up_budget_pool_.get();
   }
-  WakeUpBudgetPool* wake_up_budget_pool() const { return wake_up_budget_pool_; }
   CPUTimeBudgetPool* cpu_time_budget_pool() const {
-    return cpu_time_budget_pool_;
+    return cpu_time_budget_pool_.get();
   }
 
  protected:
-  // NonMainThreadScheduler implementation:
-  void InitImpl() override;
-
   // IdleHelper::Delegate implementation:
   bool CanEnterLongIdlePeriod(
       base::TimeTicks now,
@@ -116,9 +106,10 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
   void OnIdlePeriodEnded() override {}
   void OnPendingTasksChanged(bool new_state) override {}
 
-  void CreateTaskQueueThrottler();
+  void CreateBudgetPools();
 
-  void SetCPUTimeBudgetPoolForTesting(CPUTimeBudgetPool* cpu_time_budget_pool);
+  void SetCPUTimeBudgetPoolForTesting(
+      std::unique_ptr<CPUTimeBudgetPool> cpu_time_budget_pool);
 
   HashSet<WorkerScheduler*>& GetWorkerSchedulersForTesting();
 
@@ -135,9 +126,10 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
       const base::sequence_manager::Task& task,
       const base::sequence_manager::TaskQueue::TaskTiming& task_timing);
 
-  const WebThreadType thread_type_;
+  const ThreadType thread_type_;
+  scoped_refptr<NonMainThreadTaskQueue> idle_helper_queue_;
   IdleHelper idle_helper_;
-  bool initialized_;
+  bool initialized_ = false;
   scoped_refptr<NonMainThreadTaskQueue> control_task_queue_;
   scoped_refptr<base::SingleThreadTaskRunner> v8_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
@@ -152,19 +144,14 @@ class PLATFORM_EXPORT WorkerThreadScheduler : public NonMainThreadSchedulerImpl,
   // Worker schedulers associated with this thread.
   HashSet<WorkerScheduler*> worker_schedulers_;
 
-  std::unique_ptr<TaskQueueThrottler> task_queue_throttler_;
-  // Owned by |task_queue_throttler_|.
-  WakeUpBudgetPool* wake_up_budget_pool_ = nullptr;
-  CPUTimeBudgetPool* cpu_time_budget_pool_ = nullptr;
+  std::unique_ptr<WakeUpBudgetPool> wake_up_budget_pool_;
+  std::unique_ptr<CPUTimeBudgetPool> cpu_time_budget_pool_;
 
   // The status of the parent frame when the worker was created.
   const FrameStatus initial_frame_status_;
 
   const ukm::SourceId ukm_source_id_;
-  std::unique_ptr<service_manager::Connector> connector_;
   std::unique_ptr<ukm::UkmRecorder> ukm_recorder_;
-
-  DISALLOW_COPY_AND_ASSIGN(WorkerThreadScheduler);
 };
 
 }  // namespace scheduler

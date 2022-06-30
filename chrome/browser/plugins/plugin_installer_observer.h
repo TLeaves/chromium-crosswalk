@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_PLUGINS_PLUGIN_INSTALLER_OBSERVER_H_
 #define CHROME_BROWSER_PLUGINS_PLUGIN_INSTALLER_OBSERVER_H_
 
-#include <string>
+#include "base/memory/raw_ptr.h"
 
 class PluginInstaller;
 
@@ -23,7 +23,7 @@ class PluginInstallerObserver {
   virtual void DownloadFinished();
 
   // Weak pointer; Owned by PluginFinder, which is a singleton.
-  PluginInstaller* installer_;
+  raw_ptr<PluginInstaller> installer_;
 };
 
 // A WeakPluginInstallerObserver is like a weak pointer to the installer, in the

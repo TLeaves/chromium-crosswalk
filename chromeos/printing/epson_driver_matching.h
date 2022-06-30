@@ -5,15 +5,16 @@
 #ifndef CHROMEOS_PRINTING_EPSON_DRIVER_MATCHING_H_
 #define CHROMEOS_PRINTING_EPSON_DRIVER_MATCHING_H_
 
-#include "chromeos/chromeos_export.h"
+#include "base/component_export.h"
 
 namespace chromeos {
 
 struct PrinterSearchData;
 
 // Implements PPD matching rules obtained from Epson. Returns true when this
-// printer can be saftely setup using the generic Epson PPD.
-bool CHROMEOS_EXPORT CanUseEpsonGenericPPD(const PrinterSearchData& sd);
+// printer can be safely setup using the generic Epson PPD.
+bool COMPONENT_EXPORT(CHROMEOS_PRINTING)
+    CanUseEpsonGenericPPD(const PrinterSearchData& sd);
 
 }  // namespace chromeos
 

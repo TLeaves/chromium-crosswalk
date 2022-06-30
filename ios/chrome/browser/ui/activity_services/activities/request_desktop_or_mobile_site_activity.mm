@@ -6,7 +6,8 @@
 
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
-#import "ios/chrome/browser/ui/commands/browser_commands.h"
+#import "ios/chrome/browser/ui/commands/browser_coordinator_commands.h"
+#import "ios/chrome/browser/web/web_navigation_browser_agent.h"
 #include "ios/chrome/grit/ios_strings.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -23,28 +24,25 @@ NSString* const kRequestDesktopOrMobileSiteActivityType =
 
 @interface RequestDesktopOrMobileSiteActivity ()
 
-// The dispatcher that handles the command when the activity is performed.
-@property(nonatomic, weak) id<BrowserCommands> dispatcher;
 // User agent type of the current page.
 @property(nonatomic, assign) web::UserAgentType userAgent;
+// The handler that is invoked when the IPH bubble is displayed.
+@property(nonatomic, weak) id<BrowserCoordinatorCommands> handler;
+// The agent that is invoked when the activity is performed.
+@property(nonatomic, readonly) WebNavigationBrowserAgent* agent;
 
 @end
 
 @implementation RequestDesktopOrMobileSiteActivity
 
-@synthesize dispatcher = _dispatcher;
-@synthesize userAgent = _userAgent;
-
-+ (NSString*)activityIdentifier {
-  return kRequestDesktopOrMobileSiteActivityType;
-}
-
-- (instancetype)initWithDispatcher:(id<BrowserCommands>)dispatcher
-                         userAgent:(web::UserAgentType)userAgent {
+- (instancetype)initWithUserAgent:(web::UserAgentType)userAgent
+                          handler:(id<BrowserCoordinatorCommands>)handler
+                  navigationAgent:(WebNavigationBrowserAgent*)agent {
   self = [super init];
   if (self) {
-    _dispatcher = dispatcher;
     _userAgent = userAgent;
+    _handler = handler;
+    _agent = agent;
   }
   return self;
 }
@@ -52,7 +50,7 @@ NSString* const kRequestDesktopOrMobileSiteActivityType =
 #pragma mark - UIActivity
 
 - (NSString*)activityType {
-  return [[self class] activityIdentifier];
+  return kRequestDesktopOrMobileSiteActivityType;
 }
 
 - (NSString*)activityTitle {
@@ -68,7 +66,7 @@ NSString* const kRequestDesktopOrMobileSiteActivityType =
 }
 
 - (BOOL)canPerformWithActivityItems:(NSArray*)activityItems {
-  return YES;
+  return self.userAgent != web::UserAgentType::NONE;
 }
 
 + (UIActivityCategory)activityCategory {
@@ -76,16 +74,17 @@ NSString* const kRequestDesktopOrMobileSiteActivityType =
 }
 
 - (void)performActivity {
+  [self activityDidFinish:YES];
   if (self.userAgent == web::UserAgentType::MOBILE) {
     base::RecordAction(
         base::UserMetricsAction("MobileShareActionRequestDesktop"));
-    [self.dispatcher requestDesktopSite];
+    self.agent->RequestDesktopSite();
+    [self.handler showDefaultSiteViewIPH];
   } else {
     base::RecordAction(
         base::UserMetricsAction("MobileShareActionRequestMobile"));
-    [self.dispatcher requestMobileSite];
+    self.agent->RequestMobileSite();
   }
-  [self activityDidFinish:YES];
 }
 
 @end

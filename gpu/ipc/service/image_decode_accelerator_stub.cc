@@ -19,9 +19,9 @@
 #include "base/logging.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/optional.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/context_result.h"
 #include "gpu/command_buffer/common/discardable_handle.h"
@@ -41,8 +41,8 @@
 #include "gpu/ipc/service/command_buffer_stub.h"
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
-#include "ipc/ipc_message.h"
-#include "ipc/ipc_message_macros.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
@@ -56,7 +56,7 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_image.h"
 
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ui/gfx/linux/native_pixmap_dmabuf.h"
 #include "ui/gl/gl_image_native_pixmap.h"
 #endif
@@ -64,7 +64,7 @@
 namespace gpu {
 class Buffer;
 
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 namespace {
 
 struct CleanUpContext {
@@ -98,7 +98,8 @@ ImageDecodeAcceleratorStub::ImageDecodeAcceleratorStub(
     int32_t route_id)
     : worker_(worker),
       channel_(channel),
-      sequence_(channel->scheduler()->CreateSequence(SchedulingPriority::kLow)),
+      sequence_(channel->scheduler()->CreateSequence(SchedulingPriority::kLow,
+                                                     channel->task_runner())),
       sync_point_client_state_(
           channel->sync_point_manager()->CreateSyncPointClientState(
               CommandBufferNamespace::GPU_IO,
@@ -111,22 +112,6 @@ ImageDecodeAcceleratorStub::ImageDecodeAcceleratorStub(
   // task to release the decode sync token, it doesn't run immediately (we want
   // it to run when the decode is done).
   channel_->scheduler()->DisableSequence(sequence_);
-}
-
-bool ImageDecodeAcceleratorStub::OnMessageReceived(const IPC::Message& msg) {
-  DCHECK(io_task_runner_->BelongsToCurrentThread());
-  if (!base::FeatureList::IsEnabled(
-          features::kVaapiJpegImageDecodeAcceleration)) {
-    return false;
-  }
-
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(ImageDecodeAcceleratorStub, msg)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_ScheduleImageDecode,
-                        OnScheduleImageDecode)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
 }
 
 void ImageDecodeAcceleratorStub::Shutdown() {
@@ -146,31 +131,25 @@ ImageDecodeAcceleratorStub::~ImageDecodeAcceleratorStub() {
   DCHECK(!channel_);
 }
 
-void ImageDecodeAcceleratorStub::OnScheduleImageDecode(
-    const GpuChannelMsg_ScheduleImageDecode_Params& decode_params,
+void ImageDecodeAcceleratorStub::ScheduleImageDecode(
+    mojom::ScheduleImageDecodeParamsPtr params,
     uint64_t release_count) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
+  if (!base::FeatureList::IsEnabled(
+          features::kVaapiJpegImageDecodeAcceleration) &&
+      !base::FeatureList::IsEnabled(
+          features::kVaapiWebPImageDecodeAcceleration)) {
+    return;
+  }
+
+  DCHECK(io_task_runner_->BelongsToCurrentThread());
   base::AutoLock lock(lock_);
-  if (!channel_ || destroying_channel_) {
+  if (!channel_) {
     // The channel is no longer available, so don't do anything.
     return;
   }
 
-  // Make sure the decode sync token is ordered with respect to the last decode
-  // request.
-  if (release_count <= last_release_count_) {
-    DLOG(ERROR) << "Out-of-order decode sync token";
-    OnError();
-    return;
-  }
-  last_release_count_ = release_count;
-
-  // Make sure the output dimensions are not too small.
-  if (decode_params.output_size.IsEmpty()) {
-    DLOG(ERROR) << "Output dimensions are too small";
-    OnError();
-    return;
-  }
+  mojom::ScheduleImageDecodeParams& decode_params = *params;
 
   // Start the actual decode.
   worker_->Decode(
@@ -188,24 +167,49 @@ void ImageDecodeAcceleratorStub::OnScheduleImageDecode(
   channel_->scheduler()->ScheduleTask(Scheduler::Task(
       sequence_,
       base::BindOnce(&ImageDecodeAcceleratorStub::ProcessCompletedDecode,
-                     base::WrapRefCounted(this), std::move(decode_params),
+                     base::WrapRefCounted(this), std::move(params),
                      release_count),
       {discardable_handle_sync_token} /* sync_token_fences */));
 }
 
 void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
-    GpuChannelMsg_ScheduleImageDecode_Params params,
+    mojom::ScheduleImageDecodeParamsPtr params_ptr,
     uint64_t decode_release_count) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   base::AutoLock lock(lock_);
-  if (!channel_ || destroying_channel_) {
+  if (!channel_) {
     // The channel is no longer available, so don't do anything.
     return;
   }
 
+  mojom::ScheduleImageDecodeParams& params = *params_ptr;
+
   DCHECK(!pending_completed_decodes_.empty());
   std::unique_ptr<ImageDecodeAcceleratorWorker::DecodeResult> completed_decode =
       std::move(pending_completed_decodes_.front());
+  pending_completed_decodes_.pop();
+
+  // Regardless of what happens next, make sure the sync token gets released and
+  // the sequence gets disabled if there are no more completed decodes after
+  // this. base::Unretained(this) is safe because *this outlives the
+  // ScopedClosureRunner.
+  base::ScopedClosureRunner finalizer(
+      base::BindOnce(&ImageDecodeAcceleratorStub::FinishCompletedDecode,
+                     base::Unretained(this), decode_release_count));
+
+  if (!completed_decode) {
+    DLOG(ERROR) << "The image could not be decoded";
+    return;
+  }
+
+  // TODO(crbug.com/995883): the output_size parameter is going away, so this
+  // validation is not needed. Checking if the size is too small should happen
+  // at the level of the decoder (since that's the component that's aware of its
+  // own capabilities).
+  if (params.output_size.IsEmpty()) {
+    DLOG(ERROR) << "Output dimensions are too small";
+    return;
+  }
 
   // Gain access to the transfer cache through the GpuChannelManager's
   // SharedContextState. We will also use that to get a GrContext that will be
@@ -215,7 +219,6 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
       channel_->gpu_channel_manager()->GetSharedContextState(&context_result);
   if (context_result != ContextResult::kSuccess) {
     DLOG(ERROR) << "Unable to obtain the SharedContextState";
-    OnError();
     return;
   }
   DCHECK(shared_context_state);
@@ -225,23 +228,20 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
   // other graphics APIs).
   if (!shared_context_state->IsGLInitialized()) {
     DLOG(ERROR) << "GL has not been initialized";
-    OnError();
     return;
   }
   if (!shared_context_state->gr_context()) {
     DLOG(ERROR) << "Could not get the GrContext";
-    OnError();
     return;
   }
   if (!shared_context_state->MakeCurrent(nullptr /* surface */)) {
     DLOG(ERROR) << "Could not MakeCurrent the shared context";
-    OnError();
     return;
   }
 
   std::vector<sk_sp<SkImage>> plane_sk_images;
-  base::Optional<base::ScopedClosureRunner> notify_gl_state_changed;
-#if defined(OS_CHROMEOS)
+  absl::optional<base::ScopedClosureRunner> notify_gl_state_changed;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   // Right now, we only support YUV 4:2:0 for the output of the decoder (either
   // as YV12 or NV12).
   //
@@ -267,7 +267,6 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
   if (!safe_uv_width.AssignIfValid(&uv_width) ||
       !safe_uv_height.AssignIfValid(&uv_height)) {
     DLOG(ERROR) << "Could not calculate subsampled dimensions";
-    OnError();
     return;
   }
   gfx::Size uv_plane_size = gfx::Size(uv_width, uv_height);
@@ -328,7 +327,8 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
       plane_image =
           external_image_factory_for_testing_->CreateImageForGpuMemoryBuffer(
               std::move(plane_handle), plane_size, plane_format,
-              -1 /* client_id */, kNullSurfaceHandle);
+              gfx::ColorSpace(), gfx::BufferPlane::DEFAULT, -1 /* client_id */,
+              kNullSurfaceHandle);
     } else {
       auto plane_pixmap = base::MakeRefCounted<gfx::NativePixmapDmaBuf>(
           plane_size, plane_format,
@@ -341,13 +341,11 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
     }
     if (!plane_image) {
       DLOG(ERROR) << "Could not create GL image";
-      OnError();
       return;
     }
     resource->gl_image = std::move(plane_image);
     if (!resource->gl_image->BindTexImage(GL_TEXTURE_EXTERNAL_OES)) {
       DLOG(ERROR) << "Could not bind GL image to texture";
-      OnError();
       return;
     }
 
@@ -355,35 +353,24 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
     shared_context_state->PessimisticallyResetGrContext();
 
     // Create a SkImage using the texture.
-    // TODO(crbug.com/985458): ideally, we use GL_RG8_EXT for the NV12 chroma
-    // plane. However, Skia does not have a corresponding SkColorType. Revisit
-    // this when it's supported.
     const GrBackendTexture plane_backend_texture(
         plane_size.width(), plane_size.height(), GrMipMapped::kNo,
         GrGLTextureInfo{GL_TEXTURE_EXTERNAL_OES, resource->texture,
-                        is_nv12_chroma_plane ? GL_RGBA8_EXT : GL_R8_EXT});
+                        static_cast<GrGLenum>(
+                            is_nv12_chroma_plane ? GL_RG8_EXT : GL_R8_EXT)});
     plane_sk_images[plane] = SkImage::MakeFromTexture(
         shared_context_state->gr_context(), plane_backend_texture,
         kTopLeft_GrSurfaceOrigin,
-        is_nv12_chroma_plane ? kRGBA_8888_SkColorType : kAlpha_8_SkColorType,
+        is_nv12_chroma_plane ? kR8G8_unorm_SkColorType : kAlpha_8_SkColorType,
         kOpaque_SkAlphaType, nullptr /* colorSpace */, CleanUpResource,
         resource);
     if (!plane_sk_images[plane]) {
       DLOG(ERROR) << "Could not create planar SkImage";
-      OnError();
       return;
     }
     // No need for us to call the resource cleaner. Skia should do that.
     resource_cleaner.Release().Reset();
   }
-#else
-  // Right now, we only support Chrome OS because we need to use the
-  // |native_pixmap_handle| member of a GpuMemoryBufferHandle.
-  NOTIMPLEMENTED()
-      << "Image decode acceleration is unsupported for this platform";
-  OnError();
-  return;
-#endif
 
   // Insert the cache entry in the transfer cache. Note that this section
   // validates several of the IPC parameters: |params.raster_decoder_route_id|,
@@ -393,7 +380,6 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
       channel_->LookupCommandBuffer(params.raster_decoder_route_id);
   if (!command_buffer) {
     DLOG(ERROR) << "Could not find the command buffer";
-    OnError();
     return;
   }
   scoped_refptr<Buffer> handle_buffer =
@@ -401,23 +387,25 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
   if (!DiscardableHandleBase::ValidateParameters(
           handle_buffer.get(), params.discardable_handle_shm_offset)) {
     DLOG(ERROR) << "Could not validate the discardable handle parameters";
-    OnError();
     return;
   }
   DCHECK(command_buffer->decoder_context());
   if (command_buffer->decoder_context()->GetRasterDecoderId() < 0) {
     DLOG(ERROR) << "Could not get the raster decoder ID";
-    OnError();
     return;
   }
 
   {
     auto* gr_shader_cache = channel_->gpu_channel_manager()->gr_shader_cache();
-    base::Optional<raster::GrShaderCache::ScopedCacheUse> cache_use;
+    absl::optional<raster::GrShaderCache::ScopedCacheUse> cache_use;
     if (gr_shader_cache)
       cache_use.emplace(gr_shader_cache,
                         base::strict_cast<int32_t>(channel_->client_id()));
     DCHECK(shared_context_state->transfer_cache());
+    SkYUVAInfo::PlaneConfig plane_config =
+        completed_decode->buffer_format == gfx::BufferFormat::YVU_420
+            ? SkYUVAInfo::PlaneConfig::kY_V_U
+            : SkYUVAInfo::PlaneConfig::kY_UV;
     // TODO(andrescj): |params.target_color_space| is not needed because Skia
     // knows where it's drawing, so it can handle color space conversion without
     // us having to specify the target color space. However, we are currently
@@ -433,26 +421,28 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
                                           params.discardable_handle_shm_offset,
                                           params.discardable_handle_shm_id),
                  shared_context_state->gr_context(), std::move(plane_sk_images),
-                 completed_decode->buffer_format == gfx::BufferFormat::YVU_420
-                     ? cc::YUVDecodeFormat::kYVU3
-                     : cc::YUVDecodeFormat::kYUV2,
+                 plane_config, SkYUVAInfo::Subsampling::k420,
+                 completed_decode->yuv_color_space,
                  completed_decode->buffer_byte_size, params.needs_mips)) {
       DLOG(ERROR) << "Could not create and insert the transfer cache entry";
-      OnError();
       return;
     }
   }
   DCHECK(notify_gl_state_changed);
   notify_gl_state_changed->RunAndReset();
+#else
+  // Right now, we only support Chrome OS because we need to use the
+  // |native_pixmap_handle| member of a GpuMemoryBufferHandle.
+  NOTIMPLEMENTED()
+      << "Image decode acceleration is unsupported for this platform";
+#endif
+}
 
-  // All done! The decoded image can now be used for rasterization, so we can
-  // release the decode sync token.
+void ImageDecodeAcceleratorStub::FinishCompletedDecode(
+    uint64_t decode_release_count) {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  lock_.AssertAcquired();
   sync_point_client_state_->ReleaseFenceSync(decode_release_count);
-
-  // If there are no more completed decodes to be processed, we can disable the
-  // sequence: when the next decode is completed, the sequence will be
-  // re-enabled.
-  pending_completed_decodes_.pop();
   if (pending_completed_decodes_.empty())
     channel_->scheduler()->DisableSequence(sequence_);
 }
@@ -461,19 +451,13 @@ void ImageDecodeAcceleratorStub::OnDecodeCompleted(
     gfx::Size expected_output_size,
     std::unique_ptr<ImageDecodeAcceleratorWorker::DecodeResult> result) {
   base::AutoLock lock(lock_);
-  if (!channel_ || destroying_channel_) {
+  if (!channel_) {
     // The channel is no longer available, so don't do anything.
     return;
   }
 
-  if (!result) {
-    DLOG(ERROR) << "The decode failed";
-    OnError();
-    return;
-  }
-
   // A sanity check on the output of the decoder.
-  DCHECK(expected_output_size == result->visible_size);
+  DCHECK(!result || expected_output_size == result->visible_size);
 
   // The decode is ready to be processed: add it to |pending_completed_decodes_|
   // so that ProcessCompletedDecode() can pick it up.
@@ -483,21 +467,6 @@ void ImageDecodeAcceleratorStub::OnDecodeCompleted(
   // decodes is 1. If there are more, the sequence should already be enabled.
   if (pending_completed_decodes_.size() == 1u)
     channel_->scheduler()->EnableSequence(sequence_);
-}
-
-void ImageDecodeAcceleratorStub::OnError() {
-  lock_.AssertAcquired();
-  DCHECK(channel_);
-
-  // Trigger the destruction of the channel and stop processing further
-  // completed decodes, even if they're successful. We can't call
-  // GpuChannel::OnChannelError() directly because that will end up calling
-  // ImageDecodeAcceleratorStub::Shutdown() while |lock_| is still acquired. So,
-  // we post a task to the main thread instead.
-  destroying_channel_ = true;
-  channel_->task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&GpuChannel::OnChannelError, channel_->AsWeakPtr()));
 }
 
 }  // namespace gpu

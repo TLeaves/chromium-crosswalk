@@ -8,6 +8,8 @@ Contains all the support code to enable the shared context used by the cr tool.
 This includes the configuration variables and command line handling.
 """
 
+from __future__ import print_function
+
 import argparse
 import os
 import cr
@@ -42,9 +44,9 @@ class _DumpVisitor(cr.visitor.ExportVisitor):
   def _DumpNow(self):
     if self.to_dump:
       if self.with_source:
-        print 'From', self.Where()
+        print('From', self.Where())
       for key in sorted(self.to_dump.keys()):
-        print '  ', key, '=', self.to_dump[key]
+        print('  ', key, '=', self.to_dump[key])
       self.to_dump = {}
 
 
@@ -167,15 +169,16 @@ class Context(cr.config.Config):
           Overrides CR_DRY_RUN
           """
     )
-    parser.add_argument(
-        '-v', '--verbose', dest='CR_VERBOSE',
-        action='count', default=None,
-        help="""
+    parser.add_argument('-v',
+                        '--verbose',
+                        dest='CR_VERBOSE',
+                        action='count',
+                        default=0,
+                        help="""
           Print information about commands being performed.
           Repeating multiple times increases the verbosity level.
           Overrides CR_VERBOSE
-          """
-    )
+          """)
 
   @property
   def args(self):
@@ -207,8 +210,8 @@ class Context(cr.config.Config):
   @property
   def verbose(self):
     if self.autocompleting:
-      return False
-    return self.Find('CR_VERBOSE') or self.dry_run
+      return 0
+    return self.Find('CR_VERBOSE') or (self.dry_run and 1 or 0)
 
   @property
   def dry_run(self):

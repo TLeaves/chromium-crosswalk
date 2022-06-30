@@ -1,0 +1,58 @@
+# Copyright (c) 2016 Intel Corporation. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/config/android/rules.gni")
+
+static_library("demo_common") {
+  testonly = true
+
+  sources = [
+    "common.cc"
+  ]
+}
+
+static_library("demo_lib_a") {
+  testonly = true
+
+  sources = [
+    "a.cc"
+  ]
+
+  deps = [
+    ":demo_common",
+  ]
+}
+
+static_library("demo_lib_b") {
+  testonly = true
+
+  sources = [
+    "b.cc"
+  ]
+
+  deps = [
+    ":demo_common",
+  ]
+}
+
+executable("demo_main") {
+  testonly = true
+
+  sources = [
+    "main.cc"
+  ]
+
+  deps = [
+    ":demo_lib_a",
+    ":demo_lib_b",
+  ]
+}
+
+group("demo") {
+  testonly = true
+
+  deps = [
+    ":demo_main",
+  ]
+}

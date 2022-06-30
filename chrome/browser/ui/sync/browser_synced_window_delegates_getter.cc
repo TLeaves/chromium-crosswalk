@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/sync/browser_synced_window_delegates_getter.h"
 
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/sync/browser_synced_window_delegate.h"
@@ -14,15 +15,17 @@ namespace browser_sync {
 BrowserSyncedWindowDelegatesGetter::BrowserSyncedWindowDelegatesGetter(
     Profile* profile)
     : profile_(profile) {}
-BrowserSyncedWindowDelegatesGetter::~BrowserSyncedWindowDelegatesGetter() {}
+BrowserSyncedWindowDelegatesGetter::~BrowserSyncedWindowDelegatesGetter() =
+    default;
 
 BrowserSyncedWindowDelegatesGetter::SyncedWindowDelegateMap
 BrowserSyncedWindowDelegatesGetter::GetSyncedWindowDelegates() {
   SyncedWindowDelegateMap synced_window_delegates;
   // Add all the browser windows.
   for (auto* browser : *BrowserList::GetInstance()) {
-    if (browser->profile() != profile_)
+    if (browser->profile() != profile_) {
       continue;
+    }
     synced_window_delegates[browser->synced_window_delegate()->GetSessionId()] =
         browser->synced_window_delegate();
   }

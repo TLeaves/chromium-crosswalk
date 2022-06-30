@@ -16,6 +16,7 @@
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/common/mojom/event_dispatcher.mojom.h"
 
 namespace extensions {
 
@@ -23,12 +24,12 @@ namespace mdns = api::mdns;
 
 namespace {
 
-// Whitelisted mDNS service types.
+// Allowlisted mDNS service types.
 const char kCastServiceType[] = "_googlecast._tcp.local";
 const char kPrivetServiceType[] = "_privet._tcp.local";
 const char kTestServiceType[] = "_testing._tcp.local";
 
-bool IsServiceTypeWhitelisted(const std::string& service_type) {
+bool IsServiceTypeAllowlisted(const std::string& service_type) {
   return service_type == kCastServiceType ||
          service_type == kPrivetServiceType ||
          service_type == kTestServiceType;
@@ -171,15 +172,15 @@ void MDnsAPI::OnDnsSdEvent(const std::string& service_type,
     args.push_back(std::move(mdns_service));
   }
 
-  std::unique_ptr<base::ListValue> results = mdns::OnServiceList::Create(args);
+  auto results = mdns::OnServiceList::Create(args);
   auto event = std::make_unique<Event>(events::MDNS_ON_SERVICE_LIST,
                                        mdns::OnServiceList::kEventName,
                                        std::move(results), browser_context_);
-  event->filter_info.service_type = service_type;
+  event->filter_info->service_type = service_type;
 
   // TODO(justinlin): To avoid having listeners without filters getting all
   // events, modify API to have this event require filters.
-  // TODO(reddaly): If event isn't on whitelist, ensure it does not get
+  // TODO(reddaly): If event isn't on allowlist, ensure it does not get
   // broadcast to extensions.
   extensions::EventRouter::Get(browser_context_)
       ->BroadcastEvent(std::move(event));
@@ -198,7 +199,7 @@ bool MDnsAPI::IsMDnsAllowed(const std::string& extension_id,
           ->enabled_extensions()
           .GetByID(extension_id);
   return (extension && (extension->is_platform_app() ||
-                        IsServiceTypeWhitelisted(service_type)));
+                        IsServiceTypeAllowlisted(service_type)));
 }
 
 void MDnsAPI::GetValidOnServiceListListeners(
@@ -208,24 +209,25 @@ void MDnsAPI::GetValidOnServiceListListeners(
   for (const auto& listener : GetEventListeners()) {
     base::DictionaryValue* filter = listener->filter();
 
-    std::string service_type;
-    filter->GetStringASCII(kEventFilterServiceTypeKey, &service_type);
-    if (service_type.empty())
+    const std::string* service_type =
+        filter->FindStringKey(kEventFilterServiceTypeKey);
+    if (!service_type || service_type->empty() ||
+        !base::IsStringASCII(*service_type))
       continue;
 
     // Match service type when filter isn't ""
-    if (!service_type_filter.empty() && service_type_filter != service_type)
+    if (!service_type_filter.empty() && service_type_filter != *service_type)
       continue;
 
     // Don't listen for services associated only with disabled extensions
-    // or non-whitelisted, non-platform-app extensions.
-    if (!IsMDnsAllowed(listener->extension_id(), service_type))
+    // or non-allowlisted, non-platform-app extensions.
+    if (!IsMDnsAllowed(listener->extension_id(), *service_type))
       continue;
 
     if (extension_ids)
       extension_ids->insert(listener->extension_id());
     if (service_type_counts) {
-      (*service_type_counts)[service_type]++;
+      (*service_type_counts)[*service_type]++;
     }
   }
 }
@@ -251,7 +253,7 @@ void MDnsAPI::WriteToConsole(const std::string& service_type,
         extensions::ProcessManager::Get(browser_context_)
         ->GetBackgroundHostForExtension(extension_id);
     content::RenderFrameHost* rfh =
-        host ? host->host_contents()->GetMainFrame() : nullptr;
+        host ? host->host_contents()->GetPrimaryMainFrame() : nullptr;
     if (rfh)
       rfh->AddMessageToConsole(level, logged_message);
   }

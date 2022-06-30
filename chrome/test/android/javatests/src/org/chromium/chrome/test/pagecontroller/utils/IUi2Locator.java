@@ -4,9 +4,9 @@
 
 package org.chromium.chrome.test.pagecontroller.utils;
 
-import android.support.annotation.Nullable;
-import android.support.test.uiautomator.UiDevice;
-import android.support.test.uiautomator.UiObject2;
+import androidx.annotation.Nullable;
+import androidx.test.uiautomator.UiDevice;
+import androidx.test.uiautomator.UiObject2;
 
 import java.util.List;
 
@@ -19,7 +19,7 @@ public interface IUi2Locator {
      *
      * @param device The device to search under.
      * @return       The first node found by the locator, or null if none is found.
-     * @throws       android.support.test.uiautomator.StaleObjectException
+     * @throws       androidx.test.uiautomator.StaleObjectException
      */
     @Nullable
     UiObject2 locateOne(UiDevice device);
@@ -29,7 +29,7 @@ public interface IUi2Locator {
      *
      * @param root The node to search under.
      * @return     The first node found by the locator, or null if none is found.
-     * @throws     android.support.test.uiautomator.StaleObjectException
+     * @throws     androidx.test.uiautomator.StaleObjectException
      */
     @Nullable
     UiObject2 locateOne(UiObject2 root);
@@ -39,7 +39,7 @@ public interface IUi2Locator {
      *
      * @param device The device to search under.
      * @return       All nodes found, or an empty list of none are found.
-     * @throws       android.support.test.uiautomator.StaleObjectException
+     * @throws       androidx.test.uiautomator.StaleObjectException
      */
     List<UiObject2> locateAll(UiDevice device);
 
@@ -48,7 +48,7 @@ public interface IUi2Locator {
      *
      * @param root The node to search under.
      * @return     All nodes found, or an empty list of none are found.
-     * @throws     android.support.test.uiautomator.StaleObjectException
+     * @throws     androidx.test.uiautomator.StaleObjectException
      */
     List<UiObject2> locateAll(UiObject2 root);
 }

@@ -13,20 +13,17 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "chromeos/dbus/dbus_method_call_status.h"
+#include "base/scoped_observation.h"
+#include "base/values.h"
+#include "chromeos/dbus/common/dbus_method_call_status.h"
 #include "chromeos/network/network_configuration_observer.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_handler_callbacks.h"
+#include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
-
-namespace base {
-class DictionaryValue;
-class ListValue;
-class Value;
-}
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace dbus {
 class ObjectPath;
@@ -45,37 +42,42 @@ namespace chromeos {
 // For accessing lists of remembered networks, and other state information, see
 // the class NetworkStateHandler.
 //
-// Note on callbacks: Because all the functions here are meant to be
-// asynchronous, they all take a |callback| of some type, and an
-// |error_callback|. When the operation succeeds, |callback| will be called, and
-// when it doesn't, |error_callback| will be called with information about the
-// error, including a symbolic name for the error and often some error message
-// that is suitable for logging. None of the error message text is meant for
-// user consumption.  Both |callback| and |error_callback| are permitted to be
-// null callbacks.
+// Note on callbacks: These methods are all asynchronous. There are two callback
+// styles for these methods:
+//
+// Original: Separate callbacks for success (|callback|) and failure
+// (|error_callback|). One or the other will be called. See ErrorCallback in
+// network_handler_callbacks.h for more details.
+//
+// Preferred: A single callback is provided. This makes using OnceCallback
+// simpler and ensures that the one callback will be called. An Optional<>
+// result is provided which will be nullopt on failure. An Optional<string>
+// error identifier may also be provided.
+
 class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
     : public NetworkStateHandlerObserver {
  public:
+  NetworkConfigurationHandler(const NetworkConfigurationHandler&) = delete;
+  NetworkConfigurationHandler& operator=(const NetworkConfigurationHandler&) =
+      delete;
+
   ~NetworkConfigurationHandler() override;
 
   // Manages the observer list.
   void AddObserver(NetworkConfigurationObserver* observer);
   void RemoveObserver(NetworkConfigurationObserver* observer);
 
-  // Gets the properties of the network with id |service_path|. See note on
-  // |callback| and |error_callback|, in class description above.
-  void GetShillProperties(
-      const std::string& service_path,
-      const network_handler::DictionaryResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback);
+  // Gets the properties of the network with id |service_path|.
+  void GetShillProperties(const std::string& service_path,
+                          network_handler::ResultCallback callback);
 
   // Sets the properties of the network with id |service_path|. This means the
   // given properties will be merged with the existing settings, and it won't
   // clear any existing properties.
   void SetShillProperties(const std::string& service_path,
-                          const base::DictionaryValue& shill_properties,
-                          const base::Closure& callback,
-                          const network_handler::ErrorCallback& error_callback);
+                          const base::Value& shill_properties,
+                          base::OnceClosure callback,
+                          network_handler::ErrorCallback error_callback);
 
   // Removes the properties with the given property paths. If any of them are
   // unable to be cleared, the |error_callback| will only be run once with
@@ -83,11 +85,10 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
   // "errors" key of the error data, and the |callback| will not be run, even
   // though some of the properties may have been cleared. If there are no
   // errors, |callback| will be run.
-  void ClearShillProperties(
-      const std::string& service_path,
-      const std::vector<std::string>& property_paths,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback);
+  void ClearShillProperties(const std::string& service_path,
+                            const std::vector<std::string>& property_paths,
+                            base::OnceClosure callback,
+                            network_handler::ErrorCallback error_callback);
 
   // Creates a network with the given |properties| in the specified Shill
   // profile, and returns the new service_path to |callback| if successful.
@@ -98,42 +99,45 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
   // Manager.ConfigureServiceForProfile. NOTE: Normally
   // ManagedNetworkConfigurationHandler should be used to call
   // CreateConfiguration. This will set GUID if not provided.
-  void CreateShillConfiguration(
-      const base::DictionaryValue& shill_properties,
-      const network_handler::ServiceResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback);
+  void CreateShillConfiguration(const base::Value& shill_properties,
+                                network_handler::ServiceResultCallback callback,
+                                network_handler::ErrorCallback error_callback);
 
-  // Removes the network |service_path| from any profiles that include it.
-  void RemoveConfiguration(
-      const std::string& service_path,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback);
+  using RemoveConfirmer =
+      base::RepeatingCallback<bool(const std::string& guid,
+                                   const std::string& profile_path)>;
+  // Removes the network |service_path| from any profiles that include it. If
+  // |remove_confirmer| is provided, it will be used to confirm the remove
+  // operation and only entries that evaluate to true by applying the confirmer
+  // will be removed.
+  void RemoveConfiguration(const std::string& service_path,
+                           absl::optional<RemoveConfirmer> remove_confirmer,
+                           base::OnceClosure callback,
+                           network_handler::ErrorCallback error_callback);
 
   // Removes the network |service_path| from the profile that contains its
   // currently active configuration.
   void RemoveConfigurationFromCurrentProfile(
       const std::string& service_path,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback);
+      base::OnceClosure callback,
+      network_handler::ErrorCallback error_callback);
 
   // Changes the profile for the network |service_path| to |profile_path|.
   void SetNetworkProfile(const std::string& service_path,
                          const std::string& profile_path,
-                         const base::Closure& callback,
-                         const network_handler::ErrorCallback& error_callback);
+                         base::OnceClosure callback,
+                         network_handler::ErrorCallback error_callback);
 
   // Changes the value of a shill manager property.
   void SetManagerProperty(const std::string& property_name,
-                          const base::Value& value,
-                          const base::Closure& callback,
-                          const network_handler::ErrorCallback& error_callback);
+                          const base::Value& value);
 
   // NetworkStateHandlerObserver
   void NetworkListChanged() override;
   void OnShuttingDown() override;
 
   // Construct and initialize an instance for testing.
-  static NetworkConfigurationHandler* InitializeForTest(
+  static std::unique_ptr<NetworkConfigurationHandler> InitializeForTest(
       NetworkStateHandler* network_state_handler,
       NetworkDeviceHandler* network_device_handler);
 
@@ -148,15 +152,24 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
   void Init(NetworkStateHandler* network_state_handler,
             NetworkDeviceHandler* network_device_handler);
 
-  // Called when a configuration completes. This will wait for the cached
-  // state (NetworkStateHandler) to update before triggering the callback.
-  void ConfigurationCompleted(
-      const std::string& profile_path,
-      std::unique_ptr<base::DictionaryValue> configure_properties,
-      const network_handler::ServiceResultCallback& callback,
-      const dbus::ObjectPath& service_path);
+  // Called when a configuration completes. This will use
+  // NotifyConfigurationCompleted to defer notifying observers that a
+  // configuration was completed and invoking |callback| until the cached state
+  // (NetworkStateHandler) to update before triggering the callback.
+  void ConfigurationCompleted(const std::string& profile_path,
+                              const std::string& guid,
+                              base::Value configure_properties,
+                              network_handler::ServiceResultCallback callback,
+                              const dbus::ObjectPath& service_path);
 
-  void ConfigurationFailed(const network_handler::ErrorCallback& error_callback,
+  // Used by ConfigurationCompleted to defer notifying observers and invoking
+  // the provided callback.
+  void NotifyConfigurationCompleted(
+      network_handler::ServiceResultCallback callback,
+      const std::string& service_path,
+      const std::string& guid);
+
+  void ConfigurationFailed(network_handler::ErrorCallback error_callback,
                            const std::string& dbus_error_name,
                            const std::string& dbus_error_message);
 
@@ -172,55 +185,52 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
   // Callback after moving a network configuration.
   void SetNetworkProfileCompleted(const std::string& service_path,
                                   const std::string& profile_path,
-                                  const base::Closure& callback);
+                                  base::OnceClosure callback);
 
   // Set the Name and GUID properties correctly and Invoke |callback|.
-  void GetPropertiesCallback(
-      const network_handler::DictionaryResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback,
-      const std::string& service_path,
-      DBusMethodCallStatus call_status,
-      const base::DictionaryValue& properties);
+  void GetPropertiesCallback(network_handler::ResultCallback callback,
+                             const std::string& service_path,
+                             absl::optional<base::Value> properties);
 
   // Invoke |callback| and inform NetworkStateHandler to request an update
   // for the service after setting properties.
-  void SetPropertiesSuccessCallback(
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> set_properties,
-      const base::Closure& callback);
-  void SetPropertiesErrorCallback(
-      const std::string& service_path,
-      const network_handler::ErrorCallback& error_callback,
-      const std::string& dbus_error_name,
-      const std::string& dbus_error_message);
+  void SetPropertiesSuccessCallback(const std::string& service_path,
+                                    base::Value set_properties,
+                                    base::OnceClosure callback);
+  void SetPropertiesErrorCallback(const std::string& service_path,
+                                  network_handler::ErrorCallback error_callback,
+                                  const std::string& dbus_error_name,
+                                  const std::string& dbus_error_message);
 
   // Invoke |callback| and inform NetworkStateHandler to request an update
   // for the service after clearing properties.
-  void ClearPropertiesSuccessCallback(
-      const std::string& service_path,
-      const std::vector<std::string>& names,
-      const base::Closure& callback,
-      const base::ListValue& result);
+  void ClearPropertiesSuccessCallback(const std::string& service_path,
+                                      const std::vector<std::string>& names,
+                                      base::OnceClosure callback,
+                                      const base::ListValue& result);
   void ClearPropertiesErrorCallback(
       const std::string& service_path,
-      const network_handler::ErrorCallback& error_callback,
+      network_handler::ErrorCallback error_callback,
       const std::string& dbus_error_name,
       const std::string& dbus_error_message);
 
-  // Signals the device handler to request an IP config refresh.
-  void RequestRefreshIPConfigs(const std::string& service_path);
-
   // Removes network configuration for |service_path| from the profile specified
   // by |profile_path|. If |profile_path| is not set, the network is removed
-  // from all the profiles that include it.
+  // from all the profiles that include it. If |remove_confirmer| is provided,
+  // it will be used to confirm the remove operation and only entries that
+  // evaluate to true by applying the confirmer will be removed.
   void RemoveConfigurationFromProfile(
       const std::string& service_path,
       const std::string& profile_path,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback);
+      absl::optional<RemoveConfirmer> remove_confirmer,
+      base::OnceClosure callback,
+      network_handler::ErrorCallback error_callback);
 
   // Unowned associated Network*Handlers (global or test instance).
   NetworkStateHandler* network_state_handler_;
+  base::ScopedObservation<chromeos::NetworkStateHandler,
+                          chromeos::NetworkStateHandlerObserver>
+      network_state_handler_observer_{this};
   NetworkDeviceHandler* network_device_handler_;
 
   // Map of in-progress deleter instances.
@@ -235,11 +245,14 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConfigurationHandler
 
   base::ObserverList<NetworkConfigurationObserver, true>::Unchecked observers_;
 
-  base::WeakPtrFactory<NetworkConfigurationHandler> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkConfigurationHandler);
+  base::WeakPtrFactory<NetworkConfigurationHandler> weak_ptr_factory_{this};
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove when moved to ash.
+namespace ash {
+using ::chromeos::NetworkConfigurationHandler;
+}  // namespace ash
 
 #endif  // CHROMEOS_NETWORK_NETWORK_CONFIGURATION_HANDLER_H_

@@ -5,20 +5,22 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_FIELD_TYPES_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FIELD_TYPES_H_
 
-#include <map>
-#include <set>
+#include <type_traits>
 
-#include "base/strings/string16.h"
+#include "base/strings/string_piece_forward.h"
+#include "components/autofill/core/common/dense_set.h"
 
 namespace autofill {
 
 // NOTE: This list MUST not be modified except to keep it synchronized with the
-// Autofill server's version.  The server aggregates and stores these types over
+// Autofill server's version. The server aggregates and stores these types over
 // several versions, so we must remain fully compatible with the Autofill
-// server, which is itself backward-compatible.  The list must be kept up to
+// server, which is itself backward-compatible. The list must be kept up to
 // date with the Autofill server list.
 //
-// The list of all field types natively understood by the Autofill server.  A
+// NOTE: When deprecating field types, also update IsValidServerFieldType().
+//
+// The list of all field types natively understood by the Autofill server. A
 // subset of these types is used to store Autofill data in the user's profile.
 enum ServerFieldType {
   // Server indication that it has no data for the requested field.
@@ -38,8 +40,12 @@ enum ServerFieldType {
   NAME_SUFFIX = 8,
   EMAIL_ADDRESS = 9,
   PHONE_HOME_NUMBER = 10,
+  // Never includes a trunk prefix. Used in combination with a
+  // PHONE_HOME_COUNTRY_CODE field.
   PHONE_HOME_CITY_CODE = 11,
   PHONE_HOME_COUNTRY_CODE = 12,
+  // A number in national format and with a trunk prefix, if applicable in the
+  // number's region. Used when no PHONE_HOME_COUNTRY_CODE field is present.
   PHONE_HOME_CITY_AND_NUMBER = 13,
   PHONE_HOME_WHOLE_NUMBER = 14,
 
@@ -62,15 +68,9 @@ enum ServerFieldType {
   ADDRESS_HOME_STATE = 34,
   ADDRESS_HOME_ZIP = 35,
   ADDRESS_HOME_COUNTRY = 36,
-  ADDRESS_BILLING_LINE1 = 37,
-  ADDRESS_BILLING_LINE2 = 38,
-  ADDRESS_BILLING_APT_NUM = 39,
-  ADDRESS_BILLING_CITY = 40,
-  ADDRESS_BILLING_STATE = 41,
-  ADDRESS_BILLING_ZIP = 42,
-  ADDRESS_BILLING_COUNTRY = 43,
 
-  // ADDRESS_SHIPPING values [44,50] are deprecated.
+  // ADDRESS_BILLING values [37, 43] are deprecated.
+  // ADDRESS_SHIPPING values [44, 50] are deprecated.
 
   CREDIT_CARD_NAME_FULL = 51,
   CREDIT_CARD_NUMBER = 52,
@@ -87,23 +87,15 @@ enum ServerFieldType {
   // Generic type whose default value is known.
   FIELD_WITH_DEFAULT_VALUE = 61,
 
-  PHONE_BILLING_NUMBER = 62,
-  PHONE_BILLING_CITY_CODE = 63,
-  PHONE_BILLING_COUNTRY_CODE = 64,
-  PHONE_BILLING_CITY_AND_NUMBER = 65,
-  PHONE_BILLING_WHOLE_NUMBER = 66,
-
-  NAME_BILLING_FIRST = 67,
-  NAME_BILLING_MIDDLE = 68,
-  NAME_BILLING_LAST = 69,
-  NAME_BILLING_MIDDLE_INITIAL = 70,
-  NAME_BILLING_FULL = 71,
-  NAME_BILLING_SUFFIX = 72,
+  // PHONE_BILLING values [62, 66] are deprecated.
+  // NAME_BILLING values [67, 72] are deprecated.
 
   // Field types for options generally found in merchant buyflows. Given that
   // these are likely to be filled out differently on a case by case basis,
   // they are here primarily for use by Autocheckout.
   MERCHANT_EMAIL_SIGNUP = 73,
+  // A promo/gift/coupon code, usually entered during checkout on a commerce web
+  // site to reduce the cost of a purchase.
   MERCHANT_PROMO_CODE = 74,
 
   // Field types for the password fields. PASSWORD is the default type for all
@@ -116,7 +108,7 @@ enum ServerFieldType {
   //   123 Main Street,
   //   Apt. #42
   ADDRESS_HOME_STREET_ADDRESS = 77,
-  ADDRESS_BILLING_STREET_ADDRESS = 78,
+  // ADDRESS_BILLING_STREET_ADDRESS 78 is deprecated.
 
   // A sorting code is similar to a postal code. However, whereas a postal code
   // normally refers to a single geographical location, a sorting code often
@@ -124,17 +116,17 @@ enum ServerFieldType {
   // might be geographically distributed. The most prominent example of a
   // sorting code system is CEDEX in France.
   ADDRESS_HOME_SORTING_CODE = 79,
-  ADDRESS_BILLING_SORTING_CODE = 80,
+  // ADDRESS_BILLING_SORTING_CODE 80 is deprecated.
 
   // A dependent locality is a subunit of a locality, where a "locality" is
   // roughly equivalent to a city. Examples of dependent localities include
   // inner-city districts and suburbs.
   ADDRESS_HOME_DEPENDENT_LOCALITY = 81,
-  ADDRESS_BILLING_DEPENDENT_LOCALITY = 82,
+  // ADDRESS_BILLING_DEPENDENT_LOCALITY 82 is deprecated.
 
   // The third line of the street address.
   ADDRESS_HOME_LINE3 = 83,
-  ADDRESS_BILLING_LINE3 = 84,
+  // ADDRESS_BILLING_LINE3 84 is deprecated.
 
   // Inverse of ACCOUNT_CREATION_PASSWORD. Sent when there is data that
   // a previous upload of ACCOUNT_CREATION_PASSWORD was incorrect.
@@ -189,9 +181,75 @@ enum ServerFieldType {
   // https://en.wikipedia.org/wiki/Unified_Payments_Interface
   UPI_VPA = 102,
 
+  // Just the street name of an address, no house number.
+  ADDRESS_HOME_STREET_NAME = 103,
+
+  // House number of an address, may be alphanumeric.
+  ADDRESS_HOME_HOUSE_NUMBER = 104,
+
+  // Contains the floor, the staircase the apartment number within a building.
+  ADDRESS_HOME_SUBPREMISE = 105,
+
+  // A catch-all for other type of subunits (only used until something more
+  // precise is defined).
+  // Currently not used by Chrome.
+  ADDRESS_HOME_OTHER_SUBUNIT = 106,
+
+  // Types to represent the structure of a Hispanic/Latinx last name.
+  NAME_LAST_FIRST = 107,
+  NAME_LAST_CONJUNCTION = 108,
+  NAME_LAST_SECOND = 109,
+
+  // Type to catch name additions like "Mr.", "Ms." or "Dr.".
+  NAME_HONORIFIC_PREFIX = 110,
+
+  // Type that corresponds to the name of a place or a building below the
+  // granularity of a street.
+  ADDRESS_HOME_PREMISE_NAME = 111,
+
+  // Type that describes a crossing street as it is used in some countries to
+  // describe a location.
+  ADDRESS_HOME_DEPENDENT_STREET_NAME = 112,
+
+  // Compound type to join the street and dependent street names.
+  ADDRESS_HOME_STREET_AND_DEPENDENT_STREET_NAME = 113,
+
+  // The complete formatted address as it would be written on an envelope or in
+  // a clear-text field without the name.
+  ADDRESS_HOME_ADDRESS = 114,
+
+  // The complete formatted address including the name.
+  ADDRESS_HOME_ADDRESS_WITH_NAME = 115,
+
+  // The floor number within a building.
+  ADDRESS_HOME_FLOOR = 116,
+
+  // The full name including the honorific prefix.
+  NAME_FULL_WITH_HONORIFIC_PREFIX = 117,
+
+  // Types to represent a birthdate.
+  BIRTHDATE_DAY = 118,
+  BIRTHDATE_MONTH = 119,
+  BIRTHDATE_YEAR_4_DIGITS = 120,
+
+  // Types for better trunk prefix support for phone numbers.
+  // Like PHONE_HOME_CITY_CODE, but with a trunk prefix, if applicable in the
+  // number's region. Used when no PHONE_HOME_COUNTRY_CODE field is present.
+  PHONE_HOME_CITY_CODE_WITH_TRUNK_PREFIX = 121,
+  // Like PHONE_HOME_CITY_AND_NUMBER, but never includes a trunk prefix. Used in
+  // combination with a PHONE_HOME_COUNTRY_CODE field.
+  PHONE_HOME_CITY_AND_NUMBER_WITHOUT_TRUNK_PREFIX = 122,
+
+  // PHONE_HOME_NUMBER = PHONE_HOME_NUMBER_PREFIX + PHONE_HOME_NUMBER_SUFFIX.
+  // For the US numbers (650) 234-5678 the types correspond to 234 and 5678.
+  PHONE_HOME_NUMBER_PREFIX = 123,
+  PHONE_HOME_NUMBER_SUFFIX = 124,
+
+  // IBAN data.
+  IBAN_VALUE = 125,
   // No new types can be added without a corresponding change to the Autofill
   // server.
-  MAX_VALID_FIELD_TYPE = 103,
+  MAX_VALID_FIELD_TYPE = 126,
 };
 
 // The list of all HTML autocomplete field type hints supported by Chrome.
@@ -202,6 +260,7 @@ enum HtmlFieldType {
 
   // Name types.
   HTML_TYPE_NAME,
+  HTML_TYPE_HONORIFIC_PREFIX,
   HTML_TYPE_GIVEN_NAME,
   HTML_TYPE_ADDITIONAL_NAME,
   HTML_TYPE_FAMILY_NAME,
@@ -263,6 +322,12 @@ enum HtmlFieldType {
   // Universal Payment Interface - Virtual Payment Address.
   HTML_TYPE_UPI_VPA,
 
+  // Phone number verification one-time-codes.
+  HTML_TYPE_ONE_TIME_CODE,
+
+  // Promo code for merchant sites.
+  HTML_TYPE_MERCHANT_PROMO_CODE,
+
   // Non-standard autocomplete types.
   HTML_TYPE_UNRECOGNIZED,
 };
@@ -275,25 +340,44 @@ enum HtmlFieldMode {
   HTML_MODE_SHIPPING,
 };
 
-enum FieldTypeGroup {
-  NO_GROUP,
-  NAME,
-  NAME_BILLING,
-  EMAIL,
-  COMPANY,
-  ADDRESS_HOME,
-  ADDRESS_BILLING,
-  PHONE_HOME,
-  PHONE_BILLING,
-  CREDIT_CARD,
-  PASSWORD_FIELD,
-  TRANSACTION,
-  USERNAME_FIELD,
-  UNFILLABLE,
+enum class FieldTypeGroup {
+  kNoGroup,
+  kName,
+  kNameBilling,
+  kEmail,
+  kCompany,
+  kAddressHome,
+  kAddressBilling,
+  kPhoneHome,
+  kPhoneBilling,
+  kCreditCard,
+  kPasswordField,
+  kTransaction,
+  kUsernameField,
+  kUnfillable,
+  kBirthdateField,
+  kMaxValue = kBirthdateField,
 };
 
-typedef std::set<ServerFieldType> ServerFieldTypeSet;
+using ServerFieldTypeSet = DenseSet<ServerFieldType, MAX_VALID_FIELD_TYPE>;
 
+// Returns |raw_value| if it corresponds to a non-deprecated enumeration
+// constant of ServerFieldType other than MAX_VALID_FIELD_TYPE. Otherwise,
+// returns |fallback_value|.
+ServerFieldType ToSafeServerFieldType(
+    std::underlying_type_t<ServerFieldType> raw_value,
+    ServerFieldType fallback_value);
+
+// Returns whether the field can be filled with data.
+bool IsFillableFieldType(ServerFieldType field_type);
+
+// Returns a StringPiece describing |type|. As the StringPiece points to a
+// static string, you don't need to worry about memory deallocation.
+base::StringPiece FieldTypeToStringPiece(HtmlFieldType type);
+
+// Returns a StringPiece describing |type|. As the StringPiece points to a
+// static string, you don't need to worry about memory deallocation.
+base::StringPiece FieldTypeToStringPiece(ServerFieldType type);
 }  // namespace autofill
 
 #endif  // COMPONENTS_AUTOFILL_CORE_BROWSER_FIELD_TYPES_H_

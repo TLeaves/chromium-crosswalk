@@ -9,14 +9,14 @@
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "crypto/scoped_capi_types.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/ssl/ssl_private_key_test_util.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
-#include "net/test/test_with_scoped_task_environment.h"
+#include "net/test/test_with_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/boringssl/src/include/openssl/bn.h"
 #include "third_party/boringssl/src/include/openssl/bytestring.h"
@@ -223,7 +223,7 @@ bool PKCS8ToBLOBForCNG(const std::string& pkcs8,
 }  // namespace
 
 class SSLPlatformKeyCNGTest : public testing::TestWithParam<TestKey>,
-                              public WithScopedTaskEnvironment {};
+                              public WithTaskEnvironment {};
 
 TEST_P(SSLPlatformKeyCNGTest, KeyMatches) {
   const TestKey& test_key = GetParam();
@@ -268,13 +268,13 @@ TEST_P(SSLPlatformKeyCNGTest, KeyMatches) {
   TestSSLPrivateKeyMatches(key.get(), pkcs8);
 }
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          SSLPlatformKeyCNGTest,
                          testing::ValuesIn(kTestKeys),
                          TestKeyToString);
 
 TEST(SSLPlatformKeyCAPITest, KeyMatches) {
-  base::test::ScopedTaskEnvironment scoped_task_environment;
+  base::test::TaskEnvironment task_environment;
 
   // Load test data.
   scoped_refptr<X509Certificate> cert =
@@ -289,7 +289,8 @@ TEST(SSLPlatformKeyCAPITest, KeyMatches) {
   // Import the key into CAPI. Use CRYPT_VERIFYCONTEXT for an ephemeral key.
   crypto::ScopedHCRYPTPROV prov;
   ASSERT_NE(FALSE,
-            CryptAcquireContext(prov.receive(), nullptr, nullptr, PROV_RSA_AES,
+            CryptAcquireContext(crypto::ScopedHCRYPTPROV::Receiver(prov).get(),
+                                nullptr, nullptr, PROV_RSA_AES,
                                 CRYPT_VERIFYCONTEXT | CRYPT_SILENT))
       << GetLastError();
 
@@ -297,15 +298,16 @@ TEST(SSLPlatformKeyCAPITest, KeyMatches) {
   ASSERT_TRUE(PKCS8ToBLOBForCAPI(pkcs8, &blob));
 
   crypto::ScopedHCRYPTKEY hcryptkey;
-  ASSERT_NE(FALSE, CryptImportKey(prov.get(), blob.data(), blob.size(),
-                                  0 /* hPubKey */, 0 /* dwFlags */,
-                                  hcryptkey.receive()))
+  ASSERT_NE(FALSE,
+            CryptImportKey(prov.get(), blob.data(), blob.size(),
+                           0 /* hPubKey */, 0 /* dwFlags */,
+                           crypto::ScopedHCRYPTKEY::Receiver(hcryptkey).get()))
       << GetLastError();
   // Release |hcryptkey| so it does not outlive |prov|.
   hcryptkey.reset();
 
   scoped_refptr<SSLPrivateKey> key =
-      WrapCAPIPrivateKey(cert.get(), prov.release(), AT_SIGNATURE);
+      WrapCAPIPrivateKey(cert.get(), std::move(prov), AT_SIGNATURE);
   ASSERT_TRUE(key);
 
   std::vector<uint16_t> expected = {

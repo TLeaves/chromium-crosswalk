@@ -15,9 +15,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "base/win/winrt_foundation_helpers.h"
 
@@ -74,17 +72,18 @@ namespace internal {
 // See base/win/winrt_foundation_helpers.h for explanation.
 
 template <typename T>
-using Complex =
+using AsyncOperationComplex =
     typename ABI::Windows::Foundation::IAsyncOperation<T>::TResult_complex;
 
 template <typename T>
-using Abi = AbiType<Complex<T>>;
+using AsyncOperationAbi = AbiType<AsyncOperationComplex<T>>;
 
 template <typename T>
-using OptionalStorageT = OptionalStorageType<Complex<T>>;
+using AsyncOperationOptionalStorage =
+    OptionalStorageType<AsyncOperationComplex<T>>;
 
 template <typename T>
-using StorageT = StorageType<Complex<T>>;
+using AsyncOperationStorage = StorageType<AsyncOperationComplex<T>>;
 
 }  // namespace internal
 
@@ -95,13 +94,13 @@ class AsyncOperation
               Microsoft::WRL::WinRt | Microsoft::WRL::InhibitRoOriginateError>,
           ABI::Windows::Foundation::IAsyncOperation<T>> {
  public:
-  using AbiT = internal::Abi<T>;
-  using OptionalStorageT = internal::OptionalStorageT<T>;
-  using StorageT = internal::StorageT<T>;
+  using AbiT = internal::AsyncOperationAbi<T>;
+  using OptionalStorageT = internal::AsyncOperationOptionalStorage<T>;
+  using StorageT = internal::AsyncOperationStorage<T>;
   using Handler = ABI::Windows::Foundation::IAsyncOperationCompletedHandler<T>;
   using ResultCallback = base::OnceCallback<void(StorageT)>;
 
-  AsyncOperation() : weak_factory_(this) {
+  AsyncOperation() {
     // Note: This can't be done in the constructor initializer list. This is
     // because it relies on weak_factory_ to be initialized, which needs to be
     // the last class member. Also applies below.
@@ -109,7 +108,10 @@ class AsyncOperation
         base::BindOnce(&AsyncOperation::OnResult, weak_factory_.GetWeakPtr());
   }
 
-  ~AsyncOperation() { DCHECK_CALLED_ON_VALID_THREAD(thread_checker_); }
+  AsyncOperation(const AsyncOperation&) = delete;
+  AsyncOperation& operator=(const AsyncOperation&) = delete;
+
+  ~AsyncOperation() override { DCHECK_CALLED_ON_VALID_THREAD(thread_checker_); }
 
   // ABI::Windows::Foundation::IAsyncOperation:
   IFACEMETHODIMP put_Completed(Handler* handler) override {
@@ -149,9 +151,7 @@ class AsyncOperation
   OptionalStorageT results_;
 
   THREAD_CHECKER(thread_checker_);
-  base::WeakPtrFactory<AsyncOperation> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(AsyncOperation);
+  base::WeakPtrFactory<AsyncOperation> weak_factory_{this};
 };
 
 }  // namespace win

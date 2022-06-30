@@ -12,10 +12,9 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
-#include "base/stl_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "components/safe_search_api/fake_url_checker_client.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -68,7 +67,7 @@ class SafeSearchURLCheckerTest : public testing::Test {
 
  protected:
   GURL GetNewURL() {
-    CHECK(next_url_ < base::size(kURLs));
+    CHECK(next_url_ < std::size(kURLs));
     return GURL(kURLs[next_url_++]);
   }
 
@@ -89,8 +88,9 @@ class SafeSearchURLCheckerTest : public testing::Test {
   }
 
   size_t next_url_;
-  FakeURLCheckerClient* fake_client_;
+  raw_ptr<FakeURLCheckerClient> fake_client_;
   std::unique_ptr<URLChecker> checker_;
+  base::test::SingleThreadTaskEnvironment task_environment_;
 };
 
 TEST_F(SafeSearchURLCheckerTest, Simple) {
@@ -151,7 +151,7 @@ TEST_F(SafeSearchURLCheckerTest, CoalesceRequestsToSameURL) {
 TEST_F(SafeSearchURLCheckerTest, CacheTimeout) {
   GURL url(GetNewURL());
 
-  checker_->SetCacheTimeoutForTesting(base::TimeDelta::FromSeconds(0));
+  checker_->SetCacheTimeoutForTesting(base::Seconds(0));
 
   EXPECT_CALL(*this, OnCheckDone(url, Classification::SAFE, false));
   ASSERT_FALSE(SendResponse(url, Classification::SAFE, false));
@@ -194,6 +194,22 @@ TEST_F(SafeSearchURLCheckerTest, NoAllowAllGoogleURLs) {
     EXPECT_CALL(*this, OnCheckDone(url, Classification::UNSAFE, false));
     ASSERT_FALSE(SendResponse(url, Classification::UNSAFE, false));
   }
+}
+
+TEST_F(SafeSearchURLCheckerTest, DestroyURLCheckerBeforeCallback) {
+  GURL url(GetNewURL());
+  EXPECT_CALL(*this, OnCheckDone(_, _, _)).Times(0);
+
+  // Start a URL check.
+  ASSERT_FALSE(CheckURL(url));
+  fake_client_->RunCallbackAsync(
+      ToAPIClassification(Classification::SAFE, false));
+
+  // Reset the URLChecker before the callback occurs.
+  checker_.reset();
+
+  // The callback should now be invalid.
+  task_environment_.RunUntilIdle();
 }
 
 }  // namespace safe_search_api

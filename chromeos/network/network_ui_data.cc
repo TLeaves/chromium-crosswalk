@@ -6,8 +6,8 @@
 
 #include <utility>
 
+#include "base/check.h"
 #include "base/json/json_writer.h"
-#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/values.h"
 
@@ -68,9 +68,8 @@ NetworkUIData::NetworkUIData(const NetworkUIData& other) {
 
 NetworkUIData& NetworkUIData::operator=(const NetworkUIData& other) {
   onc_source_ = other.onc_source_;
-  if (other.user_settings_) {
-    user_settings_ =
-        base::Value::ToUniquePtrValue(other.user_settings_->Clone());
+  if (other.user_settings_.is_dict()) {
+    user_settings_ = other.user_settings_.Clone();
   }
   return *this;
 }
@@ -87,8 +86,9 @@ NetworkUIData::NetworkUIData(const base::Value& dict) {
 
   const base::Value* user_settings_value =
       dict.FindKeyOfType(kKeyUserSettings, base::Value::Type::DICTIONARY);
-  if (user_settings_value)
-    user_settings_.reset(user_settings_value->DeepCopy());
+  if (user_settings_value) {
+    user_settings_ = user_settings_value->Clone();
+  }
 }
 
 NetworkUIData::~NetworkUIData() = default;
@@ -103,18 +103,14 @@ std::unique_ptr<NetworkUIData> NetworkUIData::CreateFromONC(
   return ui_data;
 }
 
-const base::DictionaryValue* NetworkUIData::GetUserSettingsDictionary() const {
-  if (!user_settings_)
+const base::Value* NetworkUIData::GetUserSettingsDictionary() const {
+  if (user_settings_.is_none())
     return nullptr;
-  base::DictionaryValue* dict = nullptr;
-  user_settings_->GetAsDictionary(&dict);
-  return dict;
+  return &user_settings_;
 }
 
-void NetworkUIData::SetUserSettingsDictionary(
-    std::unique_ptr<base::Value> dict) {
-  DCHECK(dict);
-  DCHECK(dict->is_dict());
+void NetworkUIData::SetUserSettingsDictionary(base::Value dict) {
+  DCHECK(dict.is_dict());
   user_settings_ = std::move(dict);
 }
 
@@ -123,8 +119,8 @@ std::string NetworkUIData::GetAsJson() const {
   const std::string source_string = GetONCSourceAsString();
   if (!source_string.empty())
     dict.SetKey(kKeyONCSource, base::Value(source_string));
-  if (user_settings_)
-    dict.SetKey(kKeyUserSettings, user_settings_->Clone());
+  if (user_settings_.is_dict())
+    dict.SetKey(kKeyUserSettings, user_settings_.Clone());
 
   std::string json;
   base::JSONWriter::Write(dict, &json);

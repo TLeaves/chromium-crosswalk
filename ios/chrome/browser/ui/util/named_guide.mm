@@ -4,9 +4,9 @@
 
 #import "ios/chrome/browser/ui/util/named_guide.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #import "base/mac/foundation_util.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -136,8 +136,6 @@ NSString* const kActiveKeyPath = @"active";
   // hierarchy in an effort to minimize additional rendering costs.
   if (_constrainedFrameView)
     [self.owningView insertSubview:_constrainedFrameView atIndex:0];
-
-  [self updateConstraintsWithView:_constrainedFrameView];
 }
 
 #pragma mark - Public
@@ -206,6 +204,7 @@ NSString* const kActiveKeyPath = @"active";
   }
   self.constrainedFrameView.frame = self.constrainedFrame;
   self.constrainedFrameView.autoresizingMask = self.autoresizingMask;
+  [self updateConstraintsWithView:self.constrainedFrameView];
 }
 
 - (void)checkForInactiveConstraints {

@@ -33,6 +33,12 @@ extern const NSTimeInterval kWaitForPageLoadTimeout;
 // complete.
 extern const NSTimeInterval kWaitForActionTimeout;
 
+// Constant for timeout in seconds while waiting for clear browsing data. It
+// seems this can take a very long time on the bots when running simulators in
+// parallel. TODO(crbug.com/993513): Investigate why this is sometimes very
+// slow.
+extern const NSTimeInterval kWaitForClearBrowsingDataTimeout;
+
 // Constant for timeout in seconds while waiting for cookies operations to
 // complete.
 extern const NSTimeInterval kWaitForCookiesTimeout;
@@ -43,8 +49,8 @@ extern const NSTimeInterval kWaitForFileOperationTimeout;
 
 // Returns true when condition() becomes true, otherwise returns false after
 // |timeout|.
-bool WaitUntilConditionOrTimeout(NSTimeInterval timeout,
-                                 ConditionBlock condition) WARN_UNUSED_RESULT;
+[[nodiscard]] bool WaitUntilConditionOrTimeout(NSTimeInterval timeout,
+                                               ConditionBlock condition);
 
 // Runs |action| if non-nil. Then, until either |condition| is true or |timeout|
 // expires, repetitively runs the current NSRunLoop and the current MessageLoop

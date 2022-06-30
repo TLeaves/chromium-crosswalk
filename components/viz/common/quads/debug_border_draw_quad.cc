@@ -4,9 +4,9 @@
 
 #include "components/viz/common/quads/debug_border_draw_quad.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/trace_event/traced_value.h"
-#include "base/values.h"
+#include "ui/gfx/color_utils.h"
 
 namespace viz {
 
@@ -15,25 +15,27 @@ DebugBorderDrawQuad::DebugBorderDrawQuad() = default;
 void DebugBorderDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
                                  const gfx::Rect& rect,
                                  const gfx::Rect& visible_rect,
-                                 SkColor color,
-                                 int width) {
-  bool needs_blending = SkColorGetA(color) < 255;
+                                 SkColor c,
+                                 int w) {
+  bool needs_blending = SkColorGetA(c) < 255;
   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kDebugBorder, rect,
                    visible_rect, needs_blending);
-  this->color = color;
-  this->width = width;
+  // TODO(crbug/1308932) remove FromColor and make all SkColor4f
+  color = SkColor4f::FromColor(c);
+  width = w;
 }
 
 void DebugBorderDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                                  const gfx::Rect& rect,
                                  const gfx::Rect& visible_rect,
                                  bool needs_blending,
-                                 SkColor color,
-                                 int width) {
+                                 SkColor c,
+                                 int w) {
   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kDebugBorder, rect,
                    visible_rect, needs_blending);
-  this->color = color;
-  this->width = width;
+  // TODO(crbug/1308932) remove FromColor and make all SkColor4f
+  color = SkColor4f::FromColor(c);
+  width = w;
 }
 
 const DebugBorderDrawQuad* DebugBorderDrawQuad::MaterialCast(
@@ -44,7 +46,8 @@ const DebugBorderDrawQuad* DebugBorderDrawQuad::MaterialCast(
 
 void DebugBorderDrawQuad::ExtendValue(
     base::trace_event::TracedValue* value) const {
-  value->SetInteger("color", color);
+  value->SetString("color",
+                   color_utils::SkColorToRgbaString(color.toSkColor()));
   value->SetInteger("width", width);
 }
 

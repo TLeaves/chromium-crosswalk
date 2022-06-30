@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/modules/webdatabase/sql_transaction_coordinator.h"
 #include "third_party/blink/renderer/modules/webdatabase/storage_log.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_std.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
 namespace blink {
@@ -53,14 +54,14 @@ DatabaseThread::~DatabaseThread() {
   DCHECK(!thread_);
 }
 
-void DatabaseThread::Trace(blink::Visitor* visitor) {}
+void DatabaseThread::Trace(Visitor* visitor) const {}
 
 void DatabaseThread::Start() {
   DCHECK(IsMainThread());
   if (thread_)
     return;
   thread_ = blink::Thread::CreateThread(
-      ThreadCreationParams(WebThreadType::kDatabaseThread).SetSupportsGC(true));
+      ThreadCreationParams(ThreadType::kDatabaseThread).SetSupportsGC(true));
   PostCrossThreadTask(*thread_->GetTaskRunner(), FROM_HERE,
                       CrossThreadBindOnce(&DatabaseThread::SetupDatabaseThread,
                                           WrapCrossThreadPersistent(this)));

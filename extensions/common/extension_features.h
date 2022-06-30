@@ -9,10 +9,35 @@
 
 namespace extensions_features {
 
-extern const base::Feature kBypassCorbOnlyForExtensionsAllowlist;
-extern const char kBypassCorbAllowlistParamName[];
-extern const base::Feature kNewExtensionUpdaterService;
+extern const base::Feature kSafeBrowsingCrxAllowlistShowWarnings;
+extern const base::Feature kSafeBrowsingCrxAllowlistAutoDisable;
+
 extern const base::Feature kForceWebRequestProxyForTest;
+
+extern const base::Feature kAllowWithholdingExtensionPermissionsOnInstall;
+
+extern const base::Feature kContentScriptsMatchOriginAsFallback;
+
+extern const base::Feature kReportKeepaliveUkm;
+
+extern const base::Feature kAllowSharedArrayBuffersUnconditionally;
+
+extern const base::Feature kU2FSecurityKeyAPI;
+
+extern const base::Feature kStructuredCloningForMV3Messaging;
+
+extern const base::Feature kRestrictDeveloperModeAPIs;
+
+extern const base::Feature kCheckingUnexpectedExtensionIdInContentScriptIpcs;
+extern const base::Feature kCheckingNoExtensionIdInExtensionIpcs;
+
+extern const base::Feature kNewExtensionFaviconHandling;
+
+extern const base::Feature kExtensionDynamicURLRedirection;
+
+extern const base::Feature kExtensionsMenuAccessControl;
+
+extern const base::Feature kAvoidEarlyExtensionScriptContextCreation;
 
 }  // namespace extensions_features
 

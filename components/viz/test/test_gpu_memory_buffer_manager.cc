@@ -6,8 +6,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
+#include "base/memory/raw_ptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -86,7 +88,7 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
       int importance) const override {}
 
  private:
-  TestGpuMemoryBufferManager* manager_;
+  raw_ptr<TestGpuMemoryBufferManager> manager_;
   gfx::GpuMemoryBufferId id_;
   const gfx::Size size_;
   gfx::BufferFormat format_;
@@ -135,9 +137,9 @@ class GpuMemoryBufferFromClient : public gfx::GpuMemoryBuffer {
       int importance) const override {}
 
  private:
-  TestGpuMemoryBufferManager* manager_;
+  raw_ptr<TestGpuMemoryBufferManager> manager_;
   gfx::GpuMemoryBufferId id_;
-  gfx::GpuMemoryBuffer* client_buffer_;
+  raw_ptr<gfx::GpuMemoryBuffer> client_buffer_;
 };
 
 }  // namespace
@@ -176,7 +178,8 @@ TestGpuMemoryBufferManager::CreateGpuMemoryBuffer(
     const gfx::Size& size,
     gfx::BufferFormat format,
     gfx::BufferUsage usage,
-    gpu::SurfaceHandle surface_handle) {
+    gpu::SurfaceHandle surface_handle,
+    base::WaitableEvent* shutdown_event) {
   base::AutoLock hold(lock_);
 
   if (fail_on_create_)
@@ -200,5 +203,18 @@ TestGpuMemoryBufferManager::CreateGpuMemoryBuffer(
 void TestGpuMemoryBufferManager::SetDestructionSyncToken(
     gfx::GpuMemoryBuffer* buffer,
     const gpu::SyncToken& sync_token) {}
+
+void TestGpuMemoryBufferManager::CopyGpuMemoryBufferAsync(
+    gfx::GpuMemoryBufferHandle buffer_handle,
+    base::UnsafeSharedMemoryRegion memory_region,
+    base::OnceCallback<void(bool)> callback) {
+  std::move(callback).Run(false);
+}
+
+bool TestGpuMemoryBufferManager::CopyGpuMemoryBufferSync(
+    gfx::GpuMemoryBufferHandle buffer_handle,
+    base::UnsafeSharedMemoryRegion memory_region) {
+  return false;
+}
 
 }  // namespace viz

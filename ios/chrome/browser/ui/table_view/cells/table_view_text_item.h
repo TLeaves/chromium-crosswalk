@@ -17,18 +17,26 @@
 @property(nonatomic, assign) NSTextAlignment textAlignment;
 
 // UIColor for the cell's textLabel. Default is
-// kTableViewTextLabelColorLightGrey. ChromeTableViewStyler's |cellTitleColor|
-// takes precedence over the default color, but not over |textColor|.
+// [UIColor colorNamed:kTextPrimaryColor]. ChromeTableViewStyler's
+// `cellTitleColor` takes precedence over the default color, but not over
+// `textColor`.
 @property(nonatomic, strong) UIColor* textColor;
 
 @property(nonatomic, strong) NSString* text;
 
-// If set to YES, |text| will be shown as "••••••" with fixed length.
+// Sets the font for the `text`. Default preferredFontForTextStyle is
+// `UIFontTextStyleBody`.
+@property(nonatomic, strong) UIFont* textFont;
+
+// If set to YES, `text` will be shown as "••••••" with fixed length.
 @property(nonatomic, assign) BOOL masked;
 
 // Whether this item is enabled. If it is not enabled, the corresponding cell
 // has its user interaction disabled. Enabled by default.
 @property(nonatomic, assign, getter=isEnabled) BOOL enabled;
+
+// Sets the `checked` property in the cell.
+@property(nonatomic, assign) BOOL checked;
 
 @end
 

@@ -5,7 +5,8 @@
 #include "ui/views/masked_targeter_delegate.h"
 
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/gfx/skia_util.h"
+#include "third_party/skia/include/core/SkRegion.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -25,7 +26,7 @@ bool MaskedTargeterDelegate::DoesIntersectRect(const View* target,
   // Return whether or not |rect| intersects the custom hit test mask
   // of |target|.
   SkRegion clip_region;
-  clip_region.setRect(0, 0, target->width(), target->height());
+  clip_region.setRect({0, 0, target->width(), target->height()});
   SkRegion mask_region;
   return mask_region.setPath(mask, clip_region) &&
          mask_region.intersects(RectToSkIRect(rect));

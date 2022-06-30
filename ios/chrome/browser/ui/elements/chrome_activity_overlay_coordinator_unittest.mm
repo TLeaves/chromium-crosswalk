@@ -4,6 +4,9 @@
 
 #import "ios/chrome/browser/ui/elements/chrome_activity_overlay_coordinator.h"
 
+#import "base/test/task_environment.h"
+#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/main/test_browser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -19,10 +22,16 @@ using ChromeActivityOverlayCoordinatorTest = PlatformTest;
 TEST_F(ChromeActivityOverlayCoordinatorTest, StartAndStop) {
   __weak UIView* overlay_view;
   @autoreleasepool {
+    base::test::TaskEnvironment task_environment_;
     UIViewController* base_view_controller = [[UIViewController alloc] init];
+    std::unique_ptr<TestChromeBrowserState> browser_state =
+        TestChromeBrowserState::Builder().Build();
+    std::unique_ptr<Browser> browser =
+        std::make_unique<TestBrowser>(browser_state.get());
     ChromeActivityOverlayCoordinator* coordinator =
         [[ChromeActivityOverlayCoordinator alloc]
-            initWithBaseViewController:base_view_controller];
+            initWithBaseViewController:base_view_controller
+                               browser:browser.get()];
 
     EXPECT_EQ(0u, [base_view_controller.childViewControllers count]);
 

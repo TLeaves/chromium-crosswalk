@@ -2,27 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {str, strf, util} from '../../common/js/util.js';
+import {VolumeManagerCommon} from '../../common/js/volume_manager_types.js';
+import {EntryLocation} from '../../externs/entry_location.js';
+import {VolumeManager} from '../../externs/volume_manager.js';
+
+import {DirectoryModel} from './directory_model.js';
+import {TaskController} from './task_controller.js';
+import {BreadcrumbController} from './ui/breadcrumb_controller.js';
+import {FileManagerUI} from './ui/file_manager_ui.js';
+import {SearchBox} from './ui/search_box.js';
+
 /**
  * Controller for searching.
  */
-class SearchController {
+export class SearchController {
   /**
    * @param {!SearchBox} searchBox Search box UI element.
-   * @param {!LocationLine} locationLine Location line UI element.
+   * @param {!BreadcrumbController} breadcrumbController Breadcrumb controller
+   *     UI element.
    * @param {!DirectoryModel} directoryModel Directory model.
+   * @param {!VolumeManager} volumeManager Volume manager.
    * @param {!TaskController} taskController Task controller to execute the
    *     selected item.
    * @param {!FileManagerUI} a11y FileManagerUI to be able to announce a11y
    *     messages.
    */
   constructor(
-      searchBox, locationLine, directoryModel, volumeManager, taskController,
-      a11y) {
+      searchBox, breadcrumbController, directoryModel, volumeManager,
+      taskController, a11y) {
     /** @const @private {!SearchBox} */
     this.searchBox_ = searchBox;
 
-    /** @const @private {!LocationLine} */
-    this.locationLine_ = locationLine;
+    /** @const @private {!BreadcrumbController} */
+    this.breadcrumbController_ = breadcrumbController;
 
     /** @const @private {!DirectoryModel} */
     this.directoryModel_ = directoryModel;
@@ -84,6 +97,19 @@ class SearchController {
            opt_event.newDirEntry.rootType ===
                VolumeManagerCommon.RootType.MY_FILES);
       this.searchBox_.setHidden(isMyFiles);
+    }
+  }
+
+  /**
+   * Sets search query on the search box and performs a search.
+   * @param {string} searchQuery Search query string to be searched with.
+   */
+  setSearchQuery(searchQuery) {
+    this.searchBox_.inputElement.focus();
+    this.searchBox_.inputElement.value = searchQuery;
+    this.onTextChange_();
+    if (this.isOnDrive_) {
+      this.onItemSelect_();
     }
   }
 
@@ -153,7 +179,7 @@ class SearchController {
     chrome.fileManagerPrivate.searchDriveMetadata(
         {
           query: searchString,
-          types: 'ALL',
+          types: chrome.fileManagerPrivate.SearchType.ALL,
           maxResults: 4,
         },
         suggestions => {
@@ -219,7 +245,7 @@ class SearchController {
       if (!locationInfo ||
           (locationInfo.isRootEntry &&
            locationInfo.rootType ===
-               VolumeManagerCommon.RootType.DRIVE_OTHER)) {
+               VolumeManagerCommon.RootType.DRIVE_SHARED_WITH_ME)) {
         this.taskController_.executeEntryTask(entry);
         return;
       }
@@ -257,13 +283,18 @@ class SearchController {
         const locationInfo = this.currentLocationInfo_;
         const rootEntry = locationInfo.volumeInfo.displayRoot;
         if (rootEntry) {
-          this.locationLine_.show(rootEntry);
+          if (!util.isFilesAppExperimental()) {
+            this.breadcrumbController_.show(rootEntry);
+          }
         }
       }
     };
 
     const onClearSearch = function() {
-      this.locationLine_.show(this.directoryModel_.getCurrentDirEntry());
+      if (!util.isFilesAppExperimental()) {
+        this.breadcrumbController_.show(
+            this.directoryModel_.getCurrentDirEntry());
+      }
     };
 
     this.directoryModel_.search(

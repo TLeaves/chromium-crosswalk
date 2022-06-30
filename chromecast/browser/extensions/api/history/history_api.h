@@ -6,7 +6,6 @@
 #define CHROMECAST_BROWSER_EXTENSIONS_API_HISTORY_HISTORY_API_H_
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "chromecast/common/extensions_api/history.h"
 #include "extensions/browser/extension_function.h"
 
@@ -14,7 +13,7 @@ namespace extensions {
 namespace cast {
 namespace api {
 
-class HistoryGetVisitsFunction : public UIThreadExtensionFunction {
+class HistoryGetVisitsFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.getVisits", HISTORY_GETVISITS)
 
@@ -25,7 +24,7 @@ class HistoryGetVisitsFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 };
 
-class HistorySearchFunction : public UIThreadExtensionFunction {
+class HistorySearchFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.search", HISTORY_SEARCH)
 
@@ -36,7 +35,7 @@ class HistorySearchFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 };
 
-class HistoryAddUrlFunction : public UIThreadExtensionFunction {
+class HistoryAddUrlFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.addUrl", HISTORY_ADDURL)
 
@@ -47,7 +46,7 @@ class HistoryAddUrlFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 };
 
-class HistoryDeleteAllFunction : public UIThreadExtensionFunction {
+class HistoryDeleteAllFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.deleteAll", HISTORY_DELETEALL)
 
@@ -58,7 +57,7 @@ class HistoryDeleteAllFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 };
 
-class HistoryDeleteUrlFunction : public UIThreadExtensionFunction {
+class HistoryDeleteUrlFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.deleteUrl", HISTORY_DELETEURL)
 
@@ -69,7 +68,7 @@ class HistoryDeleteUrlFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 };
 
-class HistoryDeleteRangeFunction : public UIThreadExtensionFunction {
+class HistoryDeleteRangeFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("history.deleteRange", HISTORY_DELETERANGE)
 

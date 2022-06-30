@@ -10,8 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "crypto/secure_hash.h"
@@ -155,10 +153,9 @@ const AuditProofTestVector kAuditProofs[] = {
 
 // Decodes a hexadecimal string into the binary data it represents.
 std::string HexToBytes(const std::string& hex_data) {
-  std::vector<uint8_t> output;
   std::string result;
-  if (base::HexStringToBytes(hex_data, &output))
-    result.assign(output.begin(), output.end());
+  if (!base::HexStringToString(hex_data, &result))
+    result.clear();
   return result;
 }
 
@@ -544,7 +541,7 @@ TEST_P(CTLogVerifierConsistencyProofTest, VerifiesValidConsistencyProof) {
 INSTANTIATE_TEST_SUITE_P(KnownGoodProofs,
                          CTLogVerifierConsistencyProofTest,
                          ::testing::Range(size_t(0),
-                                          base::size(kConsistencyProofs)));
+                                          std::size(kConsistencyProofs)));
 
 class CTLogVerifierAuditProofTest
     : public CTLogVerifierTest,
@@ -563,7 +560,7 @@ TEST_P(CTLogVerifierAuditProofTest, VerifiesValidAuditProofs) {
 
 INSTANTIATE_TEST_SUITE_P(KnownGoodProofs,
                          CTLogVerifierAuditProofTest,
-                         ::testing::Range(size_t(0), base::size(kAuditProofs)));
+                         ::testing::Range(size_t(0), std::size(kAuditProofs)));
 
 TEST_F(CTLogVerifierTest, VerifiesAuditProofEdgeCases_InvalidLeafIndex) {
   std::vector<std::string> proof;

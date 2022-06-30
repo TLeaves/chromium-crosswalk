@@ -37,15 +37,41 @@
 // calling this method.
 - (void)openToolsMenu;
 
+// Closes the tools menu by tapping on the Tools menu button, or tapping the
+// background scrim, depending on the current version of the tools menu.
+- (void)closeToolsMenu;
+
+// Makes the toolbar visible by swiping downward, if necessary. Then taps on
+// the Tools menu button. At least one tab needs to be open and visible when
+// calling this method.
+// Sets and Leaves the root matcher to the given window with |windowNumber|.
+- (void)openToolsMenuInWindowWithNumber:(int)windowNumber;
+
 // Opens the settings menu by opening the tools menu, and then tapping the
 // Settings button. There will be a GREYAssert if the tools menu is open when
 // calling this method.
 - (void)openSettingsMenu;
 
+// Opens the settings menu by opening the tools menu, and then tapping the
+// Settings button. There will be a GREYAssert if the tools menu is open when
+// calling this method.
+// Sets and Leaves the root matcher to the given window with |windowNumber|.
+- (void)openSettingsMenuInWindowWithNumber:(int)windowNumber;
+
+// Makes the toolbar visible by swiping downward, if necessary. Then long-
+// presses on the New Tab menu button. At least one tab needs to be open and
+// visible when calling this method.
+- (void)openNewTabMenu;
+
 // Scrolls to find the button in the Tools menu with the corresponding
 // |buttonMatcher|, and then taps it. If |buttonMatcher| is not found, or
 // the Tools menu is not open when this is called there will be a GREYAssert.
 - (void)tapToolsMenuButton:(id<GREYMatcher>)buttonMatcher;
+
+// Scrolls to find the action in the Tools menu with the corresponding
+// |buttonMatcher|, and then taps it. If |buttonMatcher| is not found, or
+// the Tools menu is not open when this is called there will be a GREYAssert.
+- (void)tapToolsMenuAction:(id<GREYMatcher>)buttonMatcher;
 
 // Scrolls to find the button in the Settings menu with the corresponding
 // |buttonMatcher|, and then taps it. If |buttonMatcher| is not found, or
@@ -76,16 +102,19 @@
 // Focuses the omnibox by tapping it.
 - (void)focusOmnibox;
 
-// Open a new tab via the tools menu.
+// Opens a new tab via the tools menu.
 - (void)openNewTab;
 
-// Open a new incognito tab via the tools menu.
+// Opens a new incognito tab via the tools menu.
 - (void)openNewIncognitoTab;
 
-// Open and clear browsing data from history.
+// Opens and clear browsing data from history.
 - (void)openAndClearBrowsingDataFromHistory;
 
-// Assert that history is empty.
+// Clears all browsing data by opening the privacy panel in the settings view.
+- (void)clearAllBrowsingData;
+
+// Asserts that history is empty.
 - (void)assertHistoryHasNoEntries;
 
 // Reloads the page via the reload button, and does not wait for the page to
@@ -100,6 +129,16 @@
 // for it to disappear. If the condition is not met within a timeout, a
 // GREYAssert is induced.
 - (void)waitForToolbarVisible:(BOOL)isVisible;
+
+// Waits for the app to idle.
+- (void)waitForAppToIdle;
+
+// Opens pageInfo via the tools menu.
+- (void)openPageInfo;
+
+// Tries to dismiss any presented native context menu.
+// Returns |YES| if a context menu was dismissed, otherwise returns |NO|.
+- (BOOL)dismissContextMenuIfPresent;
 
 @end
 

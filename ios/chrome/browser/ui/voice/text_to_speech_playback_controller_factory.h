@@ -5,14 +5,10 @@
 #ifndef IOS_CHROME_BROWSER_UI_VOICE_TEXT_TO_SPEECH_PLAYBACK_CONTROLLER_FACTORY_H_
 #define IOS_CHROME_BROWSER_UI_VOICE_TEXT_TO_SPEECH_PLAYBACK_CONTROLLER_FACTORY_H_
 
-#include "base/macros.h"
 #include "base/no_destructor.h"
 #include "components/keyed_service/ios/browser_state_keyed_service_factory.h"
 
-namespace ios {
 class ChromeBrowserState;
-}
-
 class TextToSpeechPlaybackController;
 
 // TextToSpeechPlaybackControllerFactory attaches
@@ -23,9 +19,14 @@ class TextToSpeechPlaybackControllerFactory
   // Convenience getter that typecasts the value returned to a
   // TextToSpeechPlaybackController.
   static TextToSpeechPlaybackController* GetForBrowserState(
-      ios::ChromeBrowserState* browser_state);
+      ChromeBrowserState* browser_state);
   // Getter for singleton instance.
   static TextToSpeechPlaybackControllerFactory* GetInstance();
+
+  TextToSpeechPlaybackControllerFactory(
+      const TextToSpeechPlaybackControllerFactory&) = delete;
+  TextToSpeechPlaybackControllerFactory& operator=(
+      const TextToSpeechPlaybackControllerFactory&) = delete;
 
  private:
   friend class base::NoDestructor<TextToSpeechPlaybackControllerFactory>;
@@ -37,8 +38,6 @@ class TextToSpeechPlaybackControllerFactory
       web::BrowserState* context) const override;
   web::BrowserState* GetBrowserStateToUse(
       web::BrowserState* context) const override;
-
-  DISALLOW_COPY_AND_ASSIGN(TextToSpeechPlaybackControllerFactory);
 };
 
 #endif  // IOS_CHROME_BROWSER_UI_VOICE_TEXT_TO_SPEECH_PLAYBACK_CONTROLLER_FACTORY_H_

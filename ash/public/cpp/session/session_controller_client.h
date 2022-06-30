@@ -23,6 +23,9 @@ class ASH_PUBLIC_EXPORT SessionControllerClient {
   // Requests signing out all users, ending the current session.
   virtual void RequestSignOut() = 0;
 
+  // Attempts to restart the chrome browser.
+  virtual void AttemptRestartChrome() = 0;
+
   // Switch to the active user with |account_id| (if the user has already signed
   // in).
   virtual void SwitchActiveUser(const AccountId& account_id) = 0;
@@ -42,6 +45,9 @@ class ASH_PUBLIC_EXPORT SessionControllerClient {
 
   // Returns the pref service for the given user if available.
   virtual PrefService* GetUserPrefService(const AccountId& account_id) = 0;
+
+  // Returns true if the device is enterprise managed.
+  virtual bool IsEnterpriseManaged() const = 0;
 
  protected:
   virtual ~SessionControllerClient() = default;

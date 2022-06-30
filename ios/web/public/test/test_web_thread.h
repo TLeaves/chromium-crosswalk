@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "ios/web/public/thread/web_thread.h"
 
 namespace base {
@@ -20,7 +19,7 @@ namespace web {
 class WebSubThread;
 class WebThreadImpl;
 
-// DEPRECATED: use TestWebThreadBundle instead.
+// DEPRECATED: use WebTaskEnvironment instead.
 // A WebThread for unit tests; this lets unit tests outside of web create
 // WebThread instances.
 class TestWebThread {
@@ -36,6 +35,9 @@ class TestWebThread {
 
   // Constructs a TestWebThread based on |message_loop| (no |real_thread_|).
   TestWebThread(WebThread::ID identifier, base::MessageLoop* message_loop);
+
+  TestWebThread(const TestWebThread&) = delete;
+  TestWebThread& operator=(const TestWebThread&) = delete;
 
   ~TestWebThread();
 
@@ -68,8 +70,6 @@ class TestWebThread {
   // Binds |identifier_| to |message_loop| when constructor #2 is used (null
   // otherwise).
   std::unique_ptr<WebThreadImpl> fake_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestWebThread);
 };
 
 }  // namespace web

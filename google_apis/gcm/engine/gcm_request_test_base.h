@@ -5,9 +5,8 @@
 #ifndef GOOGLE_APIS_GCM_ENGINE_GCM_REQUEST_TEST_BASE_H_
 #define GOOGLE_APIS_GCM_ENGINE_GCM_REQUEST_TEST_BASE_H_
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/backoff_entry.h"
 #include "services/network/test/test_url_loader_factory.h"
@@ -24,6 +23,10 @@ namespace gcm {
 class GCMRequestTestBase : public testing::Test {
  public:
   GCMRequestTestBase();
+
+  GCMRequestTestBase(const GCMRequestTestBase&) = delete;
+  GCMRequestTestBase& operator=(const GCMRequestTestBase&) = delete;
+
   ~GCMRequestTestBase() override;
 
   const net::BackoffEntry::Policy& GetBackoffPolicy() const;
@@ -61,16 +64,14 @@ class GCMRequestTestBase : public testing::Test {
   // Fast forward the timer used in the test to retry the request immediately.
   void FastForwardToTriggerNextRetry();
 
-  base::test::ScopedTaskEnvironment scoped_task_environment_{
-      base::test::ScopedTaskEnvironment::TimeSource::MOCK_TIME};
+  base::test::TaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
 
   network::TestURLLoaderFactory test_url_loader_factory_;
   scoped_refptr<network::SharedURLLoaderFactory> shared_factory_;
 
   // Tracks the number of retries so far.
   int retry_count_;
-
-  DISALLOW_COPY_AND_ASSIGN(GCMRequestTestBase);
 };
 
 }  // namespace gcm

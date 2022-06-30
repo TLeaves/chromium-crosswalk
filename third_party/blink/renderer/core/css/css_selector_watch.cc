@@ -36,9 +36,10 @@
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
-#include "third_party/blink/renderer/platform/heap/heap.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
 namespace blink {
 
@@ -138,7 +139,7 @@ void CSSSelectorWatch::UpdateSelectorMatches(
 }
 
 static bool AllCompound(const CSSSelectorList& selector_list) {
-  for (const CSSSelector* selector = selector_list.FirstForCSSOM(); selector;
+  for (const CSSSelector* selector = selector_list.First(); selector;
        selector = selector_list.Next(*selector)) {
     if (!selector->IsCompound())
       return false;
@@ -171,8 +172,9 @@ void CSSSelectorWatch::WatchCSSSelectors(const Vector<String>& selectors) {
   GetSupplementable()->GetStyleEngine().WatchedSelectorsChanged();
 }
 
-void CSSSelectorWatch::Trace(blink::Visitor* visitor) {
+void CSSSelectorWatch::Trace(Visitor* visitor) const {
   visitor->Trace(watched_callback_selectors_);
+  visitor->Trace(callback_selector_change_timer_);
   Supplement<Document>::Trace(visitor);
 }
 

@@ -2,6 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assertArrayEquals, assertEquals, assertNotReached, assertTrue} from 'chrome://webui-test/chai_assert.js';
+
+import {reportPromise} from '../../../common/js/test_error_reporting.js';
+import {VolumeManagerCommon} from '../../../common/js/volume_manager_types.js';
+import {VolumeManager} from '../../../externs/volume_manager.js';
+
+import {ContentMetadataProvider} from './content_metadata_provider.js';
+import {DlpMetadataProvider} from './dlp_metadata_provider.js';
+import {ExternalMetadataProvider} from './external_metadata_provider.js';
+import {FileSystemMetadataProvider} from './file_system_metadata_provider.js';
+import {MetadataRequest} from './metadata_request.js';
+import {MultiMetadataProvider} from './multi_metadata_provider.js';
+
 const entryA = /** @type {!Entry} */ ({
   toURL: function() {
     return 'filesystem://A';
@@ -49,7 +62,7 @@ const volumeManager = /** @type {!VolumeManager} */ ({
   }
 });
 
-function testMultiMetadataProviderBasic(callback) {
+export function testMultiMetadataProviderBasic(callback) {
   const model = new MultiMetadataProvider(
       /** @type {!FileSystemMetadataProvider} */ ({
         get: function(requests) {
@@ -85,6 +98,12 @@ function testMultiMetadataProviderBasic(callback) {
           ]);
         }
       }),
+      /** @type {!DlpMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        }
+      }),
       volumeManager);
 
   reportPromise(
@@ -111,7 +130,7 @@ function testMultiMetadataProviderBasic(callback) {
       callback);
 }
 
-function testMultiMetadataProviderExternalAndContentProperty(callback) {
+export function testMultiMetadataProviderExternalAndContentProperty(callback) {
   const model = new MultiMetadataProvider(
       /** @type {!FileSystemMetadataProvider} */ ({
         get: function(requests) {
@@ -143,6 +162,12 @@ function testMultiMetadataProviderExternalAndContentProperty(callback) {
           return Promise.resolve([results[requests[0].entry.toURL()]]);
         },
       }),
+      /** @type {!DlpMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        }
+      }),
       volumeManager);
 
   reportPromise(
@@ -162,21 +187,14 @@ function testMultiMetadataProviderExternalAndContentProperty(callback) {
 }
 
 /**
- * Tests that a valid property in FileSystemMetadataProvider response (e.g.
- * 'size') for a documents-provider file is not cleared by
- * ExternalMetadataProvider response which can have zero-filled value (0, null,
- * '', etc...) with the same property name.
+ * Tests that we only use ExternalMetadataProvider for a DocumentsProvider file.
  */
-function testMultiMetadataProviderFileSystemAndExternalForDP(callback) {
+export function testMultiMetadataProviderFileSystemAndExternalForDP(callback) {
   const model = new MultiMetadataProvider(
       /** @type {!FileSystemMetadataProvider} */ ({
         get: function(requests) {
-          assertEquals(1, requests.length);
-          assertEquals('filesystem://D', requests[0].entry.toURL());
-          assertArrayEquals(['size'], requests[0].names);
-          return Promise.resolve([
-            {size: 110},
-          ]);
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
         }
       }),
       /** @type {!ExternalMetadataProvider} */ ({
@@ -184,14 +202,19 @@ function testMultiMetadataProviderFileSystemAndExternalForDP(callback) {
           assertEquals(1, requests.length);
           assertEquals('filesystem://D', requests[0].entry.toURL());
           assertArrayEquals(
-              ['canCopy', 'canDelete', 'canRename', 'canAddChildren'],
+              [
+                'canCopy', 'canDelete', 'canRename', 'canAddChildren',
+                'modificationTime', 'size'
+              ],
               requests[0].names);
           return Promise.resolve([
             {
               canCopy: true,
               canDelete: true,
               canRename: true,
-              canAddChildren: true
+              canAddChildren: true,
+              size: 110,
+              modificationTime: new Date(2015, 1, 2),
             },
           ]);
         }
@@ -201,6 +224,12 @@ function testMultiMetadataProviderFileSystemAndExternalForDP(callback) {
           assertEquals(0, requests.length);
           return Promise.resolve([]);
         },
+      }),
+      /** @type {!DlpMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        }
       }),
       volumeManager);
 
@@ -216,10 +245,57 @@ function testMultiMetadataProviderFileSystemAndExternalForDP(callback) {
           .then(results => {
             assertEquals(1, results.length);
             assertEquals(110, results[0].size);
+            assertEquals(
+                new Date(2015, 1, 2).toString(),
+                results[0].modificationTime.toString());
             assertEquals(true, results[0].canCopy);
             assertEquals(true, results[0].canDelete);
             assertEquals(true, results[0].canRename);
             assertEquals(true, results[0].canAddChildren);
+          }),
+      callback);
+}
+
+export function testDlpMetadataProvider(callback) {
+  const model = new MultiMetadataProvider(
+      /** @type {!FileSystemMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        }
+      }),
+      /** @type {!ExternalMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        }
+      }),
+      /** @type {!ContentMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(0, requests.length);
+          return Promise.resolve([]);
+        },
+      }),
+      /** @type {!DlpMetadataProvider} */ ({
+        get: function(requests) {
+          assertEquals(1, requests.length);
+          return Promise.resolve([{
+            sourceUrl: 'url',
+            isDlpRestricted: true,
+          }]);
+        }
+      }),
+      volumeManager);
+
+  reportPromise(
+      model
+          .get([
+            new MetadataRequest(entryA, ['sourceUrl', 'isDlpRestricted']),
+          ])
+          .then(results => {
+            assertEquals(1, results.length);
+            assertEquals('url', results[0].sourceUrl);
+            assertEquals(true, results[0].isDlpRestricted);
           }),
       callback);
 }

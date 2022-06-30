@@ -53,7 +53,7 @@ enum {
   // Recorded when a user pressed the QR scanner spotlight action.
   SPOTLIGHT_ACTION_QR_CODE_SCANNER_PRESSED,
   // NOTE: Add new spotlight actions in sources only immediately above this
-  // line. Also, make sure the enum list for histogram |SpotlightActions| in
+  // line. Also, make sure the enum list for histogram `SpotlightActions` in
   // histograms.xml is updated with any change in here.
   SPOTLIGHT_ACTION_COUNT
 };
@@ -99,8 +99,8 @@ BOOL SetStartupParametersForSpotlightAction(
 
 @interface ActionsSpotlightManager ()
 
-// Creates a new Spotlight entry with title |title| for the given |action|.
-- (CSSearchableItem*)getItemForAction:(NSString*)action title:(NSString*)title;
+// Creates a new Spotlight entry with title `title` for the given `action`.
+- (CSSearchableItem*)itemForAction:(NSString*)action title:(NSString*)title;
 
 // Clears and re-inserts all Spotlight actions.
 - (void)clearAndAddSpotlightActions;
@@ -130,8 +130,8 @@ BOOL SetStartupParametersForSpotlightAction(
 #pragma mark private methods
 
 - (void)clearAndAddSpotlightActions {
+  __weak ActionsSpotlightManager* weakSelf = self;
   [self clearAllSpotlightItems:^(NSError* error) {
-    __weak ActionsSpotlightManager* weakSelf = self;
     dispatch_after(
         dispatch_time(DISPATCH_TIME_NOW,
                       static_cast<int64_t>(1 * NSEC_PER_SEC)),
@@ -147,13 +147,13 @@ BOOL SetStartupParametersForSpotlightAction(
           NSString* voiceSearchAction =
               base::SysUTF8ToNSString(spotlight::kSpotlightActionVoiceSearch);
 
-          NSString* newTabTitle =
-              l10n_util::GetNSString(IDS_IOS_APPLICATION_SHORTCUT_NEWTAB_TITLE);
+          NSString* newTabTitle = l10n_util::GetNSString(
+              IDS_IOS_APPLICATION_SHORTCUT_NEWSEARCH_TITLE);
           NSString* newTabAction =
               base::SysUTF8ToNSString(spotlight::kSpotlightActionNewTab);
 
           NSString* incognitoTitle = l10n_util::GetNSString(
-              IDS_IOS_APPLICATION_SHORTCUT_NEWINCOGNITOTAB_TITLE);
+              IDS_IOS_APPLICATION_SHORTCUT_INCOGNITOSEARCH_TITLE);
           NSString* incognitoAction = base::SysUTF8ToNSString(
               spotlight::kSpotlightActionNewIncognitoTab);
 
@@ -163,11 +163,10 @@ BOOL SetStartupParametersForSpotlightAction(
               base::SysUTF8ToNSString(spotlight::kSpotlightActionQRScanner);
 
           NSArray* spotlightItems = @[
-            [strongSelf getItemForAction:voiceSearchAction
-                                   title:voiceSearchTitle],
-            [strongSelf getItemForAction:newTabAction title:newTabTitle],
-            [strongSelf getItemForAction:incognitoAction title:incognitoTitle],
-            [strongSelf getItemForAction:qrScannerAction title:qrScannerTitle],
+            [strongSelf itemForAction:voiceSearchAction title:voiceSearchTitle],
+            [strongSelf itemForAction:newTabAction title:newTabTitle],
+            [strongSelf itemForAction:incognitoAction title:incognitoTitle],
+            [strongSelf itemForAction:qrScannerAction title:qrScannerTitle],
           ];
 
           [[CSSearchableIndex defaultSearchableIndex]
@@ -177,7 +176,7 @@ BOOL SetStartupParametersForSpotlightAction(
   }];
 }
 
-- (CSSearchableItem*)getItemForAction:(NSString*)action title:(NSString*)title {
+- (CSSearchableItem*)itemForAction:(NSString*)action title:(NSString*)title {
   CSSearchableItemAttributeSet* attributeSet =
       [[CSSearchableItemAttributeSet alloc]
           initWithItemContentType:spotlight::StringFromSpotlightDomain(

@@ -8,14 +8,14 @@
 
 #include "base/bits.h"
 #include "base/callback.h"
-#include "base/logging.h"
+#include "base/check_op.h"
 
 namespace base {
 namespace sequence_manager {
 namespace internal {
 
 AtomicFlagSet::AtomicFlagSet(
-    scoped_refptr<AssociatedThreadId> associated_thread)
+    scoped_refptr<const AssociatedThreadId> associated_thread)
     : associated_thread_(std::move(associated_thread)) {}
 
 AtomicFlagSet::~AtomicFlagSet() {

@@ -7,11 +7,12 @@
 
 #include <stdint.h>
 
-#include <vector>
-
 #include "base/callback_forward.h"
+#include "base/containers/span.h"
 #include "base/memory/ref_counted.h"
-#include "url/gurl.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+
+class GURL;
 
 namespace device {
 
@@ -21,15 +22,26 @@ struct WebUsbPlatformCapabilityDescriptor {
   WebUsbPlatformCapabilityDescriptor();
   ~WebUsbPlatformCapabilityDescriptor();
 
-  bool ParseFromBosDescriptor(const std::vector<uint8_t>& bytes);
+  bool ParseFromBosDescriptor(base::span<const uint8_t> bytes);
 
   uint16_t version;
   uint8_t vendor_code;
   uint8_t landing_page_id;
-  GURL landing_page;
 };
 
-bool ParseWebUsbUrlDescriptor(const std::vector<uint8_t>& bytes, GURL* output);
+bool ParseWebUsbUrlDescriptor(base::span<const uint8_t> bytes, GURL* output);
+
+void ReadWebUsbLandingPage(
+    uint8_t vendor_code,
+    uint8_t landing_page_id,
+    scoped_refptr<UsbDeviceHandle> device_handle,
+    base::OnceCallback<void(const GURL& landing_page)> callback);
+
+void ReadWebUsbCapabilityDescriptor(
+    scoped_refptr<UsbDeviceHandle> device_handle,
+    base::OnceCallback<void(
+        const absl::optional<WebUsbPlatformCapabilityDescriptor>& descriptor)>
+        callback);
 
 void ReadWebUsbDescriptors(
     scoped_refptr<UsbDeviceHandle> device_handle,

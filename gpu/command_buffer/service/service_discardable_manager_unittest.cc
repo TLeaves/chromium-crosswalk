@@ -4,6 +4,9 @@
 
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 
+#include <memory>
+
+#include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/client/client_test_helper.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
 #include "gpu/command_buffer/service/gpu_service_test.h"
@@ -15,6 +18,7 @@
 #include "gpu/command_buffer/service/shared_image_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
+#include "gpu/config/gpu_preferences.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_image_stub.h"
 #include "ui/gl/gl_mock.h"
@@ -40,8 +44,8 @@ void CreateLockedHandlesForTesting(
   scoped_refptr<gpu::Buffer> buffer = MakeBufferFromSharedMemory(
       std::move(shared_mem), std::move(shared_mem_mapping));
 
-  client_handle->reset(new ClientDiscardableHandle(buffer, 0, 0));
-  service_handle->reset(new ServiceDiscardableHandle(buffer, 0, 0));
+  *client_handle = std::make_unique<ClientDiscardableHandle>(buffer, 0, 0);
+  *service_handle = std::make_unique<ServiceDiscardableHandle>(buffer, 0, 0);
 }
 
 ServiceDiscardableHandle CreateLockedServiceHandleForTesting() {
@@ -65,14 +69,14 @@ static const size_t kSmallTextureSize = 4 * kSmallTextureDim * kSmallTextureDim;
 
 class ServiceDiscardableManagerTest : public GpuServiceTest {
  public:
-  ServiceDiscardableManagerTest() = default;
+  ServiceDiscardableManagerTest() : discardable_manager_(GpuPreferences()) {}
   ~ServiceDiscardableManagerTest() override = default;
 
  protected:
   void SetUp() override {
     GpuServiceTest::SetUp();
-    decoder_.reset(
-        new MockGLES2Decoder(&client_, &command_buffer_service_, &outputter_));
+    decoder_ = std::make_unique<MockGLES2Decoder>(
+        &client_, &command_buffer_service_, &outputter_);
     feature_info_ = new FeatureInfo();
     context_group_ = scoped_refptr<ContextGroup>(new ContextGroup(
         gpu_preferences_, false, &mailbox_manager_, nullptr, nullptr, nullptr,
@@ -127,7 +131,7 @@ class ServiceDiscardableManagerTest : public GpuServiceTest {
   GpuPreferences gpu_preferences_;
   scoped_refptr<FeatureInfo> feature_info_;
   MockDestructionObserver destruction_observer_;
-  TextureManager* texture_manager_;
+  raw_ptr<TextureManager> texture_manager_;
   FakeCommandBufferServiceBase command_buffer_service_;
   FakeDecoderClient client_;
   std::unique_ptr<MockGLES2Decoder> decoder_;

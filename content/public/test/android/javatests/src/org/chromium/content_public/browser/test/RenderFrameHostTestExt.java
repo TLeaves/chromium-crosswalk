@@ -28,10 +28,26 @@ public class RenderFrameHostTestExt {
      *        serialized to a String using JSONStringValueSerializer.
      */
     public void executeJavaScript(String script, Callback<String> callback) {
-        nativeExecuteJavaScript(mNativeRenderFrameHostTestExt, script, callback);
+        nativeExecuteJavaScript(mNativeRenderFrameHostTestExt, script, callback, false);
+    }
+
+    public void executeJavaScriptWithUserGesture(String script) {
+        nativeExecuteJavaScript(mNativeRenderFrameHostTestExt, script, (String r) -> {}, true);
+    }
+
+    public void updateVisualState(Callback<Boolean> callback) {
+        nativeUpdateVisualState(mNativeRenderFrameHostTestExt, callback);
+    }
+
+    public void notifyVirtualKeyboardOverlayRect(int x, int y, int width, int height) {
+        nativeNotifyVirtualKeyboardOverlayRect(mNativeRenderFrameHostTestExt, x, y, width, height);
     }
 
     private native long nativeInit(long renderFrameHostAndroidPtr);
-    private native void nativeExecuteJavaScript(
-            long nativeRenderFrameHostTestExt, String script, Callback<String> callback);
+    private native void nativeExecuteJavaScript(long nativeRenderFrameHostTestExt, String script,
+            Callback<String> callback, boolean withUserGesture);
+    private native void nativeUpdateVisualState(
+            long nativeRenderFrameHostTestExt, Callback<Boolean> callback);
+    private native void nativeNotifyVirtualKeyboardOverlayRect(
+            long nativeRenderFrameHostTestExt, int x, int y, int width, int height);
 }

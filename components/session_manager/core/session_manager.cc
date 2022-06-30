@@ -24,9 +24,6 @@ SessionManager::SessionManager() {
 SessionManager::~SessionManager() {
   DCHECK_EQ(instance, this);
   SessionManager::SetInstance(nullptr);
-
-  for (auto& observer : observers_)
-    observer.OnSessionManagerDestroyed();
 }
 
 // static
@@ -70,14 +67,11 @@ bool SessionManager::IsSessionStarted() const {
 }
 
 void SessionManager::SessionStarted() {
-  if (session_started_)
-    return;
-
   session_started_ = true;
 
-  // SessionStarted() could be called in tests without any session created.
-  if (sessions_.size() == 1)
-    NotifyPrimaryUserSessionStarted();
+  bool is_primary = sessions_.size() == 1;
+  for (auto& observer : observers_)
+    observer.OnUserSessionStarted(is_primary);
 }
 
 bool SessionManager::HasSessionForAccountId(
@@ -113,9 +107,15 @@ void SessionManager::NotifyUserProfileLoaded(const AccountId& account_id) {
     observer.OnUserProfileLoaded(account_id);
 }
 
-void SessionManager::NotifyPrimaryUserSessionStarted() {
+void SessionManager::NotifyNetworkErrorScreenShown() {
   for (auto& observer : observers_)
-    observer.OnPrimaryUserSessionStarted();
+    observer.OnNetworkErrorScreenShown();
+}
+
+void SessionManager::NotifyLoginOrLockScreenVisible() {
+  login_or_lock_screen_shown_for_test_ = true;
+  for (auto& observer : observers_)
+    observer.OnLoginOrLockScreenVisible();
 }
 
 void SessionManager::NotifyUserLoggedIn(const AccountId& user_account_id,

@@ -27,13 +27,21 @@ enum ShareExtensionItemType {
   OPEN_IN_CHROME_ITEM
 };
 
+// The key of a preference containing a dictionary of capabilities supported by
+// the current version of Chrome.
+extern NSString* const kChromeCapabilitiesPreference;
+
+// ---- Chrome capabilities -----
+// Show default browser promo capability.
+extern NSString* const kChromeShowDefaultBrowserPromoCapability;
+
 // The x-callback-url indicating that an application in the group requires a
 // command.
 extern const char kChromeAppGroupXCallbackCommand[];
 
 // The key of a preference containing a dictionary of field trial values needed
 // in extensions.
-extern const char kChromeExtensionFieldTrialPreference[];
+extern NSString* const kChromeExtensionFieldTrialPreference;
 
 // The key of a preference containing a dictionary containing app group command
 // parameters.
@@ -118,6 +126,7 @@ extern NSString* const kOpenCommandSourceTodayExtension;
 extern NSString* const kOpenCommandSourceContentExtension;
 extern NSString* const kOpenCommandSourceSearchExtension;
 extern NSString* const kOpenCommandSourceShareExtension;
+extern NSString* const kOpenCommandSourceCredentialsExtension;
 
 // The value of the key for the sharedDefaults used by the Content Widget.
 extern NSString* const kSuggestedItems;
@@ -149,10 +158,24 @@ NSURL* ExternalCommandsItemsFolder();
 // stored.
 NSURL* ContentWidgetFaviconsFolder();
 
+// Gets the shared folder URL in which favicon attributes used by the credential
+// provider extensions are stored.
+NSURL* SharedFaviconAttributesFolder();
+
+// Gets the shared folder URL in which Crashpad reports are stored.
+NSURL* CrashpadFolder();
+
 // Returns an autoreleased pointer to the shared user defaults if an
-// application group is defined. If not (i.e. on simulator, or if entitlements
-// do not allow it) returns [NSUserDefaults standardUserDefaults].
+// application group is defined for the application and its extensions.
+// If not (i.e. on simulator, or if entitlements do not allow it) returns
+// [NSUserDefaults standardUserDefaults].
 NSUserDefaults* GetGroupUserDefaults();
+
+// Returns an autoreleased pointer to the shared user defaults if a group is
+// defined for the application and other application of the same developer. If
+// not (i.e. on simulator, or if entitlements do not allow it) returns
+// [NSUserDefaults standardUserDefaults].
+NSUserDefaults* GetCommonGroupUserDefaults();
 
 // The application name of |application|.
 NSString* ApplicationName(AppGroupApplications application);

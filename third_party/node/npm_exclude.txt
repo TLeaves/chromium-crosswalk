@@ -11,10 +11,12 @@ hydrolysis/hydrolysis.js
 *.svg
 */test/
 *.ts
-@types
+@types/**/*
 *.woff
 *.yml
 Makefile
 source-map.debug.js
 powered-test/es6-destructuring-assignments.js
 *.map
+typescript/lib/*
+typescript/loc/*

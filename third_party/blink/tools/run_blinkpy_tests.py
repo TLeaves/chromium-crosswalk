@@ -1,4 +1,4 @@
-#!/usr/bin/env vpython
+#!/usr/bin/env vpython3
 # Copyright (c) 2011 Google Inc. All rights reserved.
 # Copyright (C) 2010 Chris Jerdonek (cjerdonek@webkit.org)
 #
@@ -39,8 +39,10 @@ import typ
 
 def main():
     return typ.main(
-        top_level_dirs=[path_finder.get_blink_tools_dir(),
-                        os.path.join(path_finder.get_source_dir(), 'build', 'scripts')],
+        top_level_dirs=[
+            path_finder.get_blink_tools_dir(),
+            os.path.join(path_finder.get_source_dir(), 'build', 'scripts')
+        ],
         path=[path_finder.get_blinkpy_thirdparty_dir()])
 
 

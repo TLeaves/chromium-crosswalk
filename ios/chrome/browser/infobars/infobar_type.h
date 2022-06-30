@@ -14,6 +14,27 @@ enum class InfobarType {
   kInfobarTypePasswordSave = 1,
   // Message Infobar for Updating a password.
   kInfobarTypePasswordUpdate = 2,
+  // Message Infobar for Saving a Credit Card.
+  kInfobarTypeSaveCard = 3,
+  // Message Infobar for Translating a page.
+  kInfobarTypeTranslate = 4,
+  // Message Infobar for Saving an address profile.
+  kInfobarTypeSaveAutofillAddressProfile = 5,
+  // Message Infobar for Adding to Reading List.
+  kInfobarTypeAddToReadingList = 6,
+  // Message Infobar for media permissions.
+  kInfobarTypePermissions = 7,
+};
+
+// Message "Confirm Infobars" types, these are the generic kInfobarTypeConfirm
+// infobars. Only kInfobarTypeConfirm which want to record unique metrics will
+// be listed here. Since these are used for metrics, entries should not be
+// renumbered and numeric values should never be reused.
+enum class InfobarConfirmType {
+  // Confirm Infobar for enabling to "Restore Tabs" after a crash.
+  kInfobarConfirmTypeRestore = 0,
+  // Confirm Infobar for blocking popups.
+  kInfobarConfirmTypeBlockPopups = 1,
 };
 
 #endif  // IOS_CHROME_BROWSER_INFOBARS_INFOBAR_TYPE_H_

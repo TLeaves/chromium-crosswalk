@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 
@@ -21,7 +22,7 @@ URLFetcherBlockAdapter::URLFetcherBlockAdapter(
     web::URLFetcherBlockAdapterCompletion completion_handler)
     : url_(url),
       url_loader_factory_(std::move(url_loader_factory)),
-      completion_handler_([completion_handler copy]) {}
+      completion_handler_(completion_handler) {}
 
 URLFetcherBlockAdapter::~URLFetcherBlockAdapter() {
 }
@@ -42,7 +43,7 @@ void URLFetcherBlockAdapter::OnURLLoadComplete(
     std::unique_ptr<std::string> response_body) {
   std::string response;
   if (!response_body) {
-    DLOG(WARNING) << "String for resource URL not found"
+    DLOG(WARNING) << "String for resource URL not found "
                   << url_loader_->GetFinalURL();
   } else {
     response = *response_body;
@@ -52,7 +53,7 @@ void URLFetcherBlockAdapter::OnURLLoadComplete(
 
   NSData* data =
       [NSData dataWithBytes:response.c_str() length:response.length()];
-  completion_handler_.get()(data, this);
+  completion_handler_(data, this);
 }
 
 }  // namespace web

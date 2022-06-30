@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
-#include "base/task/post_task.h"
 #include "build/build_config.h"
 #include "chromecast/browser/cast_network_contexts.h"
 #include "chromecast/browser/extensions/cast_extension_host_delegate.h"
@@ -16,22 +15,23 @@
 #include "chromecast/browser/extensions/cast_extension_web_contents_observer.h"
 #include "chromecast/browser/extensions/cast_extensions_api_client.h"
 #include "chromecast/browser/extensions/cast_extensions_browser_api_provider.h"
+#include "chromecast/browser/extensions/cast_kiosk_delegate.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/resource_request_info.h"
 #include "content/public/common/user_agent.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/api/runtime/runtime_api_delegate.h"
 #include "extensions/browser/core_extensions_browser_api_provider.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/mojo/interface_registration.h"
+#include "extensions/browser/extensions_browser_interface_binders.h"
 #include "extensions/browser/null_app_sorting.h"
 #include "extensions/browser/updater/null_extension_cache.h"
 #include "extensions/browser/url_request_util.h"
 #include "extensions/common/features/feature_channel.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 
 using content::BrowserContext;
@@ -124,18 +124,17 @@ base::FilePath CastExtensionsBrowserClient::GetBundleResourcePath(
 
 void CastExtensionsBrowserClient::LoadResourceFromResourceBundle(
     const network::ResourceRequest& request,
-    network::mojom::URLLoaderRequest loader,
+    mojo::PendingReceiver<network::mojom::URLLoader> loader,
     const base::FilePath& resource_relative_path,
     int resource_id,
-    const std::string& content_security_policy,
-    network::mojom::URLLoaderClientPtr client,
-    bool send_cors_header) {
+    scoped_refptr<net::HttpResponseHeaders> headers,
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client) {
   NOTREACHED() << "Cannot load resource from bundle w/o path";
 }
 
 bool CastExtensionsBrowserClient::AllowCrossRendererResourceLoad(
-    const GURL& url,
-    content::ResourceType resource_type,
+    const network::ResourceRequest& request,
+    network::mojom::RequestDestination destination,
     ui::PageTransition page_transition,
     int child_id,
     bool is_incognito,
@@ -144,7 +143,7 @@ bool CastExtensionsBrowserClient::AllowCrossRendererResourceLoad(
     const ProcessMap& process_map) {
   bool allowed = false;
   if (url_request_util::AllowCrossRendererResourceLoad(
-          url, resource_type, page_transition, child_id, is_incognito,
+          request, destination, page_transition, child_id, is_incognito,
           extension, extensions, process_map, &allowed)) {
     return allowed;
   }
@@ -204,12 +203,11 @@ CastExtensionsBrowserClient::GetExtensionSystemFactory() {
   return CastExtensionSystemFactory::GetInstance();
 }
 
-void CastExtensionsBrowserClient::RegisterExtensionInterfaces(
-    service_manager::BinderRegistryWithArgs<content::RenderFrameHost*>*
-        registry,
+void CastExtensionsBrowserClient::RegisterBrowserInterfaceBindersForFrame(
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* binder_map,
     content::RenderFrameHost* render_frame_host,
     const Extension* extension) const {
-  RegisterInterfacesForExtension(registry, render_frame_host, extension);
+  PopulateExtensionFrameBinders(binder_map, render_frame_host, extension);
 }
 
 std::unique_ptr<RuntimeAPIDelegate>
@@ -226,18 +224,21 @@ CastExtensionsBrowserClient::GetComponentExtensionResourceManager() {
 void CastExtensionsBrowserClient::BroadcastEventToRenderers(
     events::HistogramValue histogram_value,
     const std::string& event_name,
-    std::unique_ptr<base::ListValue> args) {
+    base::Value::List args,
+    bool dispatch_to_off_the_record_profiles) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::UI},
+    content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE,
         base::BindOnce(&CastExtensionsBrowserClient::BroadcastEventToRenderers,
                        base::Unretained(this), histogram_value, event_name,
-                       std::move(args)));
+                       std::move(args), dispatch_to_off_the_record_profiles));
     return;
   }
 
-  std::unique_ptr<Event> event(
-      new Event(histogram_value, event_name, std::move(args)));
+  // Currently ignoring the dispatch_to_off_the_record_profiles attribute
+  // as it is not necessary at the time
+  auto event =
+      std::make_unique<Event>(histogram_value, event_name, std::move(args));
   EventRouter::Get(browser_context_)->BroadcastEvent(std::move(event));
 }
 
@@ -266,7 +267,9 @@ CastExtensionsBrowserClient::GetExtensionWebContentsObserver(
 }
 
 KioskDelegate* CastExtensionsBrowserClient::GetKioskDelegate() {
-  return nullptr;
+  if (!kiosk_delegate_)
+    kiosk_delegate_.reset(new CastKioskDelegate());
+  return kiosk_delegate_.get();
 }
 
 bool CastExtensionsBrowserClient::IsLockScreenContext(

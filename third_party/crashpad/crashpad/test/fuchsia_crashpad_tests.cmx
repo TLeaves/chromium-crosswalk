@@ -1,25 +1,26 @@
 {
     "facets": {
         "fuchsia.test": {
-            "system-services": [
-                "fuchsia.posix.socket.Provider",
-                "fuchsia.net.NameLookup",
-                "fuchsia.net.SocketProvider"
-            ]
+            "injected-services": {
+                "fuchsia.net.name.Lookup": "fuchsia-pkg://fuchsia.com/crashpad-test#meta/dns-resolver.cmx",
+                "fuchsia.posix.socket.Provider": "fuchsia-pkg://fuchsia.com/crashpad-test#meta/netstack.cmx"
+            }
         }
     },
+    "include": [
+        "syslog/client.shard.cmx"
+    ],
     "program": {
-        "binary": "test/crashpad_tests"
+        "binary": "bin/crashpad_tests"
     },
     "sandbox": {
         "features": [
-            "system-temp",
-            "deprecated-ambient-replace-as-executable"
+            "deprecated-ambient-replace-as-executable",
+            "isolated-temp"
         ],
         "services": [
+            "fuchsia.net.name.Lookup",
             "fuchsia.posix.socket.Provider",
-            "fuchsia.net.NameLookup",
-            "fuchsia.net.SocketProvider",
             "fuchsia.process.Launcher"
         ]
     }

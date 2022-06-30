@@ -4,38 +4,47 @@
 
 #include <set>
 
+#include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/run_loop.h"
+#include "base/test/bind.h"
 #include "build/build_config.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/test/base/in_process_browser_test.h"
 #include "components/startup_metric_utils/browser/startup_metric_utils.h"
+#include "content/public/test/browser_test.h"
 
-using StartupMetricsTest = InProcessBrowserTest;
+#if BUILDFLAG(IS_ANDROID)
+#include "chrome/test/base/android/android_browser_test.h"
+#else
+#include "chrome/test/base/in_process_browser_test.h"
+#endif
+
+using StartupMetricsTest = PlatformBrowserTest;
 
 namespace {
 
 constexpr const char* kStartupMetrics[] = {
-    "Startup.BrowserMainToRendererMain",
+    "Startup.BrowserMessageLoopFirstIdle",
     "Startup.BrowserMessageLoopStartTime",
-    "Startup.BrowserMessageLoopStartTimeFromMainEntry3",
-    "Startup.BrowserOpenTabs",
+
+// Not Desktop specific but flaky on some Android bots.
+// TODO(crbug.com/1252126): Figure out why.
+#if !BUILDFLAG(IS_ANDROID)
+    "Startup.LoadTime.ApplicationStartToChromeMain",
+    "Startup.LoadTime.ProcessCreateToApplicationStart",
+#endif  // BUILDFLAG(IS_ANDROID)
+
+// Desktop specific metrics
+#if !BUILDFLAG(IS_ANDROID)
     "Startup.BrowserWindow.FirstPaint",
-    "Startup.BrowserWindow.FirstPaint.CompositingEnded",
     "Startup.BrowserWindowDisplay",
-    "Startup.FirstWebContents.MainFrameLoad2",
     "Startup.FirstWebContents.MainNavigationFinished",
     "Startup.FirstWebContents.MainNavigationStart",
-    "Startup.FirstWebContents.NonEmptyPaint2",
+    "Startup.FirstWebContents.NonEmptyPaint3",
     "Startup.FirstWebContents.RenderProcessHostInit.ToNonEmptyPaint",
-    "Startup.LoadTime.ExeMainToDllMain2",
-    "Startup.LoadTime.ProcessCreateToDllMain2",
-    "Startup.LoadTime.ProcessCreateToExeMain2",
-    "Startup.SystemUptime",
+#endif  // !BUILDFLAG(IS_ANDROID)
 
-#if defined(OS_WIN)
-    "Startup.BrowserMessageLoopStartHardFaultCount",
+#if BUILDFLAG(IS_WIN)
     "Startup.Temperature",
 #endif
 };
@@ -44,18 +53,23 @@ constexpr const char* kStartupMetrics[] = {
 
 // Verify that startup histograms are logged on browser startup.
 IN_PROC_BROWSER_TEST_F(StartupMetricsTest, ReportsValues) {
-  // This is usually done from the constructor of ChromeMainDelegate.
-  startup_metric_utils::RecordExeMainEntryPointTicks(base::TimeTicks::Now());
-
-  // This is usually done from ChromeBrowserMainParts::MainMessageLoopRun().
-  startup_metric_utils::RecordBrowserMainMessageLoopStart(
-      base::TimeTicks::Now(), false /* is_first_run */,
-      g_browser_process->local_state());
-
-  // Wait for all histograms to be recorded. The test will hang if an histogram
-  // is not recorded.
+  // Wait for all histograms to be recorded. The test will hit a RunLoop timeout
+  // if a histogram is not recorded.
   for (auto* const histogram : kStartupMetrics) {
-    while (!base::StatisticsRecorder::FindHistogram(histogram))
-      base::RunLoop().RunUntilIdle();
+    SCOPED_TRACE(histogram);
+
+    // Continue if histograms was already recorded.
+    if (base::StatisticsRecorder::FindHistogram(histogram))
+      continue;
+
+    // Else, wait until the histogram is recorded.
+    base::RunLoop run_loop;
+    auto histogram_observer = std::make_unique<
+        base::StatisticsRecorder::ScopedHistogramSampleObserver>(
+        histogram,
+        base::BindLambdaForTesting(
+            [&](const char* histogram_name, uint64_t name_hash,
+                base::HistogramBase::Sample sample) { run_loop.Quit(); }));
+    run_loop.Run();
   }
 }

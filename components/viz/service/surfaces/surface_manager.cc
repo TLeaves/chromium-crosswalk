@@ -11,11 +11,13 @@
 #include <utility>
 
 #include "base/containers/adapters.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/containers/queue.h"
 #include "base/logging.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/observer_list.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/default_tick_clock.h"
+#include "base/trace_event/trace_event.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/surfaces/surface.h"
@@ -30,26 +32,20 @@
 namespace viz {
 namespace {
 
-const char kUmaAliveSurfaces[] = "Compositing.SurfaceManager.AliveSurfaces";
-
-const char kUmaTemporaryReferences[] =
-    "Compositing.SurfaceManager.TemporaryReferences";
-
-constexpr base::TimeDelta kExpireInterval = base::TimeDelta::FromSeconds(10);
-
-const char kUmaRemovedTemporaryReference[] =
-    "Compositing.SurfaceManager.RemovedTemporaryReference";
+constexpr base::TimeDelta kExpireInterval = base::Seconds(10);
 
 }  // namespace
 
 SurfaceManager::SurfaceManager(
     SurfaceManagerDelegate* delegate,
-    base::Optional<uint32_t> activation_deadline_in_frames)
+    absl::optional<uint32_t> activation_deadline_in_frames,
+    size_t max_uncommitted_frames)
     : delegate_(delegate),
       activation_deadline_in_frames_(activation_deadline_in_frames),
       root_surface_id_(FrameSinkId(0u, 0u),
                        LocalSurfaceId(1u, base::UnguessableToken::Create())),
-      tick_clock_(base::DefaultTickClock::GetInstance()) {
+      tick_clock_(base::DefaultTickClock::GetInstance()),
+      max_uncommitted_frames_(max_uncommitted_frames) {
   thread_checker_.DetachFromThread();
 
   // Android WebView doesn't have a task runner and doesn't need the timer.
@@ -92,7 +88,7 @@ std::string SurfaceManager::SurfaceReferencesToString() {
 #endif
 
 void SurfaceManager::SetActivationDeadlineInFramesForTesting(
-    base::Optional<uint32_t> activation_deadline_in_frames) {
+    absl::optional<uint32_t> activation_deadline_in_frames) {
   activation_deadline_in_frames_ = activation_deadline_in_frames;
 }
 
@@ -119,8 +115,9 @@ Surface* SurfaceManager::CreateSurface(
   if (!allocation_group)
     return nullptr;
 
-  std::unique_ptr<Surface> surface = std::make_unique<Surface>(
-      surface_info, this, allocation_group, surface_client);
+  std::unique_ptr<Surface> surface =
+      std::make_unique<Surface>(surface_info, this, allocation_group,
+                                surface_client, max_uncommitted_frames_);
   surface->SetDependencyDeadline(
       std::make_unique<SurfaceDependencyDeadline>(tick_clock_));
   surface_map_[surface_info.id()] = std::move(surface);
@@ -191,14 +188,6 @@ void SurfaceManager::GarbageCollectSurfaces() {
   }
 
   SurfaceIdSet reachable_surfaces = GetLiveSurfaces();
-
-  // Log the number of reachable surfaces after a garbage collection.
-  UMA_HISTOGRAM_CUSTOM_COUNTS(kUmaAliveSurfaces, reachable_surfaces.size(), 1,
-                              200, 50);
-  // Log the number of temporary references after a garbage collection.
-  UMA_HISTOGRAM_CUSTOM_COUNTS(kUmaTemporaryReferences,
-                              temporary_references_.size(), 1, 200, 50);
-
   std::vector<SurfaceId> surfaces_to_delete;
 
   // Delete all destroyed and unreachable surfaces.
@@ -372,16 +361,8 @@ void SurfaceManager::RemoveTemporaryReferenceImpl(const SurfaceId& surface_id,
   auto begin_iter = frame_sink_temp_refs.begin();
 
   // Remove temporary references and range tracking information.
-  for (auto iter = begin_iter; iter != end_iter; ++iter) {
+  for (auto iter = begin_iter; iter != end_iter; ++iter)
     temporary_references_.erase(SurfaceId(frame_sink_id, *iter));
-
-    // If removing more than the temporary reference to |surface_id| then the
-    // reason for removing others is because they are being skipped.
-    const bool was_skipped = (*iter != surface_id.local_surface_id());
-    UMA_HISTOGRAM_ENUMERATION(kUmaRemovedTemporaryReference,
-                              was_skipped ? RemovedReason::SKIPPED : reason,
-                              RemovedReason::COUNT);
-  }
   frame_sink_temp_refs.erase(begin_iter, end_iter);
 
   // If last temporary reference is removed for |frame_sink_id| then cleanup
@@ -448,7 +429,7 @@ void SurfaceManager::ExpireOldTemporaryReferences() {
     RemoveTemporaryReferenceImpl(surface_id, RemovedReason::EXPIRED);
 }
 
-Surface* SurfaceManager::GetSurfaceForId(const SurfaceId& surface_id) {
+Surface* SurfaceManager::GetSurfaceForId(const SurfaceId& surface_id) const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto it = surface_map_.find(surface_id);
   if (it == surface_map_.end())
@@ -472,19 +453,27 @@ void SurfaceManager::FirstSurfaceActivation(const SurfaceInfo& surface_info) {
     observer.OnFirstSurfaceActivation(surface_info);
 }
 
-void SurfaceManager::SurfaceActivated(
-    Surface* surface,
-    base::Optional<base::TimeDelta> duration) {
+void SurfaceManager::OnSurfaceHasNewUncommittedFrame(Surface* surface) {
+  for (auto& observer : observer_list_)
+    observer.OnSurfaceHasNewUncommittedFrame(surface->surface_id());
+}
+
+void SurfaceManager::SurfaceActivated(Surface* surface) {
   // Trigger a display frame if necessary.
-  const CompositorFrame& frame = surface->GetActiveFrame();
-  if (!SurfaceModified(surface->surface_id(), frame.metadata.begin_frame_ack)) {
+  const CompositorFrameMetadata& metadata = surface->GetActiveFrameMetadata();
+  if (!SurfaceModified(surface->surface_id(), metadata.begin_frame_ack)) {
     TRACE_EVENT_INSTANT0("viz", "Damage not visible.",
                          TRACE_EVENT_SCOPE_THREAD);
+    surface->SendAckToClient();
+  } else if (HasBlockedEmbedder(surface->surface_id().frame_sink_id())) {
+    // If the Surface is a part of a blocked embedding group, Ack even if it is
+    // modified. This will allow frame production to continue for this client
+    // leading to the group being unblocked.
     surface->SendAckToClient();
   }
 
   for (auto& observer : observer_list_)
-    observer.OnSurfaceActivated(surface->surface_id(), duration);
+    observer.OnSurfaceActivated(surface->surface_id());
 }
 
 void SurfaceManager::SurfaceDestroyed(Surface* surface) {
@@ -641,6 +630,40 @@ bool SurfaceManager::HasBlockedEmbedder(
       return true;
   }
   return false;
+}
+
+void SurfaceManager::AggregatedFrameSinksChanged() {
+  if (delegate_)
+    delegate_->AggregatedFrameSinksChanged();
+}
+
+void SurfaceManager::CommitFramesInRangeRecursively(
+    const SurfaceRange& range,
+    const CommitPredicate& predicate) {
+  // Technically we need only latest active surface, but because activation will
+  // happen during commit, it's impossible to predict which one will be active,
+  // so we're committing all surfaces in range.
+
+  // If start of the range is in a different allocation group, process it first
+  // to keep activation in order.
+  if (range.start() && range.start()->local_surface_id().embed_token() !=
+                           range.end().local_surface_id().embed_token()) {
+    if (auto* allocation_group =
+            GetAllocationGroupForSurfaceId(*range.start())) {
+      for (auto* surface : allocation_group->surfaces()) {
+        if (range.IsInRangeInclusive(surface->surface_id()))
+          surface->CommitFramesRecursively(predicate);
+      }
+    }
+  }
+
+  // Process the allocation group of the end of the range.
+  if (auto* allocation_group = GetAllocationGroupForSurfaceId(range.end())) {
+    for (auto* surface : allocation_group->surfaces()) {
+      if (range.IsInRangeInclusive(surface->surface_id()))
+        surface->CommitFramesRecursively(predicate);
+    }
+  }
 }
 
 }  // namespace viz

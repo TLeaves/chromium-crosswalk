@@ -4,9 +4,10 @@
 
 #include "ui/events/gesture_detection/motion_event_generic.h"
 
+#include <ostream>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/math_constants.h"
 #include "ui/events/base_event_utils.h"
@@ -54,6 +55,9 @@ PointerProperties::PointerProperties(const MotionEvent& event,
       source_device_id(0) {}
 
 PointerProperties::PointerProperties(const PointerProperties& other) = default;
+
+PointerProperties& PointerProperties::operator=(
+    const PointerProperties& other) = default;
 
 void PointerProperties::SetAxesAndOrientation(float radius_x,
                                               float radius_y,

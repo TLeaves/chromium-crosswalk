@@ -14,14 +14,20 @@
 #include "components/sync/driver/mock_sync_service.h"
 #include "components/sync_preferences/pref_service_mock_factory.h"
 #include "components/sync_preferences/pref_service_syncable.h"
+#import "ios/chrome/app/application_delegate/app_state.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#include "ios/chrome/browser/main/test_browser.h"
 #include "ios/chrome/browser/prefs/browser_prefs.h"
 #include "ios/chrome/browser/signin/authentication_service_factory.h"
 #import "ios/chrome/browser/signin/authentication_service_fake.h"
-#include "ios/chrome/browser/sync/profile_sync_service_factory.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service_factory.h"
+#include "ios/chrome/browser/sync/sync_service_factory.h"
 #include "ios/chrome/browser/sync/sync_setup_service.h"
 #include "ios/chrome/browser/sync/sync_setup_service_factory.h"
+#import "ios/chrome/browser/ui/main/scene_state.h"
+#import "ios/chrome/browser/ui/main/scene_state_browser_agent.h"
 #import "ios/chrome/browser/ui/settings/settings_navigation_controller.h"
 #import "ios/public/provider/chrome/browser/signin/fake_chrome_identity_service.h"
 #import "testing/gtest_mac.h"
@@ -72,13 +78,17 @@ void PassphraseTableViewControllerTest::SetUp() {
           &AuthenticationServiceFake::CreateAuthenticationService));
   test_cbs_builder.SetPrefService(CreatePrefService());
   chrome_browser_state_ = test_cbs_builder.Build();
+  browser_ = std::make_unique<TestBrowser>(chrome_browser_state_.get());
+  app_state_ = [[AppState alloc] initWithBrowserLauncher:nil
+                                      startupInformation:nil
+                                     applicationDelegate:nil];
+  scene_state_ = [[SceneState alloc] initWithAppState:app_state_];
+  SceneStateBrowserAgent::CreateForBrowser(browser_.get(), scene_state_);
 
   fake_sync_service_ = static_cast<syncer::MockSyncService*>(
-      ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+      SyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
           chrome_browser_state_.get(),
           base::BindRepeating(&CreateNiceMockSyncService)));
-  ON_CALL(*fake_sync_service_, GetRegisteredDataTypes())
-      .WillByDefault(Return(syncer::ModelTypeSet()));
 
   // Set up non-default return values for our sync service mock.
   ON_CALL(*fake_sync_service_->GetMockUserSettings(), IsPassphraseRequired())
@@ -89,10 +99,22 @@ void PassphraseTableViewControllerTest::SetUp() {
   ios::FakeChromeIdentityService* identityService =
       ios::FakeChromeIdentityService::GetInstanceFromChromeProvider();
   identityService->AddIdentities(@[ @"identity1" ]);
-  ChromeIdentity* identity =
-      [identityService->GetAllIdentitiesSortedForDisplay() objectAtIndex:0];
-  AuthenticationServiceFactory::GetForBrowserState(chrome_browser_state_.get())
-      ->SignIn(identity);
+
+  ChromeAccountManagerService* account_manager_service =
+      ChromeAccountManagerServiceFactory::GetForBrowserState(
+          chrome_browser_state_.get());
+  AuthenticationService* auth_service =
+      AuthenticationServiceFactory::GetForBrowserState(
+          chrome_browser_state_.get());
+  auth_service->SignIn(account_manager_service->GetDefaultIdentity(), nil);
+}
+
+void PassphraseTableViewControllerTest::TearDown() {
+  // If the navigation controller exists, clear any of its child view
+  // controllers.
+  [nav_controller_ setViewControllers:@[] animated:NO];
+  nav_controller_ = nil;
+  ChromeTableViewControllerTest::TearDown();
 }
 
 void PassphraseTableViewControllerTest::SetUpNavigationController(
@@ -100,7 +122,7 @@ void PassphraseTableViewControllerTest::SetUpNavigationController(
   dummy_controller_ = [[UIViewController alloc] init];
   nav_controller_ = [[SettingsNavigationController alloc]
       initWithRootViewController:dummy_controller_
-                    browserState:chrome_browser_state_.get()
+                         browser:browser_.get()
                         delegate:nil];
   [nav_controller_ pushViewController:test_controller animated:NO];
 }

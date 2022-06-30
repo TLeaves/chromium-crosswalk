@@ -30,10 +30,21 @@ import errno
 import hashlib
 import os
 import re
-import StringIO
 import unittest
 
 from blinkpy.common.system.filesystem import _remove_contents, _sanitize_filename
+
+from six import ensure_binary, StringIO
+
+_TEXT_ENCODING = 'utf-8'
+
+
+def _ensure_binary_contents(file_contents):
+    # Iterate over a copy while the underlying mapping is mutated.
+    for path, contents in list(file_contents.items()):
+        if contents is not None:
+            contents = ensure_binary(contents, _TEXT_ENCODING)
+        file_contents[path] = contents
 
 
 class MockFileSystem(object):
@@ -58,6 +69,7 @@ class MockFileSystem(object):
         self.cwd = cwd
         self.dirs = set(dirs or [])
         self.dirs.add(cwd)
+        _ensure_binary_contents(self.files)
         for file_path in self.files:
             directory = self.dirname(file_path)
             while directory not in self.dirs:
@@ -102,7 +114,8 @@ class MockFileSystem(object):
         return home_directory + self.sep + parts[1]
 
     def path_to_module(self, module_name):
-        return '/mock-checkout/third_party/blink/tools/' + module_name.replace('.', '/') + '.py'
+        return ('/mock-checkout/third_party/blink/tools/' +
+                module_name.replace('.', '/') + '.py')
 
     def chdir(self, path):
         path = self.normpath(path)
@@ -137,7 +150,8 @@ class MockFileSystem(object):
         file_filter = file_filter or filter_all
         files = []
         if self.isfile(path):
-            if file_filter(self, self.dirname(path), self.basename(path)) and self.files[path] is not None:
+            if (file_filter(self, self.dirname(path), self.basename(path))
+                    and self.files[path] is not None):
                 files.append(path)
             return files
 
@@ -153,11 +167,13 @@ class MockFileSystem(object):
                 continue
 
             suffix = filename[len(path) - 1:]
-            if any(dir_substring in suffix for dir_substring in dir_substrings):
+            if any(dir_substring in suffix
+                   for dir_substring in dir_substrings):
                 continue
 
             dirpath, basename = self._split(filename)
-            if file_filter(self, dirpath, basename) and self.files[filename] is not None:
+            if (file_filter(self, dirpath, basename)
+                    and self.files[filename] is not None):
                 files.append(filename)
 
         return files
@@ -173,8 +189,12 @@ class MockFileSystem(object):
         path_filter = lambda path: re.match(glob_string, path)
 
         # We could use fnmatch.fnmatch, but that might not do the right thing on Windows.
-        existing_files = [path for path, contents in self.files.items() if contents is not None]
-        return filter(path_filter, existing_files) + filter(path_filter, self.dirs)
+        existing_files = [
+            path for path, contents in self.files.items()
+            if contents is not None
+        ]
+        return list(filter(path_filter, existing_files)) + list(
+            filter(path_filter, self.dirs))
 
     def isabs(self, path):
         return path.startswith(self.sep)
@@ -252,7 +272,6 @@ class MockFileSystem(object):
 
     def mkdtemp(self, **kwargs):
         class TemporaryDirectory(object):
-
             def __init__(self, fs, **kwargs):
                 self._kwargs = kwargs
                 self._filesystem = fs
@@ -344,16 +363,20 @@ class MockFileSystem(object):
     def open_text_file_for_reading(self, path):
         if self.files[path] is None:
             self._raise_not_found(path)
-        return ReadableTextFileObject(self, path, self.files[path])
+        contents = self.files[path].decode(_TEXT_ENCODING)
+        return ReadableTextFileObject(self, path, contents)
 
     def open_text_file_for_writing(self, path):
         return WritableTextFileObject(self, path)
 
+    def open_text_file_for_appending(self, path):
+        return WritableTextFileObject(self, path, append=True)
+
     def read_text_file(self, path):
-        return self.read_binary_file(path).decode('utf-8')
+        return self.read_binary_file(path).decode(_TEXT_ENCODING)
 
     def write_text_file(self, path, contents):
-        return self.write_binary_file(path, contents.encode('utf-8'))
+        return self.write_binary_file(path, contents.encode(_TEXT_ENCODING))
 
     def sha1(self, path):
         contents = self.read_binary_file(path)
@@ -406,11 +429,13 @@ class MockFileSystem(object):
         for file_path in self.files:
             # We need to add a trailing separator to path_to_remove to avoid matching
             # cases like path_to_remove='/foo/b' and file_path='/foo/bar/baz'.
-            if file_path == path_to_remove or file_path.startswith(path_to_remove + self.sep):
+            if file_path == path_to_remove or file_path.startswith(
+                    path_to_remove + self.sep):
                 self.files[file_path] = None
 
         def should_remove(directory):
-            return directory == path_to_remove or directory.startswith(path_to_remove + self.sep)
+            return directory == path_to_remove or directory.startswith(
+                path_to_remove + self.sep)
 
         self.dirs = {d for d in self.dirs if not should_remove(d)}
 
@@ -423,7 +448,8 @@ class MockFileSystem(object):
 
         for source_file in list(self.files):
             if source_file.startswith(source):
-                destination_path = self.join(destination, self.relpath(source_file, source))
+                destination_path = self.join(destination,
+                                             self.relpath(source_file, source))
                 self.maybe_make_directory(self.dirname(destination_path))
                 self.files[destination_path] = self.files[source_file]
 
@@ -447,12 +473,12 @@ class MockFileSystem(object):
 
 
 class WritableBinaryFileObject(object):
-
-    def __init__(self, fs, path):
+    def __init__(self, fs, path, append=False):
         self.fs = fs
         self.path = path
         self.closed = False
-        self.fs.files[path] = ''
+        if path not in self.fs.files or not append:
+            self.setup_path(path)
 
     def __enter__(self):
         return self
@@ -467,25 +493,41 @@ class WritableBinaryFileObject(object):
         self.fs.files[self.path] += string
         self.fs.written_files[self.path] = self.fs.files[self.path]
 
+    def setup_path(self, path):
+        self.fs.files[path] = b''
+
 
 class WritableTextFileObject(WritableBinaryFileObject):
+    def __init__(self, fs, path, append=False):
+        super(WritableTextFileObject, self).__init__(fs, path, append)
 
     def write(self, string):
-        WritableBinaryFileObject.write(self, string.encode('utf-8'))
+        contents = string.encode(_TEXT_ENCODING)
+        super(WritableTextFileObject, self).write(contents)
 
     def writelines(self, lines):
-        self.fs.files[self.path] = "".join(lines).encode('utf-8')
-        self.fs.written_files[self.path] = self.fs.files[self.path]
+        contents = b''.join(line.encode(_TEXT_ENCODING) for line in lines)
+        self.fs.files[self.path] = contents
+        self.fs.written_files[self.path] = contents
+
+    def setup_path(self, path):
+        super(WritableTextFileObject, self).setup_path(path)
 
 
 class ReadableBinaryFileObject(object):
-
     def __init__(self, fs, path, data):
         self.fs = fs
         self.path = path
         self.closed = False
         self.data = data
         self.offset = 0
+        try:
+            # Maintain a text version if possible to
+            # support readline.
+            data_str = data.decode(_TEXT_ENCODING, 'replace')
+            self.text = StringIO(data_str)
+        except:
+            pass
 
     def __enter__(self):
         return self
@@ -503,6 +545,12 @@ class ReadableBinaryFileObject(object):
         self.offset += num_bytes
         return self.data[start:self.offset]
 
+    def readline(self, length=None):
+        return self.text.readline(length).encode(_TEXT_ENCODING, 'replace')
+
+    def readlines(self):
+        return self.text.readlines().encode(_TEXT_ENCODING, 'replace')
+
     def seek(self, offset, whence=os.SEEK_SET):
         if whence == os.SEEK_SET:
             self.offset = offset
@@ -515,9 +563,8 @@ class ReadableBinaryFileObject(object):
 
 
 class ReadableTextFileObject(ReadableBinaryFileObject):
-
     def __init__(self, fs, path, data):
-        super(ReadableTextFileObject, self).__init__(fs, path, StringIO.StringIO(data.decode('utf-8')))
+        super(ReadableTextFileObject, self).__init__(fs, path, StringIO(data))
 
     def close(self):
         self.data.close()
@@ -553,6 +600,7 @@ class FileSystemTestCase(unittest.TestCase):
             self.test_case = test_case
             self.mock_filesystem = mock_filesystem
             self.expected_files = expected_files
+            _ensure_binary_contents(self.expected_files)
 
         def __enter__(self):
             # Make sure that the expected_files aren't already in the mock
@@ -569,7 +617,9 @@ class FileSystemTestCase(unittest.TestCase):
 
             for filepath in sorted(self.expected_files):
                 self.test_case.assertIn(filepath, self.mock_filesystem.files)
-                self.test_case.assertEqual(self.expected_files[filepath], self.mock_filesystem.files[filepath])
+                self.test_case.assertEqual(
+                    self.expected_files[filepath],
+                    self.mock_filesystem.files[filepath])
 
     def assertFilesAdded(self, mock_filesystem, files):
         """Assert that the given files where added to the mock_filesystem.

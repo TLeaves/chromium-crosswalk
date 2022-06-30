@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "ui/snapshot/snapshot.h"
 
@@ -21,17 +20,18 @@ namespace ui {
 // ui::GrabWindowSnapshot callback.
 class SnapshotAsync {
  public:
+  SnapshotAsync() = delete;
+  SnapshotAsync(const SnapshotAsync&) = delete;
+  SnapshotAsync& operator=(const SnapshotAsync&) = delete;
+
   static void ScaleCopyOutputResult(
-      const GrabWindowSnapshotAsyncCallback& callback,
+      GrabWindowSnapshotAsyncCallback callback,
       const gfx::Size& target_size,
       std::unique_ptr<viz::CopyOutputResult> result);
 
   static void RunCallbackWithCopyOutputResult(
-      const GrabWindowSnapshotAsyncCallback& callback,
+      GrabWindowSnapshotAsyncCallback callback,
       std::unique_ptr<viz::CopyOutputResult> result);
-
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(SnapshotAsync);
 };
 
 }  // namespace ui

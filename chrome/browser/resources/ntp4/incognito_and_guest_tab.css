@@ -4,14 +4,14 @@
  *
  * Incognito and guest mode NTP shared CSS. */
 
-body {
+ body {
   -webkit-font-smoothing: antialiased;
   font-size: 85%;
 }
 
 @media (prefers-color-scheme: dark) {
   html {
-    background: rgb(50, 54, 57);
+    background: rgb(53, 54, 58);
     color: rgb(232, 234, 237);  /* --google-grey-200 */
   }
 }
@@ -48,7 +48,7 @@ a:hover {
 
 @media (prefers-color-scheme: dark) {
   :-webkit-any(a, .learn-more-button) {
-    color: rgb(138, 180, 248);  /* --google-blue-refresh-300 */
+    color: rgb(138, 180, 248);  /* --google-blue-300 */
   }
 }
 

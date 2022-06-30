@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "url/gurl.h"
 
@@ -17,17 +16,11 @@ class Origin;
 
 namespace extensions {
 
-// The name of the event_bindings module.
-extern const char kEventBindings[];
-
-// The name of the schemaUtils module.
-extern const char kSchemaUtils[];
-
 // Determine whether or not a source came from an extension. |source| can link
 // to a page or a script, and can be external (e.g., "http://www.google.com"),
 // extension-related (e.g., "chrome-extension://<extension_id>/background.js"),
 // or internal (e.g., "event_bindings" or "schemaUtils").
-bool IsSourceFromAnExtension(const base::string16& source);
+bool IsSourceFromAnExtension(const std::u16string& source);
 
 }  // namespace extensions
 
@@ -57,19 +50,6 @@ std::string GetWebstoreItemDetailURLPrefix();
 // etc.) about an extension from the webstore as JSON.
 GURL GetWebstoreItemJsonDataURL(const std::string& extension_id);
 
-// Returns the URL used to get webstore search results in JSON format. The URL
-// returns a JSON dictionary that has the search results (under "results").
-// Each entry in the array is a dictionary as the data returned for
-// GetWebstoreItemJsonDataURL above. |query| is the user typed query string.
-// |host_language_code| is the host language code, e.g. en_US. Both arguments
-// will be escaped and added as a query parameter to the returned web store
-// json search URL.
-GURL GetWebstoreJsonSearchUrl(const std::string& query,
-                              const std::string& host_language_code);
-
-// Returns the URL of the web store search results page for |query|.
-GURL GetWebstoreSearchPageUrl(const std::string& query);
-
 // Returns the compile-time constant webstore update url specific to
 // Chrome. Usually you should prefer using GetWebstoreUpdateUrl.
 GURL GetDefaultWebstoreUpdateUrl();
@@ -87,8 +67,8 @@ GURL GetWebstoreReportAbuseUrl(const std::string& extension_id,
 // and path, not scheme, query, etc.)
 bool IsWebstoreUpdateUrl(const GURL& update_url);
 
-// Returns true if the URL points to an extension blacklist.
-bool IsBlacklistUpdateUrl(const GURL& url);
+// Returns true if the URL points to an extension blocklist.
+bool IsBlocklistUpdateUrl(const GURL& url);
 
 // Returns true if the origin points to an URL used for safebrowsing.
 // TODO(devlin): Update other methods to also take an url::Origin?

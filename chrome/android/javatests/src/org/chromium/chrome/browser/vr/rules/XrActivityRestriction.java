@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.vr.rules;
 
-import android.support.annotation.IntDef;
+import androidx.annotation.IntDef;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -40,5 +40,6 @@ public @interface XrActivityRestriction {
     /**
      * @return A list of activity restrictions.
      */
-    public @SupportedActivity int[] value();
+    @SupportedActivity
+    public int[] value();
 }

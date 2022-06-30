@@ -5,8 +5,6 @@
 #ifndef CHROME_BROWSER_CONTENT_SETTINGS_CHROME_CONTENT_SETTINGS_UTILS_H_
 #define CHROME_BROWSER_CONTENT_SETTINGS_CHROME_CONTENT_SETTINGS_UTILS_H_
 
-#include "build/build_config.h"
-
 // Put utility functions only used by //chrome code here. If a function declared
 // here would be meaningfully shared with other platforms, consider moving it to
 // components/content_settings/core/browser/content_settings_utils.h.
@@ -16,18 +14,6 @@ class WebContents;
 }  // namespace content
 
 namespace content_settings {
-
-// UMA histogram for the mixed script shield. The enum values correspond to
-// histogram entries, so do not remove any existing values.
-enum MixedScriptAction {
-  MIXED_SCRIPT_ACTION_DISPLAYED_SHIELD = 0,
-  MIXED_SCRIPT_ACTION_DISPLAYED_BUBBLE,
-  MIXED_SCRIPT_ACTION_CLICKED_ALLOW,
-  MIXED_SCRIPT_ACTION_CLICKED_LEARN_MORE,
-  MIXED_SCRIPT_ACTION_COUNT
-};
-
-void RecordMixedScriptAction(MixedScriptAction action);
 
 // UMA histogram for the plugins broken puzzle piece. The enum values
 // correspond to histogram entries, so do not remove any existing values.

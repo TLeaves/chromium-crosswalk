@@ -13,15 +13,14 @@
 #include "content/public/browser/web_ui.h"
 
 ConflictsHandler::ConflictsHandler()
-    : conflicts_data_fetcher_(nullptr, base::OnTaskRunnerDeleter(nullptr)),
-      weak_ptr_factory_(this) {}
+    : conflicts_data_fetcher_(nullptr, base::OnTaskRunnerDeleter(nullptr)) {}
 
 ConflictsHandler::~ConflictsHandler() = default;
 
 void ConflictsHandler::RegisterMessages() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  web_ui()->RegisterMessageCallback(
+  web_ui()->RegisterDeprecatedMessageCallback(
       "requestModuleList",
       base::BindRepeating(&ConflictsHandler::HandleRequestModuleList,
                           base::Unretained(this)));
@@ -29,12 +28,13 @@ void ConflictsHandler::RegisterMessages() {
 
 void ConflictsHandler::HandleRequestModuleList(const base::ListValue* args) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  base::Value::ConstListView args_list = args->GetListDeprecated();
 
   // Make sure the JS doesn't call 'requestModuleList' more than once.
   // TODO(739291): It would be better to kill the renderer instead of the
   // browser for malformed messages.
-  CHECK_EQ(1U, args->GetSize());
-  CHECK(args->GetString(0, &module_list_callback_id_));
+  CHECK_EQ(1U, args_list.size());
+  module_list_callback_id_ = args_list[0].GetString();  // CHECKs if not string
 
   conflicts_data_fetcher_ = ConflictsDataFetcher::Create(
       base::BindOnce(&ConflictsHandler::OnConflictsDataFetched,

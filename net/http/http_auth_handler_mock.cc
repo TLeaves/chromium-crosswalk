@@ -9,8 +9,8 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/net_errors.h"
 #include "net/dns/host_resolver.h"
@@ -41,15 +41,7 @@ void PrintTo(const HttpAuthHandlerMock::State& state, ::std::ostream* os) {
   }
 }
 
-HttpAuthHandlerMock::HttpAuthHandlerMock()
-    : state_(State::WAIT_FOR_INIT),
-      generate_async_(false),
-      generate_rv_(OK),
-      auth_token_(nullptr),
-      first_round_(true),
-      connection_based_(false),
-      allows_default_credentials_(false),
-      allows_explicit_credentials_(true) {}
+HttpAuthHandlerMock::HttpAuthHandlerMock() = default;
 
 HttpAuthHandlerMock::~HttpAuthHandlerMock() = default;
 
@@ -70,8 +62,10 @@ bool HttpAuthHandlerMock::AllowsExplicitCredentials() {
   return allows_explicit_credentials_;
 }
 
-bool HttpAuthHandlerMock::Init(HttpAuthChallengeTokenizer* challenge,
-                               const SSLInfo& ssl_info) {
+bool HttpAuthHandlerMock::Init(
+    HttpAuthChallengeTokenizer* challenge,
+    const SSLInfo& ssl_info,
+    const NetworkIsolationKey& network_isolation_key) {
   EXPECT_EQ(State::WAIT_FOR_INIT, state_);
   state_ = State::WAIT_FOR_GENERATE_AUTH_TOKEN;
   auth_scheme_ = HttpAuth::AUTH_SCHEME_MOCK;
@@ -121,7 +115,7 @@ HttpAuth::AuthorizationResult HttpAuthHandlerMock::HandleAnotherChallengeImpl(
     return HttpAuth::AUTHORIZATION_RESULT_REJECT;
   }
 
-  if (!base::LowerCaseEqualsASCII(challenge->scheme(), "mock")) {
+  if (challenge->auth_scheme() != "mock") {
     state_ = State::DONE;
     return HttpAuth::AUTHORIZATION_RESULT_INVALID;
   }
@@ -145,8 +139,7 @@ void HttpAuthHandlerMock::OnGenerateAuthToken() {
   std::move(callback_).Run(generate_rv_);
 }
 
-HttpAuthHandlerMock::Factory::Factory()
-    : do_init_from_challenge_(false) {
+HttpAuthHandlerMock::Factory::Factory() {
   // TODO(cbentzel): Default do_init_from_challenge_ to true.
 }
 
@@ -161,7 +154,8 @@ int HttpAuthHandlerMock::Factory::CreateAuthHandler(
     HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
     const SSLInfo& ssl_info,
-    const GURL& origin,
+    const NetworkIsolationKey& network_isolation_key,
+    const url::SchemeHostPort& scheme_host_port,
     CreateReason reason,
     int nonce_count,
     const NetLogWithSource& net_log,
@@ -174,9 +168,11 @@ int HttpAuthHandlerMock::Factory::CreateAuthHandler(
   std::vector<std::unique_ptr<HttpAuthHandler>>& handlers = handlers_[target];
   handlers.erase(handlers.begin());
   if (do_init_from_challenge_ &&
-      !tmp_handler->InitFromChallenge(challenge, target, ssl_info, origin,
-                                      net_log))
+      !tmp_handler->InitFromChallenge(challenge, target, ssl_info,
+                                      network_isolation_key, scheme_host_port,
+                                      net_log)) {
     return ERR_INVALID_RESPONSE;
+  }
   handler->swap(tmp_handler);
   return OK;
 }

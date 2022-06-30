@@ -14,9 +14,11 @@
 
 #include "util/stdlib/strnlen.h"
 
-#if defined(OS_MACOSX) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
+#include "build/build_config.h"
 
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+#if BUILDFLAG(IS_MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_10_7
+
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_10_7
 // Redeclare a method only available on Mac OS X 10.7 and later to suppress a
 // -Wpartial-availability warning.
 extern "C" {
@@ -27,7 +29,7 @@ size_t strnlen(const char* string, size_t max_length);
 namespace crashpad {
 
 size_t strnlen(const char* string, size_t max_length) {
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_10_7
   if (::strnlen) {
     return ::strnlen(string, max_length);
   }

@@ -8,11 +8,9 @@
 #include <string>
 
 #include "base/component_export.h"
-#include "base/macros.h"
-#include "base/strings/string16.h"
 
 namespace base {
-class DictionaryValue;
+class Value;
 }
 
 namespace chromeos {
@@ -41,6 +39,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnect {
     // Shows UI to setup a mobile network.
     virtual void ShowMobileSetupDialog(const std::string& network_id) = 0;
 
+    // Shows UI displaying carrier network account details.
+    virtual void ShowCarrierAccountDetail(const std::string& network_id) = 0;
+
     // Shows an error notification. |error_name| is an error defined in
     // NetworkConnectionHandler. |network_id| may be empty.
     virtual void ShowNetworkConnectError(const std::string& error_name,
@@ -60,8 +61,14 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnect {
   // Destroys the global NetworkConnect object.
   static void Shutdown();
 
-  // Returns the global NetworkConnect object if initialized or NULL.
+  // Returns true if the global NetworkConnect object is initialized.
+  static bool IsInitialized();
+
+  // Returns the global NetworkConnect object if initialized or null.
   static NetworkConnect* Get();
+
+  NetworkConnect(const NetworkConnect&) = delete;
+  NetworkConnect& operator=(const NetworkConnect&) = delete;
 
   virtual ~NetworkConnect();
 
@@ -82,34 +89,37 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnect {
   // setup and either shows a notification or opens the mobile setup dialog.
   virtual void ShowMobileSetup(const std::string& network_id) = 0;
 
+  // Opens the carrier account detail page.
+  virtual void ShowCarrierAccountDetail(const std::string& network_id) = 0;
+
   // Configures a network with a dictionary of Shill properties, then sends a
   // connect request. The profile is set according to 'shared' if allowed.
   // TODO(stevenjb): Use ONC properties instead of shill.
-  virtual void ConfigureNetworkIdAndConnect(
-      const std::string& network_id,
-      const base::DictionaryValue& shill_properties,
-      bool shared) = 0;
+  virtual void ConfigureNetworkIdAndConnect(const std::string& network_id,
+                                            const base::Value& shill_properties,
+                                            bool shared) = 0;
 
   // Requests a new network configuration to be created from a dictionary of
   // Shill properties and sends a connect request if the configuration succeeds.
   // The profile used is determined by |shared|.
   // TODO(stevenjb): Use ONC properties instead of shill.
-  virtual void CreateConfigurationAndConnect(
-      base::DictionaryValue* shill_properties,
-      bool shared) = 0;
+  virtual void CreateConfigurationAndConnect(base::Value* shill_properties,
+                                             bool shared) = 0;
 
   // Requests a new network configuration to be created from a dictionary of
   // Shill properties. The profile used is determined by |shared|.
-  virtual void CreateConfiguration(base::DictionaryValue* shill_properties,
+  virtual void CreateConfiguration(base::Value* shill_properties,
                                    bool shared) = 0;
 
  protected:
   NetworkConnect();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NetworkConnect);
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove when moved to ash
+namespace ash {
+using ::chromeos::NetworkConnect;
+}
 
 #endif  // CHROMEOS_NETWORK_NETWORK_CONNECT_H_

@@ -15,10 +15,9 @@
 #include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "mojo/public/cpp/bindings/associated_group.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr_info.h"
 #include "mojo/public/cpp/bindings/connection_error_callback.h"
@@ -37,7 +36,7 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS) AssociatedInterfacePtrStateBase {
 
   uint32_t version() const { return version_; }
 
-  void QueryVersion(const base::Callback<void(uint32_t)>& callback);
+  void QueryVersion(base::OnceCallback<void(uint32_t)> callback);
   void RequireVersion(uint32_t version);
   void FlushForTesting();
   void CloseWithReason(uint32_t custom_reason, const std::string& description);
@@ -76,19 +75,27 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS) AssociatedInterfacePtrStateBase {
     endpoint_client_->AcceptWithResponder(&message, std::move(responder));
   }
 
+  scoped_refptr<ThreadSafeProxy> CreateThreadSafeProxy(
+      scoped_refptr<ThreadSafeProxy::Target> target) {
+    return endpoint_client_->CreateThreadSafeProxy(std::move(target));
+  }
+
  protected:
   void Swap(AssociatedInterfacePtrStateBase* other);
   void Bind(ScopedInterfaceEndpointHandle handle,
             uint32_t version,
             std::unique_ptr<MessageReceiver> validator,
             scoped_refptr<base::SequencedTaskRunner> runner,
-            const char* interface_name);
+            const char* interface_name,
+            MessageToStableIPCHashCallback ipc_hash_callback,
+            MessageToMethodNameCallback method_name_callback,
+            MessageToMethodAddressCallback method_address_callback);
   ScopedInterfaceEndpointHandle PassHandle();
 
   InterfaceEndpointClient* endpoint_client() { return endpoint_client_.get(); }
 
  private:
-  void OnQueryVersion(const base::Callback<void(uint32_t)>& callback,
+  void OnQueryVersion(base::OnceCallback<void(uint32_t)> callback,
                       uint32_t version);
 
   std::unique_ptr<InterfaceEndpointClient> endpoint_client_;
@@ -100,7 +107,10 @@ class AssociatedInterfacePtrState : public AssociatedInterfacePtrStateBase {
  public:
   using Proxy = typename Interface::Proxy_;
 
-  AssociatedInterfacePtrState() {}
+  AssociatedInterfacePtrState() = default;
+  AssociatedInterfacePtrState(const AssociatedInterfacePtrState&) = delete;
+  AssociatedInterfacePtrState& operator=(const AssociatedInterfacePtrState&) =
+      delete;
   ~AssociatedInterfacePtrState() = default;
 
   Proxy* instance() {
@@ -119,8 +129,9 @@ class AssociatedInterfacePtrState : public AssociatedInterfacePtrStateBase {
     AssociatedInterfacePtrStateBase::Bind(
         info.PassHandle(), info.version(),
         std::make_unique<typename Interface::ResponseValidator_>(),
-        std::move(runner), Interface::Name_);
-    proxy_.reset(new Proxy(endpoint_client()));
+        std::move(runner), Interface::Name_, Interface::MessageToStableIPCHash_,
+        Interface::MessageToMethodName_, Interface::MessageToMethodAddress_);
+    proxy_ = std::make_unique<Proxy>(endpoint_client());
   }
 
   // After this method is called, the object is in an invalid state and
@@ -133,8 +144,6 @@ class AssociatedInterfacePtrState : public AssociatedInterfacePtrStateBase {
 
  private:
   std::unique_ptr<Proxy> proxy_;
-
-  DISALLOW_COPY_AND_ASSIGN(AssociatedInterfacePtrState);
 };
 
 }  // namespace internal

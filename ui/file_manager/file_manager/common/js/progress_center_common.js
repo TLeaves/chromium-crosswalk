@@ -3,27 +3,10 @@
 // found in the LICENSE file.
 
 /**
- * Event of the ProgressCenter class.
- * @const @enum {string}
- */
-const ProgressCenterEvent = {
-  /**
-   * Background page notifies item update to application windows.
-   */
-  ITEM_UPDATED: 'itemUpdated',
-
-  /**
-   * Background page notifies all the items are cleared.
-   */
-  RESET: 'reset'
-};
-Object.freeze(ProgressCenterEvent);
-
-/**
  * State of progress items.
  * @const @enum {string}
  */
-const ProgressItemState = {
+export const ProgressItemState = {
   PROGRESSING: 'progressing',
   COMPLETED: 'completed',
   ERROR: 'error',
@@ -35,27 +18,39 @@ Object.freeze(ProgressItemState);
  * Type of progress items.
  * @const @enum {string}
  */
-const ProgressItemType = {
+export const ProgressItemType = {
   // The item is file copy operation.
   COPY: 'copy',
-  // The item is file move operation.
-  MOVE: 'move',
   // The item is file delete operation.
   DELETE: 'delete',
+  // The item is emptying the trash operation.
+  EMPTY_TRASH: 'empty-trash',
+  // The item is file extract operation.
+  EXTRACT: 'extract',
+  // The item is file move operation.
+  MOVE: 'move',
   // The item is file zip operation.
   ZIP: 'zip',
   // The item is drive sync operation.
   SYNC: 'sync',
+  // The item is restoring the trash.
+  RESTORE: 'restore',
   // The item is general file transfer operation.
   // This is used for the mixed operation of summarized item.
-  TRANSFER: 'transfer'
+  TRANSFER: 'transfer',
+  // The item is external drive format operation.
+  FORMAT: 'format',
+  // The item is archive operation.
+  MOUNT_ARCHIVE: 'mount_archive',
+  // The item is external drive partitioning operation.
+  PARTITION: 'partition'
 };
 Object.freeze(ProgressItemType);
 
 /**
  * Item of the progress center.
  */
-class ProgressCenterItem {
+export class ProgressCenterItem {
   constructor() {
     /**
      * Item ID.
@@ -86,13 +81,6 @@ class ProgressCenterItem {
      * @type {string}
      */
     this.destinationMessage = '';
-
-    /**
-     * Optional sub message for the progress item.
-     * TODO(crbug.com/947388) get rid of the subMessage field.
-     * @type {string}
-     */
-    this.subMessage = '';
 
     /**
      * Number of items being processed.
@@ -136,6 +124,12 @@ class ProgressCenterItem {
      * @type {?function()}
      */
     this.cancelCallback = null;
+
+    /**
+     * The predicted remaining time to complete the progress item in seconds.
+     * @type {number}
+     */
+    this.remainingTime;
   }
 
   /**
@@ -189,19 +183,10 @@ class ProgressCenterItem {
 
   /**
    * Clones the item.
-   * @return {ProgressCenterItem} New item having the same properties with this.
+   * @return {!ProgressCenterItem} New item having the same properties as this.
    */
   clone() {
-    const newItem = new ProgressCenterItem();
-    newItem.id = this.id;
-    newItem.state = this.state;
-    newItem.message = this.message;
-    newItem.progressMax = this.progressMax;
-    newItem.progressValue = this.progressValue;
-    newItem.type = this.type;
-    newItem.single = this.single;
-    newItem.quiet = this.quiet;
-    newItem.cancelCallback = this.cancelCallback;
-    return newItem;
+    const clonedItem = Object.assign(new ProgressCenterItem(), this);
+    return /** @type {!ProgressCenterItem} */ (clonedItem);
   }
 }

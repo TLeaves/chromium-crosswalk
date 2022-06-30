@@ -242,6 +242,7 @@ class BASE_EXPORT TraceConfig {
   }
   void SetTraceBufferSizeInKb(size_t size) { trace_buffer_size_in_kb_ = size; }
   void EnableSystrace() { enable_systrace_ = true; }
+  void EnableSystraceEvent(const std::string& systrace_event);
   void EnableArgumentFilter() { enable_argument_filter_ = true; }
   void EnableHistogram(const std::string& histogram_name);
 
@@ -254,6 +255,11 @@ class BASE_EXPORT TraceConfig {
 
   // Write the string representation of the CategoryFilter part.
   std::string ToCategoryFilterString() const;
+
+  // Write the string representation of the trace options part (record mode,
+  // systrace, argument filtering). Does not include category filters, event
+  // filters, or memory dump configs.
+  std::string ToTraceOptionsString() const;
 
   // Returns true if at least one category in the list is enabled by this
   // trace config. This is used to determine if the category filters are
@@ -286,6 +292,20 @@ class BASE_EXPORT TraceConfig {
     event_filters_ = filter_configs;
   }
 
+  // Returns true if event names should not contain package names.
+  bool IsEventPackageNameFilterEnabled() const {
+    return enable_event_package_name_filter_;
+  }
+
+  // If `enabled` is true, event names will not contain package names.
+  void SetEventPackageNameFilterEnabled(bool enabled) {
+    enable_event_package_name_filter_ = enabled;
+  }
+
+  const std::unordered_set<std::string>& systrace_events() const {
+    return systrace_events_;
+  }
+
   const std::unordered_set<std::string>& histogram_names() const {
     return histogram_names_;
   }
@@ -294,6 +314,7 @@ class BASE_EXPORT TraceConfig {
   FRIEND_TEST_ALL_PREFIXES(TraceConfigTest, TraceConfigFromValidLegacyFormat);
   FRIEND_TEST_ALL_PREFIXES(TraceConfigTest,
                            TraceConfigFromInvalidLegacyStrings);
+  FRIEND_TEST_ALL_PREFIXES(TraceConfigTest, SystraceEventsSerialization);
 
   // The default trace config, used when none is provided.
   // Allows all non-disabled-by-default categories through, except if they end
@@ -317,8 +338,6 @@ class BASE_EXPORT TraceConfig {
   void SetEventFiltersFromConfigList(const Value& event_filters);
   Value ToValue() const;
 
-  std::string ToTraceOptionsString() const;
-
   TraceRecordMode record_mode_;
   size_t trace_buffer_size_in_events_ = 0;  // 0 specifies default size
   size_t trace_buffer_size_in_kb_ = 0;      // 0 specifies default size
@@ -331,7 +350,9 @@ class BASE_EXPORT TraceConfig {
   ProcessFilterConfig process_filter_config_;
 
   EventFilters event_filters_;
+  bool enable_event_package_name_filter_ : 1;
   std::unordered_set<std::string> histogram_names_;
+  std::unordered_set<std::string> systrace_events_;
 };
 
 }  // namespace trace_event

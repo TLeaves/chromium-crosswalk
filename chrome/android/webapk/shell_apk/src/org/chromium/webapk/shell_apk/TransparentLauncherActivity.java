@@ -29,7 +29,8 @@ public class TransparentLauncherActivity extends Activity {
                         HostBrowserLauncherParams params =
                                 HostBrowserLauncherParams.createForIntent(
                                         TransparentLauncherActivity.this, getIntent(),
-                                        hostBrowserPackageName, dialogShown, activityStartTimeMs);
+                                        hostBrowserPackageName, dialogShown, activityStartTimeMs,
+                                        -1 /* splashShownTimeMs */);
 
                         onHostBrowserSelected(params);
                         finish();
@@ -40,7 +41,7 @@ public class TransparentLauncherActivity extends Activity {
     protected void onHostBrowserSelected(HostBrowserLauncherParams params) {
         if (params != null) {
             WebApkUtils.grantUriPermissionToHostBrowserIfShare(getApplicationContext(), params);
-            HostBrowserLauncher.launch(getApplicationContext(), params);
+            HostBrowserLauncher.launch(this, params);
         }
     }
 }

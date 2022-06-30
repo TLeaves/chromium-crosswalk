@@ -6,14 +6,20 @@
 
 #include <string>
 
-#include "base/macros.h"
+#include "base/check_op.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/notreached.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/font_names_testing.h"
 #include "ui/gfx/font_render_params.h"
 #include "ui/gfx/skia_font_delegate.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "ui/gfx/system_fonts_win.h"
+#endif
 
 namespace gfx {
 
@@ -22,6 +28,10 @@ namespace gfx {
 class TestFontDelegate : public SkiaFontDelegate {
  public:
   TestFontDelegate() = default;
+
+  TestFontDelegate(const TestFontDelegate&) = delete;
+  TestFontDelegate& operator=(const TestFontDelegate&) = delete;
+
   ~TestFontDelegate() override = default;
 
   void set_family(const std::string& family) { family_ = family; }
@@ -54,13 +64,15 @@ class TestFontDelegate : public SkiaFontDelegate {
   int style_ = Font::NORMAL;
   gfx::Font::Weight weight_ = Font::Weight::NORMAL;
   FontRenderParams params_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestFontDelegate);
 };
 
 class PlatformFontSkiaTest : public testing::Test {
  public:
   PlatformFontSkiaTest() = default;
+
+  PlatformFontSkiaTest(const PlatformFontSkiaTest&) = delete;
+  PlatformFontSkiaTest& operator=(const PlatformFontSkiaTest&) = delete;
+
   ~PlatformFontSkiaTest() override = default;
 
   void SetUp() override {
@@ -72,7 +84,7 @@ class PlatformFontSkiaTest : public testing::Test {
   void TearDown() override {
     DCHECK_EQ(&test_font_delegate_, SkiaFontDelegate::instance());
     SkiaFontDelegate::SetInstance(
-        const_cast<SkiaFontDelegate*>(original_font_delegate_));
+        const_cast<SkiaFontDelegate*>(original_font_delegate_.get()));
     PlatformFontSkia::ReloadDefaultFont();
   }
 
@@ -81,9 +93,7 @@ class PlatformFontSkiaTest : public testing::Test {
 
  private:
   // Originally-registered delegate.
-  const SkiaFontDelegate* original_font_delegate_;
-
-  DISALLOW_COPY_AND_ASSIGN(PlatformFontSkiaTest);
+  raw_ptr<const SkiaFontDelegate> original_font_delegate_;
 };
 
 // Test that PlatformFontSkia's default constructor initializes the instance
@@ -116,5 +126,34 @@ TEST_F(PlatformFontSkiaTest, DefaultFont) {
   EXPECT_NE(font2->GetStyle() & Font::ITALIC, 0);
   EXPECT_EQ(gfx::Font::Weight::BOLD, font2->GetWeight());
 }
+
+TEST(PlatformFontSkiaRenderParamsTest, DefaultFontRenderParams) {
+  scoped_refptr<PlatformFontSkia> default_font(new PlatformFontSkia());
+  scoped_refptr<PlatformFontSkia> named_font(new PlatformFontSkia(
+      default_font->GetFontName(), default_font->GetFontSize()));
+
+  // Ensures that both constructors are producing fonts with the same render
+  // params.
+  EXPECT_EQ(default_font->GetFontRenderParams(),
+            named_font->GetFontRenderParams());
+}
+
+#if BUILDFLAG(IS_WIN)
+TEST(PlatformFontSkiaOnWindowsTest, SystemFont) {
+  // Ensures that the font styles are kept while creating the default font.
+  gfx::Font system_font = win::GetDefaultSystemFont();
+  gfx::Font default_font;
+
+  EXPECT_EQ(system_font.GetFontName(), default_font.GetFontName());
+  EXPECT_EQ(system_font.GetFontSize(), default_font.GetFontSize());
+  EXPECT_EQ(system_font.GetStyle(), default_font.GetStyle());
+  EXPECT_EQ(system_font.GetWeight(), default_font.GetWeight());
+  EXPECT_EQ(system_font.GetHeight(), default_font.GetHeight());
+  EXPECT_EQ(system_font.GetBaseline(), default_font.GetBaseline());
+  EXPECT_EQ(system_font.GetBaseline(), default_font.GetBaseline());
+  EXPECT_EQ(system_font.GetFontRenderParams(),
+            default_font.GetFontRenderParams());
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace gfx

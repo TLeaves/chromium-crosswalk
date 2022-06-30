@@ -5,7 +5,6 @@
 #include "chromecast/media/cdm/playready_drm_delegate_android.h"
 
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "chromecast/media/cdm/chromecast_init_data.h"
 
 namespace chromecast {
@@ -23,7 +22,7 @@ PlayreadyDrmDelegateAndroid::~PlayreadyDrmDelegateAndroid() {
 
 const ::media::UUID PlayreadyDrmDelegateAndroid::GetUUID() const {
   return ::media::UUID(kPlayreadyUuid,
-                       kPlayreadyUuid + base::size(kPlayreadyUuid));
+                       kPlayreadyUuid + std::size(kPlayreadyUuid));
 }
 
 bool PlayreadyDrmDelegateAndroid::OnCreateSession(

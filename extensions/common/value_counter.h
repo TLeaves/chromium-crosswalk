@@ -5,10 +5,7 @@
 #ifndef EXTENSIONS_COMMON_VALUE_COUNTER_H_
 #define EXTENSIONS_COMMON_VALUE_COUNTER_H_
 
-#include <memory>
 #include <vector>
-
-#include "base/macros.h"
 
 namespace base {
 class Value;
@@ -25,6 +22,10 @@ namespace extensions {
 class ValueCounter {
  public:
   ValueCounter();
+
+  ValueCounter(const ValueCounter&) = delete;
+  ValueCounter& operator=(const ValueCounter&) = delete;
+
   ~ValueCounter();
 
   // Adds |value| to the set. In the case where a Value equal to |value|
@@ -42,9 +43,7 @@ class ValueCounter {
 
  private:
   struct Entry;
-  std::vector<std::unique_ptr<Entry>> entries_;
-
-  DISALLOW_COPY_AND_ASSIGN(ValueCounter);
+  std::vector<Entry> entries_;
 };
 
 }  // namespace extensions

@@ -12,6 +12,8 @@
 
 namespace blink {
 
+class Frame;
+
 class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -20,7 +22,9 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
                                         DOMHighResTimeStamp start_time,
                                         DOMHighResTimeStamp processing_start,
                                         DOMHighResTimeStamp processing_end,
-                                        bool cancelable);
+                                        bool cancelable,
+                                        Node* target,
+                                        uint32_t navigation_id);
 
   static PerformanceEventTiming* CreateFirstInputTiming(
       PerformanceEventTiming* entry);
@@ -30,7 +34,9 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
                          DOMHighResTimeStamp start_time,
                          DOMHighResTimeStamp processing_start,
                          DOMHighResTimeStamp processing_end,
-                         bool cancelable);
+                         bool cancelable,
+                         Node* target,
+                         uint32_t navigation_id);
   ~PerformanceEventTiming() override;
 
   AtomicString entryType() const override { return entry_type_; }
@@ -41,17 +47,27 @@ class CORE_EXPORT PerformanceEventTiming final : public PerformanceEntry {
   DOMHighResTimeStamp processingStart() const;
   DOMHighResTimeStamp processingEnd() const;
 
+  Node* target() const;
+
+  uint32_t interactionId() const;
+
+  void SetInteractionId(uint32_t interaction_id);
+
   void SetDuration(double duration);
 
   void BuildJSONValue(V8ObjectBuilder&) const override;
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) const override;
+
+  std::unique_ptr<TracedValue> ToTracedValue(Frame* frame) const;
 
  private:
   AtomicString entry_type_;
   DOMHighResTimeStamp processing_start_;
   DOMHighResTimeStamp processing_end_;
   bool cancelable_;
+  WeakMember<Node> target_;
+  uint32_t interaction_id_ = 0;
 };
 }  // namespace blink
 

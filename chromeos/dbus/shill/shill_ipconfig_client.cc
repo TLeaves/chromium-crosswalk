@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/macros.h"
+#include "base/logging.h"
 #include "base/values.h"
 #include "chromeos/dbus/shill/fake_shill_ipconfig_client.h"
 #include "chromeos/dbus/shill/shill_property_changed_observer.h"
@@ -30,6 +30,10 @@ ShillIPConfigClient* g_instance = nullptr;
 class ShillIPConfigClientImpl : public ShillIPConfigClient {
  public:
   explicit ShillIPConfigClientImpl(dbus::Bus* bus) : bus_(bus) {}
+
+  ShillIPConfigClientImpl(const ShillIPConfigClientImpl&) = delete;
+  ShillIPConfigClientImpl& operator=(const ShillIPConfigClientImpl&) = delete;
+
   ~ShillIPConfigClientImpl() override = default;
 
   ////////////////////////////////////
@@ -45,10 +49,8 @@ class ShillIPConfigClientImpl : public ShillIPConfigClient {
       ShillPropertyChangedObserver* observer) override {
     GetHelper(ipconfig_path)->RemovePropertyChangedObserver(observer);
   }
-  void Refresh(const dbus::ObjectPath& ipconfig_path,
-               VoidDBusMethodCallback callback) override;
   void GetProperties(const dbus::ObjectPath& ipconfig_path,
-                     const DictionaryValueCallback& callback) override;
+                     DBusMethodCallback<base::Value> callback) override;
   void SetProperty(const dbus::ObjectPath& ipconfig_path,
                    const std::string& name,
                    const base::Value& value,
@@ -82,23 +84,17 @@ class ShillIPConfigClientImpl : public ShillIPConfigClient {
 
   dbus::Bus* bus_;
   HelperMap helpers_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShillIPConfigClientImpl);
 };
 
 void ShillIPConfigClientImpl::GetProperties(
     const dbus::ObjectPath& ipconfig_path,
-    const DictionaryValueCallback& callback) {
+    DBusMethodCallback<base::Value> callback) {
   dbus::MethodCall method_call(shill::kFlimflamIPConfigInterface,
                                shill::kGetPropertiesFunction);
-  GetHelper(ipconfig_path)->CallDictionaryValueMethod(&method_call, callback);
-}
-
-void ShillIPConfigClientImpl::Refresh(const dbus::ObjectPath& ipconfig_path,
-                                      VoidDBusMethodCallback callback) {
-  dbus::MethodCall method_call(shill::kFlimflamIPConfigInterface,
-                               shill::kRefreshFunction);
-  GetHelper(ipconfig_path)->CallVoidMethod(&method_call, std::move(callback));
+  GetHelper(ipconfig_path)
+      ->CallValueMethod(&method_call,
+                        base::BindOnce(&ShillClientHelper::OnGetProperties,
+                                       ipconfig_path, std::move(callback)));
 }
 
 void ShillIPConfigClientImpl::SetProperty(const dbus::ObjectPath& ipconfig_path,
@@ -112,18 +108,15 @@ void ShillIPConfigClientImpl::SetProperty(const dbus::ObjectPath& ipconfig_path,
   // IPConfig supports writing basic type and string array properties.
   switch (value.type()) {
     case base::Value::Type::LIST: {
-      const base::ListValue* list_value = nullptr;
-      value.GetAsList(&list_value);
       dbus::MessageWriter variant_writer(nullptr);
       writer.OpenVariant("as", &variant_writer);
       dbus::MessageWriter array_writer(nullptr);
       variant_writer.OpenArray("s", &array_writer);
-      for (base::ListValue::const_iterator it = list_value->begin();
-           it != list_value->end(); ++it) {
-        DLOG_IF(ERROR, !it->is_string()) << "Unexpected type " << it->type();
-        std::string str;
-        it->GetAsString(&str);
-        array_writer.AppendString(str);
+      for (const auto& entry : value.GetListDeprecated()) {
+        DLOG_IF(ERROR, !entry.is_string())
+            << "Unexpected type " << entry.type();
+        array_writer.AppendString(entry.is_string() ? entry.GetString()
+                                                    : std::string());
       }
       variant_writer.CloseContainer(&array_writer);
       writer.CloseContainer(&variant_writer);

@@ -4,9 +4,10 @@
 
 #import "ios/web_view/internal/passwords/web_view_password_manager_driver.h"
 
-#include "base/strings/string16.h"
-#include "components/autofill/core/common/password_form.h"
+#include <string>
+
 #include "components/autofill/core/common/password_form_fill_data.h"
+#include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_manager.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -17,40 +18,53 @@ using password_manager::PasswordAutofillManager;
 using password_manager::PasswordManager;
 
 namespace ios_web_view {
+
 WebViewPasswordManagerDriver::WebViewPasswordManagerDriver(
-    id<CWVPasswordManagerDriverDelegate> delegate)
-    : delegate_(delegate) {}
+    password_manager::PasswordManager* password_manager)
+    : password_manager_(password_manager) {}
 
 WebViewPasswordManagerDriver::~WebViewPasswordManagerDriver() = default;
 
-void WebViewPasswordManagerDriver::FillPasswordForm(
-    const autofill::PasswordFormFillData& form_data) {
-  [delegate_ fillPasswordForm:form_data];
+int WebViewPasswordManagerDriver::GetId() const {
+  // There is only one driver per tab on iOS so returning 0 is fine.
+  return 0;
 }
 
-void WebViewPasswordManagerDriver::InformNoSavedCredentials() {
-  [delegate_ informNoSavedCredentials];
+void WebViewPasswordManagerDriver::FillPasswordForm(
+    const autofill::PasswordFormFillData& form_data) {
+  [bridge_ fillPasswordForm:form_data completionHandler:nil];
+}
+
+void WebViewPasswordManagerDriver::InformNoSavedCredentials(
+    bool should_show_popup_without_passwords) {
+  [bridge_ onNoSavedCredentials];
+}
+
+void WebViewPasswordManagerDriver::FormEligibleForGenerationFound(
+    const autofill::PasswordFormGenerationData& form) {
+  if (GetPasswordGenerationHelper() &&
+      GetPasswordGenerationHelper()->IsGenerationEnabled(
+          /*log_debug_data*/ true)) {
+    [bridge_ formEligibleForGenerationFound:form];
+  }
 }
 
 void WebViewPasswordManagerDriver::GeneratedPasswordAccepted(
-    const base::string16& password) {
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
 
 void WebViewPasswordManagerDriver::FillSuggestion(
-    const base::string16& username,
-    const base::string16& password) {
+    const std::u16string& username,
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
 
 void WebViewPasswordManagerDriver::PreviewSuggestion(
-    const base::string16& username,
-    const base::string16& password) {
+    const std::u16string& username,
+    const std::u16string& password) {
   NOTIMPLEMENTED();
 }
-
-void WebViewPasswordManagerDriver::ShowInitialPasswordAccountSuggestions(
-    const autofill::PasswordFormFillData& form_data) {}
 
 void WebViewPasswordManagerDriver::ClearPreviewedForm() {
   NOTIMPLEMENTED();
@@ -58,11 +72,11 @@ void WebViewPasswordManagerDriver::ClearPreviewedForm() {
 
 password_manager::PasswordGenerationFrameHelper*
 WebViewPasswordManagerDriver::GetPasswordGenerationHelper() {
-  return nullptr;
+  return [bridge_ passwordGenerationHelper];
 }
 
 PasswordManager* WebViewPasswordManagerDriver::GetPasswordManager() {
-  return [delegate_ passwordManager];
+  return password_manager_;
 }
 
 PasswordAutofillManager*
@@ -70,17 +84,20 @@ WebViewPasswordManagerDriver::GetPasswordAutofillManager() {
   return nullptr;
 }
 
-autofill::AutofillDriver* WebViewPasswordManagerDriver::GetAutofillDriver() {
-  NOTIMPLEMENTED();
-  return nullptr;
-}
-
-bool WebViewPasswordManagerDriver::IsMainFrame() const {
+bool WebViewPasswordManagerDriver::IsInPrimaryMainFrame() const {
   // On IOS only processing of password forms in main frame is implemented.
   return true;
 }
 
+bool WebViewPasswordManagerDriver::CanShowAutofillUi() const {
+  return true;
+}
+
+::ui::AXTreeID WebViewPasswordManagerDriver::GetAxTreeId() const {
+  return {};
+}
+
 const GURL& WebViewPasswordManagerDriver::GetLastCommittedURL() const {
-  return delegate_.lastCommittedURL;
+  return bridge_.lastCommittedURL;
 }
 }  // namespace ios_web_view

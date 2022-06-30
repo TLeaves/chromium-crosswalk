@@ -37,7 +37,7 @@ namespace blink {
 
 class ContainerNode;
 
-class HTMLStackItem : public GarbageCollectedFinalized<HTMLStackItem> {
+class HTMLStackItem final : public GarbageCollected<HTMLStackItem> {
  public:
   enum ItemType { kItemForContextElement, kItemForDocumentFragmentNode };
 
@@ -205,7 +205,7 @@ class HTMLStackItem : public GarbageCollectedFinalized<HTMLStackItem> {
            tag_name == html_names::kWbrTag || tag_name == html_names::kXmpTag;
   }
 
-  void Trace(Visitor* visitor) { visitor->Trace(node_); }
+  void Trace(Visitor* visitor) const { visitor->Trace(node_); }
 
  private:
   Member<ContainerNode> node_;

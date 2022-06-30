@@ -28,7 +28,9 @@
 
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
+#include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 namespace blink {
 
@@ -57,18 +59,20 @@ class MODULES_EXPORT OfflineAudioContext final : public BaseAudioContext {
                       ExceptionState&);
   ~OfflineAudioContext() override;
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) const override;
 
   uint32_t length() const { return total_render_frames_; }
 
-  ScriptPromise startOfflineRendering(ScriptState*);
+  ScriptPromise startOfflineRendering(ScriptState*, ExceptionState&);
 
-  ScriptPromise suspendContext(ScriptState*, double);
-  ScriptPromise resumeContext(ScriptState*);
+  ScriptPromise suspendContext(ScriptState*, double, ExceptionState&);
+  ScriptPromise resumeContext(ScriptState*, ExceptionState&);
 
   void RejectPendingResolvers() override;
 
   bool HasRealtimeConstraint() final { return false; }
+
+  bool IsPullingAudioGraph() const final;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(complete, kComplete)
 
@@ -87,7 +91,7 @@ class MODULES_EXPORT OfflineAudioContext final : public BaseAudioContext {
   // OfflineAudioContext is not affected by Autoplay, so this MUST do nothing.
   void NotifySourceNodeStart() final {}
 
-  // The HashMap with 'zero' key is needed because |currentSampleFrame| can be
+  // The HashMap with 'zero' key is needed because `CurrentSampleFrame()` can be
   // zero.
   using SuspendMap = HeapHashMap<size_t,
                                  Member<ScriptPromiseResolver>,
@@ -111,12 +115,21 @@ class MODULES_EXPORT OfflineAudioContext final : public BaseAudioContext {
   // main thread and accessed by the audio thread with the graph lock.
   //
   // The map consists of key-value pairs of:
-  // { size_t quantizedFrame: ScriptPromiseResolver resolver }
+  // { size_t quantized_frame: ScriptPromiseResolver resolver }
   //
-  // Note that |quantizedFrame| is a unique key, since you can have only one
+  // Note that `quantized_frame` is a unique key, since you can have only one
   // suspend scheduled for a certain frame. Accessing to this must be
   // protected by the offline context lock.
   SuspendMap scheduled_suspends_;
+
+  // Protects `scheduled_suspend_frames_`.
+  Mutex suspend_frames_lock_;
+
+  // Holds copies of `quantized_frame` in `schedueld_suspends_` to ensure
+  // a safe access from the audio thread.
+  HashSet<size_t,
+          WTF::DefaultHash<size_t>::Hash,
+          WTF::UnsignedWithZeroKeyHashTraits<size_t>> scheduled_suspend_frames_;
 
   Member<ScriptPromiseResolver> complete_resolver_;
 
@@ -124,7 +137,7 @@ class MODULES_EXPORT OfflineAudioContext final : public BaseAudioContext {
   // running. Note that initial state of context is 'Suspended', which is the
   // same state when the context is suspended, so we cannot utilize it for this
   // purpose.
-  bool is_rendering_started_;
+  bool is_rendering_started_ = false;
 
   // Total render sample length.
   uint32_t total_render_frames_;

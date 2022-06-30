@@ -8,9 +8,7 @@
 #include "base/memory/singleton.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
-namespace content {
-class BrowserContext;
-}
+class Profile;
 
 namespace safe_browsing {
 
@@ -21,14 +19,19 @@ class AdvancedProtectionStatusManager;
 class AdvancedProtectionStatusManagerFactory
     : public BrowserContextKeyedServiceFactory {
  public:
-  static AdvancedProtectionStatusManager* GetForBrowserContext(
-      content::BrowserContext* context);
+  static AdvancedProtectionStatusManager* GetForProfile(Profile* profile);
 
   static AdvancedProtectionStatusManagerFactory* GetInstance();
+
+  AdvancedProtectionStatusManagerFactory(
+      const AdvancedProtectionStatusManagerFactory&) = delete;
+  AdvancedProtectionStatusManagerFactory& operator=(
+      const AdvancedProtectionStatusManagerFactory&) = delete;
 
  private:
   friend struct base::DefaultSingletonTraits<
       AdvancedProtectionStatusManagerFactory>;
+
   AdvancedProtectionStatusManagerFactory();
   ~AdvancedProtectionStatusManagerFactory() override;
 
@@ -36,8 +39,8 @@ class AdvancedProtectionStatusManagerFactory
   KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const override;
   bool ServiceIsCreatedWithBrowserContext() const override;
-
-  DISALLOW_COPY_AND_ASSIGN(AdvancedProtectionStatusManagerFactory);
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
 };
 
 }  // namespace safe_browsing

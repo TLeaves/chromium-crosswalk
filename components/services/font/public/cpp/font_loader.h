@@ -7,18 +7,14 @@
 
 #include <stdint.h>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "components/services/font/public/cpp/mapped_font_file.h"
 #include "components/services/font/public/mojom/font_service.mojom.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
-
-namespace service_manager {
-class Connector;
-}
 
 namespace font_service {
 namespace internal {
@@ -34,7 +30,12 @@ class FontServiceThread;
 class FontLoader : public SkFontConfigInterface,
                    public internal::MappedFontFile::Observer {
  public:
-  explicit FontLoader(service_manager::Connector* connector);
+  explicit FontLoader(
+      mojo::PendingRemote<mojom::FontService> pending_font_service);
+
+  FontLoader(const FontLoader&) = delete;
+  FontLoader& operator=(const FontLoader&) = delete;
+
   ~FontLoader() override;
 
   // SkFontConfigInterface:
@@ -97,8 +98,6 @@ class FontLoader : public SkFontConfigInterface,
 
   // Maps font identity ID to the memory-mapped file with font data.
   std::unordered_map<uint32_t, internal::MappedFontFile*> mapped_font_files_;
-
-  DISALLOW_COPY_AND_ASSIGN(FontLoader);
 };
 
 }  // namespace font_service

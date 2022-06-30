@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "chromeos/dbus/shill/shill_third_party_vpn_driver_client.h"
 
 namespace chromeos {
@@ -26,6 +25,12 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillThirdPartyVpnDriverClient
       public ShillThirdPartyVpnDriverClient::TestInterface {
  public:
   FakeShillThirdPartyVpnDriverClient();
+
+  FakeShillThirdPartyVpnDriverClient(
+      const FakeShillThirdPartyVpnDriverClient&) = delete;
+  FakeShillThirdPartyVpnDriverClient& operator=(
+      const FakeShillThirdPartyVpnDriverClient&) = delete;
+
   ~FakeShillThirdPartyVpnDriverClient() override;
 
   // ShillThirdPartyVpnDriverClient overrides
@@ -34,21 +39,18 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillThirdPartyVpnDriverClient
       ShillThirdPartyVpnObserver* observer) override;
   void RemoveShillThirdPartyVpnObserver(
       const std::string& object_path_value) override;
-  void SetParameters(
-      const std::string& object_path_value,
-      const base::DictionaryValue& parameters,
-      const ShillClientHelper::StringCallback& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) override;
-  void UpdateConnectionState(
-      const std::string& object_path_value,
-      const uint32_t connection_state,
-      const base::Closure& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) override;
-  void SendPacket(
-      const std::string& object_path_value,
-      const std::vector<char>& ip_packet,
-      const base::Closure& callback,
-      const ShillClientHelper::ErrorCallback& error_callback) override;
+  void SetParameters(const std::string& object_path_value,
+                     const base::Value& parameters,
+                     StringCallback callback,
+                     ErrorCallback error_callback) override;
+  void UpdateConnectionState(const std::string& object_path_value,
+                             const uint32_t connection_state,
+                             base::OnceClosure callback,
+                             ErrorCallback error_callback) override;
+  void SendPacket(const std::string& object_path_value,
+                  const std::vector<char>& ip_packet,
+                  base::OnceClosure callback,
+                  ErrorCallback error_callback) override;
   ShillThirdPartyVpnDriverClient::TestInterface* GetTestInterface() override;
 
   // ShillThirdPartyVpnDriverClient::TestInterface overrides
@@ -61,8 +63,6 @@ class COMPONENT_EXPORT(SHILL_CLIENT) FakeShillThirdPartyVpnDriverClient
   using ObserverMap = std::map<std::string, ShillThirdPartyVpnObserver*>;
 
   ObserverMap observer_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeShillThirdPartyVpnDriverClient);
 };
 
 }  // namespace chromeos

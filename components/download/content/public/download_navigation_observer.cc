@@ -8,22 +8,11 @@
 
 namespace download {
 
-// static
-void DownloadNavigationObserver::CreateForWebContents(
-    content::WebContents* web_contents,
-    NavigationMonitor* navigation_monitor) {
-  DCHECK(web_contents);
-  if (!FromWebContents(web_contents)) {
-    web_contents->SetUserData(UserDataKey(),
-                              std::make_unique<DownloadNavigationObserver>(
-                                  web_contents, navigation_monitor));
-  }
-}
-
 DownloadNavigationObserver::DownloadNavigationObserver(
     content::WebContents* web_contents,
     NavigationMonitor* navigation_monitor)
     : content::WebContentsObserver(web_contents),
+      content::WebContentsUserData<DownloadNavigationObserver>(*web_contents),
       navigation_monitor_(navigation_monitor) {}
 
 DownloadNavigationObserver::~DownloadNavigationObserver() = default;
@@ -42,6 +31,6 @@ void DownloadNavigationObserver::NotifyNavigationEvent(
   navigation_monitor_->OnNavigationEvent(navigation_event);
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(DownloadNavigationObserver)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(DownloadNavigationObserver);
 
 }  // namespace download

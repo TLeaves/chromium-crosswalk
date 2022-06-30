@@ -6,31 +6,29 @@
 
 #include <stddef.h>
 
+#include <memory>
 #include <utility>
 
 #include "base/bind.h"
-#include "base/task/post_task.h"
+#include "base/containers/contains.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "chrome/browser/permissions/permission_manager.h"
-#include "chrome/browser/permissions/permission_result.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "components/content_settings/core/common/content_settings_types.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/scoped_user_pref_update.h"
-#include "content/public/browser/browser_task_traits.h"
+#include "content/public/browser/permission_controller.h"
 #include "extensions/buildflags/buildflags.h"
+#include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
+#include "url/origin.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/common/extensions/api/notifications.h"
-#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_event_histogram_value.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
-#include "extensions/browser/info_map.h"
 #endif
 
 using message_center::NotifierId;
@@ -42,26 +40,20 @@ void NotifierStateTracker::RegisterProfilePrefs(
 }
 
 NotifierStateTracker::NotifierStateTracker(Profile* profile)
-    : profile_(profile)
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-      ,
-      extension_registry_observer_(this)
-#endif
-{
+    : profile_(profile) {
   OnStringListPrefChanged(
       prefs::kMessageCenterDisabledExtensionIds, &disabled_extension_ids_);
 
   disabled_extension_id_pref_.Init(
-      prefs::kMessageCenterDisabledExtensionIds,
-      profile_->GetPrefs(),
-      base::Bind(
+      prefs::kMessageCenterDisabledExtensionIds, profile_->GetPrefs(),
+      base::BindRepeating(
           &NotifierStateTracker::OnStringListPrefChanged,
           base::Unretained(this),
           base::Unretained(prefs::kMessageCenterDisabledExtensionIds),
           base::Unretained(&disabled_extension_ids_)));
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  extension_registry_observer_.Add(
+  extension_registry_observation_.Observe(
       extensions::ExtensionRegistry::Get(profile_));
 #endif
 }
@@ -76,15 +68,16 @@ bool NotifierStateTracker::IsNotifierEnabled(
       return disabled_extension_ids_.find(notifier_id.id) ==
           disabled_extension_ids_.end();
     case message_center::NotifierType::WEB_PAGE:
-      return PermissionManager::Get(profile_)
-                 ->GetPermissionStatus(CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
-                                       notifier_id.url, notifier_id.url)
-                 .content_setting == CONTENT_SETTING_ALLOW;
+      return profile_->GetPermissionController()
+                 ->GetPermissionStatusForOriginWithoutContext(
+                     blink::PermissionType::NOTIFICATIONS,
+                     url::Origin::Create(notifier_id.url)) ==
+             blink::mojom::PermissionStatus::GRANTED;
     case message_center::NotifierType::SYSTEM_COMPONENT:
       // We do not disable system component notifications.
       return true;
     case message_center::NotifierType::ARC_APPLICATION:
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
       // TODO(hriono): Ask Android if the application's notifications are
       // enabled.
       return true;
@@ -92,8 +85,16 @@ bool NotifierStateTracker::IsNotifierEnabled(
       break;
 #endif
     case message_center::NotifierType::CROSTINI_APPLICATION:
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
       // Disabling Crostini notifications is not supported yet.
+      return true;
+#else
+      NOTREACHED();
+      break;
+#endif
+    case message_center::NotifierType::PHONE_HUB:
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+      // PhoneHub notifications are controlled in their own settings.
       return true;
 #else
       break;
@@ -111,13 +112,13 @@ void NotifierStateTracker::SetNotifierEnabled(
 
   bool add_new_item = false;
   const char* pref_name = NULL;
-  std::unique_ptr<base::Value> id;
+  base::Value id;
   switch (notifier_id.type) {
     case message_center::NotifierType::APPLICATION:
 #if BUILDFLAG(ENABLE_EXTENSIONS)
       pref_name = prefs::kMessageCenterDisabledExtensionIds;
       add_new_item = !enabled;
-      id.reset(new base::Value(notifier_id.id));
+      id = base::Value(notifier_id.id);
       FirePermissionLevelChangedEvent(notifier_id, enabled);
 #else
       NOTREACHED();
@@ -129,25 +130,27 @@ void NotifierStateTracker::SetNotifierEnabled(
   DCHECK(pref_name != NULL);
 
   ListPrefUpdate update(profile_->GetPrefs(), pref_name);
-  base::ListValue* const list = update.Get();
   if (add_new_item) {
-    list->AppendIfNotPresent(std::move(id));
+    if (!base::Contains(update->GetListDeprecated(), id))
+      update->Append(std::move(id));
   } else {
-    list->Remove(*id, nullptr);
+    update->EraseListValue(id);
   }
 }
 
 void NotifierStateTracker::OnStringListPrefChanged(
     const char* pref_name, std::set<std::string>* ids_field) {
   ids_field->clear();
-  // Separate GetPrefs()->GetList() to analyze the crash. See crbug.com/322320
+  // Separate GetPrefs()->GetListDeprecated() to analyze the crash. See
+  // crbug.com/322320
   const PrefService* pref_service = profile_->GetPrefs();
   CHECK(pref_service);
-  const base::ListValue* pref_list = pref_service->GetList(pref_name);
-  for (size_t i = 0; i < pref_list->GetSize(); ++i) {
-    std::string element;
-    if (pref_list->GetString(i, &element) && !element.empty())
-      ids_field->insert(element);
+  const base::Value* pref_list = pref_service->GetList(pref_name);
+  base::Value::ConstListView pref_list_view = pref_list->GetListDeprecated();
+  for (size_t i = 0; i < pref_list_view.size(); ++i) {
+    const std::string* element = pref_list_view[i].GetIfString();
+    if (element && !element->empty())
+      ids_field->insert(*element);
     else
       LOG(WARNING) << i << "-th element is not a string for " << pref_name;
   }
@@ -179,22 +182,13 @@ void NotifierStateTracker::FirePermissionLevelChangedEvent(
   extensions::api::notifications::PermissionLevel permission =
       enabled ? extensions::api::notifications::PERMISSION_LEVEL_GRANTED
               : extensions::api::notifications::PERMISSION_LEVEL_DENIED;
-  std::unique_ptr<base::ListValue> args(new base::ListValue());
-  args->AppendString(extensions::api::notifications::ToString(permission));
-  std::unique_ptr<extensions::Event> event(new extensions::Event(
+  base::Value::List args;
+  args.Append(extensions::api::notifications::ToString(permission));
+  auto event = std::make_unique<extensions::Event>(
       extensions::events::NOTIFICATIONS_ON_PERMISSION_LEVEL_CHANGED,
       extensions::api::notifications::OnPermissionLevelChanged::kEventName,
-      std::move(args)));
+      std::move(args));
 
   event_router->DispatchEventToExtension(notifier_id.id, std::move(event));
-
-  // Tell the IO thread that this extension's permission for notifications
-  // has changed.
-  extensions::InfoMap* extension_info_map =
-      extensions::ExtensionSystem::Get(profile_)->info_map();
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::IO},
-      base::BindOnce(&extensions::InfoMap::SetNotificationsDisabled,
-                     extension_info_map, notifier_id.id, !enabled));
 }
 #endif

@@ -53,20 +53,6 @@
   return YES;
 }
 
-// The base implementation justs tests [self class] == [NSThemeFrame class].
-- (BOOL)_shouldFlipTrafficLightsForRTL API_AVAILABLE(macos(10.12)) {
-  return [[self window] windowTitlebarLayoutDirection] ==
-         NSUserInterfaceLayoutDirectionRightToLeft;
-}
-
-// On 10.10, this prevents the window server from treating the title bar as an
-// unconditionally-draggable region, and allows -[BridgedContentView hitTest:]
-// to choose case-by-case whether to take a mouse event or let it turn into a
-// window drag. Not needed for newer macOS. See r549802 for details.
-- (NSRect)_draggableFrame NS_DEPRECATED_MAC(10_10, 10_11) {
-  return NSZeroRect;
-}
-
 @end
 
 @implementation BrowserNativeWidgetWindow

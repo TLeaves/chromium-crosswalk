@@ -4,9 +4,12 @@
 
 package org.chromium.chrome.browser.infobar;
 
-import org.chromium.base.VisibleForTesting;
+import androidx.annotation.VisibleForTesting;
+
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.chrome.R;
+import org.chromium.components.infobars.InfoBar;
+import org.chromium.components.infobars.InfoBarCompactLayout;
 
 /**
  * This InfoBar is shown to let the user know when the browser took action to stop a page from using

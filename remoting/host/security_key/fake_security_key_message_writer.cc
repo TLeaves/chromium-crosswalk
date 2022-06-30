@@ -9,7 +9,6 @@
 
 #include "base/callback.h"
 #include "base/location.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "remoting/host/security_key/security_key_message.h"
@@ -17,8 +16,8 @@
 namespace remoting {
 
 FakeSecurityKeyMessageWriter::FakeSecurityKeyMessageWriter(
-    const base::Closure& write_callback)
-    : write_callback_(write_callback), weak_factory_(this) {
+    const base::RepeatingClosure& write_callback)
+    : write_callback_(write_callback) {
   DCHECK(!write_callback_.is_null());
 }
 

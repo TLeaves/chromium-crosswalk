@@ -10,7 +10,6 @@
 #include "cc/paint/filter_operations.h"
 #include "chrome/browser/android/compositor/layer/thumbnail_layer.h"
 #include "chrome/browser/android/compositor/tab_content_manager.h"
-#include "content/public/browser/android/compositor.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace android {
@@ -43,7 +42,7 @@ static cc::Layer* GetDrawsContentLeaf(scoped_refptr<cc::Layer> layer) {
   if (layer->opacity() == 0.0f)
     return nullptr;
 
-  if (layer->DrawsContent())
+  if (layer->draws_content())
     return layer.get();
 
   const cc::LayerList& children = layer->children();

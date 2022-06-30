@@ -47,7 +47,7 @@ void FakeAudioRendererSink::Start() {
 }
 
 void FakeAudioRendererSink::Stop() {
-  callback_ = NULL;
+  callback_ = nullptr;
   ChangeState(kStopped);
 }
 
@@ -62,7 +62,6 @@ void FakeAudioRendererSink::Pause() {
 
 void FakeAudioRendererSink::Play() {
   DCHECK(state_ == kStarted || state_ == kPaused) << "state_ " << state_;
-  DCHECK_EQ(state_, kPaused);
   ChangeState(kPlaying);
 }
 

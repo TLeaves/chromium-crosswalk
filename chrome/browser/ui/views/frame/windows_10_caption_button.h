@@ -5,7 +5,12 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_WINDOWS_10_CAPTION_BUTTON_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_WINDOWS_10_CAPTION_BUTTON_H_
 
+#include <memory>
+
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/frame/windows_10_icon_painter.h"
+#include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/button/button.h"
 
@@ -13,9 +18,14 @@ class GlassBrowserFrameView;
 
 class Windows10CaptionButton : public views::Button {
  public:
-  Windows10CaptionButton(GlassBrowserFrameView* frame_view,
+  METADATA_HEADER(Windows10CaptionButton);
+  Windows10CaptionButton(PressedCallback callback,
+                         GlassBrowserFrameView* frame_view,
                          ViewID button_type,
-                         const base::string16& accessible_name);
+                         const std::u16string& accessible_name);
+  Windows10CaptionButton(const Windows10CaptionButton&) = delete;
+  Windows10CaptionButton& operator=(const Windows10CaptionButton&) = delete;
+  ~Windows10CaptionButton() override;
 
   // views::Button:
   gfx::Size CalculatePreferredSize() const override;
@@ -23,6 +33,8 @@ class Windows10CaptionButton : public views::Button {
   void PaintButtonContents(gfx::Canvas* canvas) override;
 
  private:
+  std::unique_ptr<Windows10IconPainter> CreateIconPainter();
+
   // Returns the amount we should visually reserve on the left (right in RTL)
   // for spacing between buttons. We do this instead of repositioning the
   // buttons to avoid the sliver of deadspace that would result.
@@ -35,15 +47,14 @@ class Windows10CaptionButton : public views::Button {
 
   // The base color to use for the button symbols and background blending. Uses
   // the more readable of black and white.
-  SkColor GetBaseColor() const;
+  SkColor GetBaseForegroundColor() const;
 
   // Paints the minimize/maximize/restore/close icon for the button.
   void PaintSymbol(gfx::Canvas* canvas);
 
-  GlassBrowserFrameView* frame_view_;
+  raw_ptr<GlassBrowserFrameView> frame_view_;
+  std::unique_ptr<Windows10IconPainter> icon_painter_;
   ViewID button_type_;
-
-  DISALLOW_COPY_AND_ASSIGN(Windows10CaptionButton);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_WINDOWS_10_CAPTION_BUTTON_H_

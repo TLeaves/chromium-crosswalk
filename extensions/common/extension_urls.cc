@@ -4,25 +4,21 @@
 
 #include "extensions/common/extension_urls.h"
 
+#include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extensions_client.h"
-#include "net/base/escape.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 namespace extensions {
 
-const char kEventBindings[] = "event_bindings";
-
-const char kSchemaUtils[] = "schemaUtils";
-
-bool IsSourceFromAnExtension(const base::string16& source) {
+bool IsSourceFromAnExtension(const std::u16string& source) {
   return GURL(source).SchemeIs(kExtensionScheme) ||
-         base::StartsWith(source, base::ASCIIToUTF16("extensions::"),
+         base::StartsWith(source, u"extensions::",
                           base::CompareCase::SENSITIVE);
 }
 
@@ -58,19 +54,6 @@ GURL GetWebstoreItemJsonDataURL(const std::string& extension_id) {
               extension_id);
 }
 
-GURL GetWebstoreJsonSearchUrl(const std::string& query,
-                              const std::string& host_language_code) {
-  GURL url(GetWebstoreLaunchURL().spec() + "/jsonsearch");
-  url = net::AppendQueryParameter(url, "q", query);
-  url = net::AppendQueryParameter(url, "hl", host_language_code);
-  return url;
-}
-
-GURL GetWebstoreSearchPageUrl(const std::string& query) {
-  return GURL(GetWebstoreLaunchURL().spec() + "/search/" +
-              net::EscapeQueryParamValue(query, false));
-}
-
 GURL GetDefaultWebstoreUpdateUrl() {
   return GURL(kChromeWebstoreUpdateURL);
 }
@@ -95,10 +78,10 @@ bool IsWebstoreUpdateUrl(const GURL& update_url) {
           update_url.path_piece() == store_url.path_piece());
 }
 
-bool IsBlacklistUpdateUrl(const GURL& url) {
+bool IsBlocklistUpdateUrl(const GURL& url) {
   extensions::ExtensionsClient* client = extensions::ExtensionsClient::Get();
   if (client)
-    return client->IsBlacklistUpdateURL(url);
+    return client->IsBlocklistUpdateURL(url);
   return false;
 }
 

@@ -47,6 +47,9 @@ public class Features {
     // WebViewCompat.startSafeBrowsing
     public static final String START_SAFE_BROWSING = "START_SAFE_BROWSING";
 
+    // WebViewCompat.setSafeBrowsingAllowlist
+    public static final String SAFE_BROWSING_ALLOWLIST = "SAFE_BROWSING_ALLOWLIST";
+
     // WebViewCompat.setSafeBrowsingWhitelist
     public static final String SAFE_BROWSING_WHITELIST = "SAFE_BROWSING_WHITELIST";
 
@@ -102,6 +105,9 @@ public class Features {
     public static final String SAFE_BROWSING_RESPONSE_SHOW_INTERSTITIAL =
             "SAFE_BROWSING_RESPONSE_SHOW_INTERSTITIAL";
 
+    // WebMessage.getMessagePayload
+    public static final String WEB_MESSAGE_GET_MESSAGE_PAYLOAD = "WEB_MESSAGE_GET_MESSAGE_PAYLOAD";
+
     // WebMessagePortCompat.postMessage
     public static final String WEB_MESSAGE_PORT_POST_MESSAGE = "WEB_MESSAGE_PORT_POST_MESSAGE";
 
@@ -131,6 +137,9 @@ public class Features {
     // ProxyController.setProxyOverride
     // ProxyController.clearProxyOverride
     public static final String PROXY_OVERRIDE = "PROXY_OVERRIDE:3";
+
+    // ProxyController.setProxyOverride
+    public static final String PROXY_OVERRIDE_REVERSE_BYPASS = "PROXY_OVERRIDE_REVERSE_BYPASS";
 
     // WebSettingsCompat.setWillSuppressErrorPage
     // WebSettingsCompat.getWillSuppressErrorPage
@@ -163,4 +172,42 @@ public class Features {
     // WebSettingsCompat.setForceDark
     // WebSettingsCompat.getForceDark
     public static final String FORCE_DARK = "FORCE_DARK";
+
+    // Preferences between force dark and media query for dark theme support:
+    //
+    // WebSettingsCompat.setForceDarkBehavior
+    // WebSettingsCompat.getForceDarkBehavior
+    public static final String FORCE_DARK_BEHAVIOR = "FORCE_DARK_BEHAVIOR";
+
+    // WebSettingsCompat.setAlgorithmicDarkeningAllowed
+    // WebSettingsCompat.isAlgorithmicDarkeningAllowed
+    public static final String ALGORITHMIC_DARKENING = "ALGORITHMIC_DARKENING";
+
+    // WebViewCompat.addWebMessageListener
+    // WebViewCompat.removeWebMessageListener
+    public static final String WEB_MESSAGE_LISTENER = "WEB_MESSAGE_LISTENER";
+
+    // WebViewProviderFactoryAdapter.setSupportLibraryVersion
+    public static final String SET_SUPPORT_LIBRARY_VERSION = "SET_SUPPORT_LIBRARY_VERSION";
+
+    // WebViewCompat.addDocumentStartJavascript
+    public static final String DOCUMENT_START_SCRIPT = "DOCUMENT_START_SCRIPT:1";
+
+    // WebSettingsCompat.setWebAuthnSupport
+    // WebSettingsCompat.getWebAuthnSupport
+    public static final String WEB_AUTHENTICATION = "WEB_AUTHENTICATION";
+
+    // WebSettingsCompat.setRequestedWithHeaderMode
+    // WebSettingsCompat.getRequestedWithHeaderMode
+    // ServiceWorkerWebSettingsCompat.setRequestedWithHeaderMode
+    // ServiceWorkerWebSettingsCompat.getRequestedWithHeaderMode
+    public static final String REQUESTED_WITH_HEADER_CONTROL = "REQUESTED_WITH_HEADER_CONTROL";
+
+    // WebViewCompat.getVariationsHeader
+    public static final String GET_VARIATIONS_HEADER = "GET_VARIATIONS_HEADER";
+
+    // WebSettingsCompat.setEnterpriseAuthenticationAppLinkPolicyEnabled
+    // WebSettingsCompat.getEnterpriseAuthenticationAppLinkPolicyEnabled
+    public static final String ENTERPRISE_AUTHENTICATION_APP_LINK_POLICY =
+            "ENTERPRISE_AUTHENTICATION_APP_LINK_POLICY";
 }

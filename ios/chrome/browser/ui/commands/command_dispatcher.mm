@@ -5,23 +5,60 @@
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
 
 #include <objc/runtime.h>
+
+#include <ostream>
 #include <unordered_map>
 #include <vector>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/strings/sys_string_conversions.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
+#pragma mark - SilentlyFailingObject
+
+// Object that responds to any selector and does nothing when its called.
+// Used as a "nice OCMock" equivalent for CommandDispatcher that's preparing for
+// shutdown.
+@interface SilentlyFailingObject : NSProxy
+@end
+@implementation SilentlyFailingObject
+
+- (instancetype)init {
+  return self;
+}
+
+- (void)forwardInvocation:(NSInvocation*)invocation {
+}
+
+- (NSMethodSignature*)methodSignatureForSelector:(SEL)selector {
+  // Return some method signature to silence errors.
+  // Here it's (void)(self, _cmd).
+  return [NSMethodSignature signatureWithObjCTypes:"v@:"];
+}
+
+@end
+
+#pragma mark - CommandDispatcher
+
 @implementation CommandDispatcher {
   // Stores which target to forward to for a given selector.
   std::unordered_map<SEL, __weak id> _forwardingTargets;
+
+  // Stores remembered targets while preparing for shutdown.
+  std::unordered_map<SEL, __weak id> _silentlyFailingTargets;
+
+  // Tracks if preparing for shutdown has been requested.
+  // This is an ivar, not a property, to avoid having synthesized getter/setter
+  // methods.
+  BOOL _preparingForShutdown;
 }
 
 - (void)startDispatchingToTarget:(id)target forSelector:(SEL)selector {
   DCHECK(![self targetForSelector:selector]);
+  DCHECK(![self shouldFailSilentlyForSelector:selector]);
 
   _forwardingTargets[selector] = target;
 }
@@ -40,6 +77,10 @@
 }
 
 - (void)stopDispatchingForSelector:(SEL)selector {
+  if (_preparingForShutdown) {
+    id target = _forwardingTargets[selector];
+    _silentlyFailingTargets[selector] = target;
+  }
   _forwardingTargets.erase(selector);
 }
 
@@ -69,6 +110,55 @@
   for (auto* selector : selectorsToErase) {
     [self stopDispatchingForSelector:selector];
   }
+}
+
+- (BOOL)dispatchingForProtocol:(Protocol*)protocol {
+  // Special-case the NSObject protocol.
+  if ([@"NSObject" isEqualToString:NSStringFromProtocol(protocol)]) {
+    return YES;
+  }
+
+  unsigned int methodCount;
+  objc_method_description* requiredInstanceMethods =
+      protocol_copyMethodDescriptionList(protocol, YES /* isRequiredMethod */,
+                                         YES /* isInstanceMethod */,
+                                         &methodCount);
+  BOOL conforming = YES;
+  for (unsigned int i = 0; i < methodCount; i++) {
+    SEL selector = requiredInstanceMethods[i].name;
+    BOOL targetFound =
+        _forwardingTargets.find(selector) != _forwardingTargets.end();
+    if (!targetFound && ![self shouldFailSilentlyForSelector:selector]) {
+      conforming = NO;
+      break;
+    }
+  }
+  free(requiredInstanceMethods);
+  if (!conforming)
+    return NO;
+
+  unsigned int protocolCount;
+  Protocol* __unsafe_unretained _Nonnull* _Nullable conformedProtocols =
+      protocol_copyProtocolList(protocol, &protocolCount);
+  for (unsigned int i = 0; i < protocolCount; i++) {
+    if (![self dispatchingForProtocol:conformedProtocols[i]]) {
+      conforming = NO;
+      break;
+    }
+  }
+
+  free(conformedProtocols);
+  return conforming;
+}
+
+- (CommandDispatcher*)strictCallableForProtocol:(Protocol*)protocol {
+  CHECK([self dispatchingForProtocol:protocol])
+      << "Dispatcher failed protocol conformance";
+  return self;
+}
+
+- (void)prepareForShutdown {
+  _preparingForShutdown = YES;
 }
 
 #pragma mark - NSObject
@@ -106,9 +196,18 @@
 // Returns the target registered to receive messeages for |selector|.
 - (id)targetForSelector:(SEL)selector {
   auto target = _forwardingTargets.find(selector);
-  if (target == _forwardingTargets.end())
+  if (target == _forwardingTargets.end()) {
+    if ([self shouldFailSilentlyForSelector:selector]) {
+      return [[SilentlyFailingObject alloc] init];
+    }
     return nil;
+  }
   return target->second;
+}
+
+- (BOOL)shouldFailSilentlyForSelector:(SEL)selector {
+  return _preparingForShutdown && _silentlyFailingTargets.find(selector) !=
+                                      _silentlyFailingTargets.end();
 }
 
 @end

@@ -42,9 +42,7 @@ ContextResult WebGPUInProcessContext::Initialize(
     CommandBufferTaskExecutor* task_executor,
     const ContextCreationAttribs& attribs,
     const SharedMemoryLimits& memory_limits,
-    GpuMemoryBufferManager* gpu_memory_buffer_manager,
-    ImageFactory* image_factory,
-    GpuChannelManagerDelegate* gpu_channel_manager_delegate) {
+    ImageFactory* image_factory) {
   DCHECK(attribs.context_type == CONTEXT_TYPE_WEBGPU);
 
   if (attribs.context_type != CONTEXT_TYPE_WEBGPU ||
@@ -56,12 +54,9 @@ ContextResult WebGPUInProcessContext::Initialize(
   command_buffer_ =
       std::make_unique<InProcessCommandBuffer>(task_executor, GURL());
 
-  static const scoped_refptr<gl::GLSurface> surface = nullptr;
-  static constexpr bool is_offscreen = true;
   auto result = command_buffer_->Initialize(
-      surface, is_offscreen, kNullSurfaceHandle, attribs,
-      gpu_memory_buffer_manager, image_factory, gpu_channel_manager_delegate,
-      client_task_runner_, nullptr, nullptr);
+      attribs, image_factory, client_task_runner_, /*gr_shader_cache=*/nullptr,
+      /*activity_flags=*/nullptr);
   if (result != ContextResult::kSuccess) {
     DLOG(ERROR) << "Failed to initialize InProcessCommmandBuffer";
     return result;
@@ -95,7 +90,7 @@ const GpuFeatureInfo& WebGPUInProcessContext::GetGpuFeatureInfo() const {
   return command_buffer_->GetGpuFeatureInfo();
 }
 
-webgpu::WebGPUInterface* WebGPUInProcessContext::GetImplementation() {
+webgpu::WebGPUImplementation* WebGPUInProcessContext::GetImplementation() {
   return webgpu_implementation_.get();
 }
 

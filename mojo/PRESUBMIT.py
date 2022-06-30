@@ -10,6 +10,9 @@ for more details about the presubmit API built into depot_tools.
 
 import os.path
 
+USE_PYTHON3 = True
+
+
 def CheckChangeOnUpload(input_api, output_api):
   # Additional python module paths (we're in src/mojo/); not everyone needs
   # them, but it's easiest to add them to everyone's path.
@@ -24,9 +27,10 @@ def CheckChangeOnUpload(input_api, output_api):
       input_api.PresubmitLocalPath(), "public", "python")
   # TODO(vtl): Don't lint these files until the (many) problems are fixed
   # (possibly by deleting/rewriting some files).
-  temporary_black_list = input_api.DEFAULT_BLACK_LIST + \
+  files_to_skip = input_api.DEFAULT_FILES_TO_SKIP + \
       (r".*\bpublic[\\\/]tools[\\\/]bindings[\\\/]pylib[\\\/]mojom[\\\/]"
            r"generate[\\\/].+\.py$",
+       r".*\bpublic[\\\/]tools[\\\/]bindings[\\\/]checks[\\\/].+\.py$",
        r".*\bpublic[\\\/]tools[\\\/]bindings[\\\/]generators[\\\/].+\.py$",
        r".*\bspy[\\\/]ui[\\\/].+\.py$",
        r".*\btools[\\\/]pylib[\\\/]transitive_hash\.py$",
@@ -40,5 +44,5 @@ def CheckChangeOnUpload(input_api, output_api):
   ]
   results += input_api.canned_checks.RunPylint(
       input_api, output_api, extra_paths_list=pylint_extra_paths,
-      black_list=temporary_black_list)
+      files_to_skip=files_to_skip)
   return results

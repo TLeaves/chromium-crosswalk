@@ -7,30 +7,35 @@
 
 #include <string>
 
-#include "base/macros.h"
-
 namespace sync_pb {
-class WifiConfigurationSpecificsData;
+class WifiConfigurationSpecifics;
 }
 
+namespace chromeos {
+
 namespace sync_wifi {
+
+class NetworkIdentifier;
 
 // Applies updates to synced networks to the local networking stack.
 class SyncedNetworkUpdater {
  public:
+  SyncedNetworkUpdater(const SyncedNetworkUpdater&) = delete;
+  SyncedNetworkUpdater& operator=(const SyncedNetworkUpdater&) = delete;
+
   virtual ~SyncedNetworkUpdater() = default;
 
   virtual void AddOrUpdateNetwork(
-      const sync_pb::WifiConfigurationSpecificsData& specifics) = 0;
-  virtual void RemoveNetwork(const std::string& ssid) = 0;
+      const sync_pb::WifiConfigurationSpecifics& specifics) = 0;
+  virtual void RemoveNetwork(const NetworkIdentifier& id) = 0;
+  virtual bool IsUpdateInProgress(const std::string& network_guid) = 0;
 
  protected:
   SyncedNetworkUpdater() = default;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SyncedNetworkUpdater);
 };
 
 }  // namespace sync_wifi
+
+}  // namespace chromeos
 
 #endif  // CHROMEOS_COMPONENTS_SYNC_WIFI_SYNCED_NETWORK_UPDATER_H_

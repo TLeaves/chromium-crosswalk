@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/observer_list.h"
 #include "base/values.h"
 
 InMemoryPrefStore::InMemoryPrefStore() {}
@@ -36,7 +37,7 @@ void InMemoryPrefStore::RemoveObserver(PrefStore::Observer* observer) {
 }
 
 bool InMemoryPrefStore::HasObservers() const {
-  return observers_.might_have_observers();
+  return !observers_.empty();
 }
 
 bool InMemoryPrefStore::IsInitializationComplete() const {
@@ -61,6 +62,11 @@ void InMemoryPrefStore::SetValueSilently(const std::string& key,
 void InMemoryPrefStore::RemoveValue(const std::string& key, uint32_t flags) {
   if (prefs_.RemoveValue(key))
     ReportValueChanged(key, flags);
+}
+
+void InMemoryPrefStore::RemoveValuesByPrefixSilently(
+    const std::string& prefix) {
+  prefs_.ClearWithPrefix(prefix);
 }
 
 bool InMemoryPrefStore::ReadOnly() const {

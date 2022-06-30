@@ -8,71 +8,71 @@
 #include <string>
 
 #include "base/metrics/field_trial.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/win/windows_version.h"
-#include "components/variations/variations_params_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace safe_browsing {
 
+namespace {
+
+// Returns the expected path for the "stable" group on the current architecture.
+std::string GetStablePath() {
+  if (base::win::OSInfo::GetArchitecture() ==
+      base::win::OSInfo::X86_ARCHITECTURE) {
+    return "/dl/softwareremovaltool/win/x86/stable/chrome_cleanup_tool.exe";
+  } else {
+    return "/dl/softwareremovaltool/win/x64/stable/chrome_cleanup_tool.exe";
+  }
+}
+
 class SRTDownloadURLTest : public ::testing::Test {
  protected:
-  void CreatePromptTrial(const std::string& experiment_name) {
-    // Assigned trials will go out of scope when variations_ goes out of scope.
-    constexpr char kTrialName[] = "SRTPromptFieldTrial";
-    base::FieldTrialList::CreateFieldTrial(kTrialName, experiment_name);
+  void CreateDownloadFeature(
+      const absl::optional<std::string>& download_group_name) {
+    base::FieldTrialParams params;
+    if (download_group_name)
+      params["cleaner_download_group"] = *download_group_name;
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        kChromeCleanupDistributionFeature, params);
   }
 
-  void CreateDownloadFeature(const std::string& download_group_name) {
-    constexpr char kFeatureName[] = "ChromeCleanupDistribution";
-    std::map<std::string, std::string> params;
-    params["cleaner_download_group"] = download_group_name;
-    variations_.SetVariationParamsWithFeatureAssociations(
-        "A trial name", params, {kFeatureName});
+  void DisableDownloadFeature() {
+    scoped_feature_list_.InitAndDisableFeature(
+        kChromeCleanupDistributionFeature);
   }
 
  private:
-  variations::testing::VariationParamsManager variations_;
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
-
-TEST_F(SRTDownloadURLTest, Stable) {
-  CreatePromptTrial("On");
-  std::string expected_path;
-  if (base::win::OSInfo::GetArchitecture() ==
-      base::win::OSInfo::X86_ARCHITECTURE) {
-    expected_path =
-        "/dl/softwareremovaltool/win/x86/stable/chrome_cleanup_tool.exe";
-  } else {
-    expected_path =
-        "/dl/softwareremovaltool/win/x64/stable/chrome_cleanup_tool.exe";
-  }
-  EXPECT_EQ(expected_path, GetSRTDownloadURL().path());
-}
 
 TEST_F(SRTDownloadURLTest, Experiment) {
   CreateDownloadFeature("experiment");
-  std::string expected_path;
-  if (base::win::OSInfo::GetArchitecture() ==
-      base::win::OSInfo::X86_ARCHITECTURE) {
-    expected_path =
-        "/dl/softwareremovaltool/win/x86/experiment/chrome_cleanup_tool.exe";
-  } else {
-    expected_path =
-        "/dl/softwareremovaltool/win/x64/experiment/chrome_cleanup_tool.exe";
-  }
+  const std::string expected_path =
+      (base::win::OSInfo::GetArchitecture() ==
+       base::win::OSInfo::X86_ARCHITECTURE)
+          ? "/dl/softwareremovaltool/win/x86/experiment/chrome_cleanup_tool.exe"
+          : "/dl/softwareremovaltool/win/x64/experiment/"
+            "chrome_cleanup_tool.exe";
   EXPECT_EQ(expected_path, GetSRTDownloadURL().path());
 }
 
 TEST_F(SRTDownloadURLTest, DefaultsToStable) {
-  std::string expected_path;
-  if (base::win::OSInfo::GetArchitecture() ==
-      base::win::OSInfo::X86_ARCHITECTURE) {
-    expected_path =
-        "/dl/softwareremovaltool/win/x86/stable/chrome_cleanup_tool.exe";
-  } else {
-    expected_path =
-        "/dl/softwareremovaltool/win/x64/stable/chrome_cleanup_tool.exe";
-  }
-  EXPECT_EQ(expected_path, GetSRTDownloadURL().path());
+  DisableDownloadFeature();
+  EXPECT_EQ(GetStablePath(), GetSRTDownloadURL().path());
 }
+
+TEST_F(SRTDownloadURLTest, EmptyParamIsStable) {
+  CreateDownloadFeature("");
+  EXPECT_EQ(GetStablePath(), GetSRTDownloadURL().path());
+}
+
+TEST_F(SRTDownloadURLTest, MissingParamIsStable) {
+  CreateDownloadFeature(absl::nullopt);
+  EXPECT_EQ(GetStablePath(), GetSRTDownloadURL().path());
+}
+
+}  // namespace
 
 }  // namespace safe_browsing

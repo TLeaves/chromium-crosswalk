@@ -11,6 +11,7 @@
 
 #include "base/containers/span.h"
 #include "gpu/gpu_export.h"
+#include "ui/gl/gpu_preference.h"
 #include "url/gurl.h"
 
 namespace gpu {
@@ -21,6 +22,9 @@ class GPU_EXPORT DecoderClient {
 
   // Prints a message (error/warning) to the console.
   virtual void OnConsoleMessage(int32_t id, const std::string& message) = 0;
+
+  // Notifies the renderer process that the active GPU changed.
+  virtual void OnGpuSwitched(gl::GpuPreference active_gpu_heuristic) {}
 
   // Cache a newly linked shader.
   virtual void CacheShader(const std::string& key,
@@ -40,8 +44,7 @@ class GPU_EXPORT DecoderClient {
   // because the fence completed.
   virtual void OnRescheduleAfterFinished() = 0;
 
-  // Called when SwapBuffers, PostSubBufferCHROMIUM,
-  // SwapBuffersWithBoundsCHROMIUM or CommitOverlayPlanesCHROMIUM is called.
+  // Called when SwapBuffers is called.
   virtual void OnSwapBuffers(uint64_t swap_id, uint32_t flags) = 0;
 
   // Notifies the client that the shared GrContext may have been used by this

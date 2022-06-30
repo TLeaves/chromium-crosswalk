@@ -15,14 +15,14 @@ using base::UserMetricsAction;
 
 KeywordEditorController::KeywordEditorController(Profile* profile)
     : url_model_(TemplateURLServiceFactory::GetForProfile(profile)) {
-  table_model_.reset(new TemplateURLTableModel(url_model_));
+  table_model_ = std::make_unique<TemplateURLTableModel>(url_model_);
 }
 
 KeywordEditorController::~KeywordEditorController() {
 }
 
-int KeywordEditorController::AddTemplateURL(const base::string16& title,
-                                            const base::string16& keyword,
+int KeywordEditorController::AddTemplateURL(const std::u16string& title,
+                                            const std::u16string& keyword,
                                             const std::string& url) {
   DCHECK(!url.empty());
 
@@ -35,8 +35,8 @@ int KeywordEditorController::AddTemplateURL(const base::string16& title,
 }
 
 void KeywordEditorController::ModifyTemplateURL(TemplateURL* template_url,
-                                                const base::string16& title,
-                                                const base::string16& keyword,
+                                                const std::u16string& title,
+                                                const std::u16string& keyword,
                                                 const std::string& url) {
   DCHECK(!url.empty());
   const int index = table_model_->IndexOfTemplateURL(template_url);
@@ -68,7 +68,26 @@ bool KeywordEditorController::CanMakeDefault(const TemplateURL* url) const {
 
 bool KeywordEditorController::CanRemove(const TemplateURL* url) const {
   return (url->type() == TemplateURL::NORMAL) &&
-      (url != url_model_->GetDefaultSearchProvider());
+         (url != url_model_->GetDefaultSearchProvider()) &&
+         (url->starter_pack_id() == 0);
+}
+
+bool KeywordEditorController::CanActivate(const TemplateURL* url) const {
+  return (url->is_active() != TemplateURLData::ActiveStatus::kTrue) &&
+         (url->prepopulate_id() == 0);
+}
+
+bool KeywordEditorController::CanDeactivate(const TemplateURL* url) const {
+  return (url->is_active() == TemplateURLData::ActiveStatus::kTrue &&
+          url != url_model_->GetDefaultSearchProvider() &&
+          url->prepopulate_id() == 0);
+}
+
+bool KeywordEditorController::ShouldConfirmDeletion(
+    const TemplateURL* url) const {
+  // Currently, only built-in search engines require confirmation before
+  // deletion.
+  return url->prepopulate_id() != 0;
 }
 
 void KeywordEditorController::RemoveTemplateURL(int index) {
@@ -82,6 +101,11 @@ const TemplateURL* KeywordEditorController::GetDefaultSearchProvider() {
 
 void KeywordEditorController::MakeDefaultTemplateURL(int index) {
   table_model_->MakeDefaultTemplateURL(index);
+}
+
+void KeywordEditorController::SetIsActiveTemplateURL(int index,
+                                                     bool is_active) {
+  table_model_->SetIsActiveTemplateURL(index, is_active);
 }
 
 bool KeywordEditorController::loaded() const {

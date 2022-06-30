@@ -6,10 +6,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <tuple>
 #include <utility>
 
 #include "base/bind.h"
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -32,7 +35,8 @@ namespace history {
 //                    will be the next one evicted.
 //   title            The title to display under that site.
 //   redirects        A space separated list of URLs that are known to redirect
-//                    to this url.
+//                    to this url. As of 9/2019 this column is not used. It will
+//                    be removed shortly.
 
 namespace {
 
@@ -65,25 +69,6 @@ bool InitTables(sql::Database* db) {
       "title LONGVARCHAR,"
       "redirects LONGVARCHAR)";
   return db->Execute(kTopSitesSql);
-}
-
-// Encodes redirects into a string.
-std::string GetRedirects(const MostVisitedURL& url) {
-  std::vector<base::StringPiece> redirects;
-  for (const auto& redirect : url.redirects)
-    redirects.push_back(redirect.spec());
-  return base::JoinString(redirects, " ");
-}
-
-// Decodes redirects from a string and sets them for the url.
-void SetRedirects(const std::string& redirects, MostVisitedURL* url) {
-  for (const std::string& redirect : base::SplitString(
-           redirects, base::kWhitespaceASCII,
-           base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
-    GURL redirect_url(redirect);
-    if (redirect_url.is_valid())
-      url->redirects.push_back(redirect_url);
-  }
 }
 
 // Track various failure (and success) cases in recovery code.
@@ -144,7 +129,7 @@ void FixTopSitesTable(sql::Database* db, int version) {
         "DELETE FROM thumbnails "
         "WHERE (url_rank = -1 AND last_forced = 0) "
         "OR (url_rank <> -1 AND last_forced <> 0)";
-    ignore_result(db->Execute(kFixRankSql));
+    std::ignore = db->Execute(kFixRankSql);
     if (db->GetLastChangeCount() > 0)
       RecordRecoveryEvent(RECOVERY_EVENT_INVARIANT_RANK);
   }
@@ -156,8 +141,8 @@ void FixTopSitesTable(sql::Database* db, int version) {
   static const char kFixRedirectsSql[] =
       "DELETE FROM %s "
       "WHERE url <> substr(redirects, -length(url), length(url))";
-  ignore_result(
-      db->Execute(base::StringPrintf(kFixRedirectsSql, kTableName).c_str()));
+  std::ignore =
+      db->Execute(base::StringPrintf(kFixRedirectsSql, kTableName).c_str());
   if (db->GetLastChangeCount() > 0)
     RecordRecoveryEvent(RECOVERY_EVENT_INVARIANT_REDIRECT);
 
@@ -177,7 +162,7 @@ void FixTopSitesTable(sql::Database* db, int version) {
   sql::Statement update_statement(db->GetUniqueStatement(
       base::StringPrintf(kAdjustRankSql, kTableName).c_str()));
 
-  // Update any rows where |next_rank| doesn't match |url_rank|.
+  // Update any rows where `next_rank` doesn't match `url_rank`.
   int next_rank = 0;
   bool adjusted = false;
   while (select_statement.Step()) {
@@ -263,7 +248,7 @@ void DatabaseErrorCallback(sql::Database* db,
     // Prevent reentrant calls.
     db->reset_error_callback();
 
-    // After this call, the |db| handle is poisoned so that future calls will
+    // After this call, the `db` handle is poisoned so that future calls will
     // return errors until the handle is re-opened.
     RecoverAndFixup(db, db_path);
 
@@ -272,7 +257,7 @@ void DatabaseErrorCallback(sql::Database* db,
     // or hardware issues, not coding errors at the client level, so displaying
     // the error would probably lead to confusion.  The ignored call signals the
     // test-expectation framework that the error was handled.
-    ignore_result(sql::Database::IsExpectedSqliteError(extended_error));
+    std::ignore = sql::Database::IsExpectedSqliteError(extended_error);
     return;
   }
 
@@ -325,7 +310,7 @@ bool TopSitesDatabase::Init(const base::FilePath& db_name) {
 bool TopSitesDatabase::InitImpl(const base::FilePath& db_name) {
   const bool file_existed = base::PathExists(db_name);
 
-  db_.reset(CreateDB(db_name));
+  db_ = CreateDB(db_name);
   if (!db_)
     return false;
 
@@ -339,7 +324,9 @@ bool TopSitesDatabase::InitImpl(const base::FilePath& db_name) {
 
   // Clear databases which are too old to process.
   DCHECK_LT(kDeprecatedVersionNumber, kVersionNumber);
-  sql::MetaTable::RazeIfDeprecated(db_.get(), kDeprecatedVersionNumber);
+  sql::MetaTable::RazeIfIncompatible(
+      db_.get(), /*lowest_supported_version=*/kDeprecatedVersionNumber + 1,
+      kVersionNumber);
 
   // Scope initialization in a transaction so we can't be partially
   // initialized.
@@ -430,7 +417,7 @@ bool TopSitesDatabase::UpgradeToVersion4() {
 void TopSitesDatabase::GetSites(MostVisitedURLList* urls) {
   sql::Statement statement(
       db_->GetCachedStatement(SQL_FROM_HERE,
-                              "SELECT url, url_rank, title, redirects "
+                              "SELECT url, url_rank, title "
                               "FROM top_sites ORDER BY url_rank"));
 
   if (!statement.is_valid()) {
@@ -446,8 +433,6 @@ void TopSitesDatabase::GetSites(MostVisitedURLList* urls) {
     GURL gurl(statement.ColumnString(0));
     url.url = gurl;
     url.title = statement.ColumnString16(2);
-    std::string redirects = statement.ColumnString(3);
-    SetRedirects(redirects, &url);
     urls->push_back(url);
   }
 }
@@ -467,12 +452,11 @@ void TopSitesDatabase::AddSite(const MostVisitedURL& url, int new_rank) {
   sql::Statement statement(
       db_->GetCachedStatement(SQL_FROM_HERE,
                               "INSERT OR REPLACE INTO top_sites "
-                              "(url, url_rank, title, redirects) "
-                              "VALUES (?, ?, ?, ?)"));
+                              "(url, url_rank, title) "
+                              "VALUES (?, ?, ?)"));
   statement.BindString(0, url.url.spec());
   statement.BindInt(1, kRankOfNewURL);
   statement.BindString16(2, url.title);
-  statement.BindString(3, GetRedirects(url));
   if (!statement.Run())
     return;
 
@@ -483,10 +467,9 @@ void TopSitesDatabase::AddSite(const MostVisitedURL& url, int new_rank) {
 bool TopSitesDatabase::UpdateSite(const MostVisitedURL& url) {
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE,
                                                    "UPDATE top_sites SET "
-                                                   "title = ?, redirects = ?"
+                                                   "title = ? "
                                                    "WHERE url = ?"));
   statement.BindString16(0, url.title);
-  statement.BindString(1, GetRedirects(url));
 
   return statement.Run();
 }
@@ -584,17 +567,18 @@ bool TopSitesDatabase::RemoveURLNoTransaction(const MostVisitedURL& url) {
   return delete_statement.Run();
 }
 
-sql::Database* TopSitesDatabase::CreateDB(const base::FilePath& db_name) {
-  std::unique_ptr<sql::Database> db(new sql::Database());
-  // Settings copied from ThumbnailDatabase.
+std::unique_ptr<sql::Database> TopSitesDatabase::CreateDB(
+    const base::FilePath& db_name) {
+  // Settings copied from FaviconDatabase.
+  auto db = std::make_unique<sql::Database>(sql::DatabaseOptions{
+      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
   db->set_histogram_tag("TopSites");
-  db->set_error_callback(base::Bind(&DatabaseErrorCallback, db.get(), db_name));
-  db->set_page_size(4096);
-  db->set_cache_size(32);
+  db->set_error_callback(
+      base::BindRepeating(&DatabaseErrorCallback, db.get(), db_name));
 
   if (!db->Open(db_name))
     return nullptr;
-  return db.release();
+  return db;
 }
 
 }  // namespace history

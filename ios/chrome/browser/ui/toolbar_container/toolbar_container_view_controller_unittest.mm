@@ -7,11 +7,10 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
 #import "ios/chrome/browser/ui/toolbar_container/toolbar_collapsing.h"
 #import "ios/chrome/browser/ui/toolbar_container/toolbar_height_range.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -294,7 +293,7 @@ TEST_P(ToolbarContainerViewControllerTest, VerifyStackLayoutForProgresses) {
   EXPECT_EQ(CGRectGetHeight(container_view().bounds), GetExpectedStackHeight());
   // Set the stack progress to the progress values in kStackProgressValues and
   // verify the toolbar frames for each of these stack progress values.
-  for (size_t index = 0; index < base::size(kStackProgressValues); ++index) {
+  for (size_t index = 0; index < std::size(kStackProgressValues); ++index) {
     SetStackProgress(kStackProgressValues[index]);
     CheckToolbarFrames();
   }

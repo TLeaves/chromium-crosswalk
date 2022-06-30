@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/logging.h"
 #include "base/win/scoped_variant.h"
+#include "build/build_config.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/accessibility/uia_accessibility_event_waiter.h"
@@ -12,6 +12,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/accessibility_notification_waiter.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -34,6 +35,11 @@ namespace autofill {
 class AutofillAccessibilityWinBrowserTest : public InProcessBrowserTest {
  public:
   AutofillAccessibilityWinBrowserTest() = default;
+
+  AutofillAccessibilityWinBrowserTest(
+      const AutofillAccessibilityWinBrowserTest&) = delete;
+  AutofillAccessibilityWinBrowserTest& operator=(
+      const AutofillAccessibilityWinBrowserTest&) = delete;
 
  protected:
   void SetUpOnMainThread() override {
@@ -73,19 +79,22 @@ class AutofillAccessibilityWinBrowserTest : public InProcessBrowserTest {
     SimulateKeyPress(web_contents, key, code, key_code, false, false, false,
                      false);
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AutofillAccessibilityWinBrowserTest);
 };
 
+// The test is flaky on Windows. See https://crbug.com/1221273
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AutofillPopupControllerFor DISABLED_AutofillPopupControllerFor
+#else
+#define MAYBE_AutofillPopupControllerFor AutofillPopupControllerFor
+#endif
 IN_PROC_BROWSER_TEST_F(AutofillAccessibilityWinBrowserTest,
-                       AutofillPopupControllerFor) {
+                       MAYBE_AutofillPopupControllerFor) {
   content::AccessibilityNotificationWaiter waiter(
       GetWebContents(), ui::kAXModeComplete, ax::mojom::Event::kLoadComplete);
-  ui_test_utils::NavigateToURL(
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(),
-      embedded_test_server()->GetURL("/accessibility/input_datalist.html"));
-  waiter.WaitForNotification();
+      embedded_test_server()->GetURL("/accessibility/input_datalist.html")));
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   base::win::ScopedVariant result_variant;
 
@@ -95,13 +104,13 @@ IN_PROC_BROWSER_TEST_F(AutofillAccessibilityWinBrowserTest,
   // The autofill popup of the form input element has not shown yet. The form
   // input element is the controller for the checkbox as indicated by the form
   // input element's |aria-controls| attribute.
-  UiaGetPropertyValueVtArrayVtUnknownValidate(
+  content::UiaGetPropertyValueVtArrayVtUnknownValidate(
       UIA_ControllerForPropertyId,
       FindAccessibilityNode(GetWebContents(), find_criteria), {"checkbox"});
 
   UiaAccessibilityWaiterInfo info = {
-      GetWebPageHwnd(), base::ASCIIToUTF16("combobox"),
-      base::ASCIIToUTF16("input"), ax::mojom::Event::kControlsChanged};
+      GetWebPageHwnd(), base::ASCIIToWide("combobox"),
+      base::ASCIIToWide("input"), ax::mojom::Event::kControlsChanged};
 
   std::unique_ptr<UiaAccessibilityEventWaiter> control_waiter =
       std::make_unique<UiaAccessibilityEventWaiter>(info);
@@ -109,16 +118,20 @@ IN_PROC_BROWSER_TEST_F(AutofillAccessibilityWinBrowserTest,
   ShowDropdown("datalist");
   control_waiter->Wait();
 
+  // The focus should remain on the input element.
+  EXPECT_EQ(content::GetFocusedAccessibilityNodeInfo(GetWebContents()).role,
+            ax::mojom::Role::kTextFieldWithComboBox);
+
   // The autofill popup of the form input element is showing. The form input
   // element is the controller for the checkbox and autofill popup as
   // indicated by the form input element's |aria-controls| attribute and the
   // existing popup.
-  UiaGetPropertyValueVtArrayVtUnknownValidate(
+  content::UiaGetPropertyValueVtArrayVtUnknownValidate(
       UIA_ControllerForPropertyId,
       FindAccessibilityNode(GetWebContents(), find_criteria),
       {"checkbox", "Autofill"});
 
-  control_waiter.reset(new UiaAccessibilityEventWaiter(info));
+  control_waiter = std::make_unique<UiaAccessibilityEventWaiter>(info);
   // Hide popup and wait for UIA_ControllerForPropertyId event.
   SendKeyToPage(GetWebContents(), ui::DomKey::TAB);
   control_waiter->Wait();
@@ -126,7 +139,7 @@ IN_PROC_BROWSER_TEST_F(AutofillAccessibilityWinBrowserTest,
   // The autofill popup of the form input element is hidden. The form
   // input element is the controller for the checkbox as indicated by the form
   // input element's |aria-controls| attribute.
-  UiaGetPropertyValueVtArrayVtUnknownValidate(
+  content::UiaGetPropertyValueVtArrayVtUnknownValidate(
       UIA_ControllerForPropertyId,
       FindAccessibilityNode(GetWebContents(), find_criteria), {"checkbox"});
 }

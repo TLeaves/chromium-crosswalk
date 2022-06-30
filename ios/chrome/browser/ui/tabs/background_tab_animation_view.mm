@@ -4,13 +4,14 @@
 
 #import "ios/chrome/browser/ui/tabs/background_tab_animation_view.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "ios/chrome/browser/ui/util/animation_util.h"
 #import "ios/chrome/browser/ui/util/named_guide.h"
 #import "ios/chrome/browser/ui/util/named_guide_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/material_timing.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -23,7 +24,25 @@ const CGFloat kMinScale = 0.7;
 CGFloat kRotationAngleInRadians = 20.0 / 180 * M_PI;
 }  // namespace
 
+@interface BackgroundTabAnimationView ()
+
+// Whether the animation is taking place in incognito.
+@property(nonatomic, assign) BOOL incognito;
+
+@end
+
 @implementation BackgroundTabAnimationView
+
+- (instancetype)initWithFrame:(CGRect)frame incognito:(BOOL)incognito {
+  self = [super initWithFrame:frame];
+  if (self) {
+    _incognito = incognito;
+
+    self.overrideUserInterfaceStyle =
+        incognito ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
+  }
+  return self;
+}
 
 #pragma mark - Public
 
@@ -96,7 +115,7 @@ CGFloat kRotationAngleInRadians = 20.0 / 180 * M_PI;
   [super didMoveToSuperview];
 
   if (self.subviews.count == 0) {
-    self.backgroundColor = [UIColor colorWithWhite:0.98 alpha:1];
+    self.backgroundColor = [UIColor colorNamed:kBackgroundColor];
     self.layer.shadowRadius = 20;
     self.layer.shadowOpacity = 0.4;
     self.layer.shadowOffset = CGSizeMake(0, 3);
@@ -106,7 +125,7 @@ CGFloat kRotationAngleInRadians = 20.0 / 180 * M_PI;
             [[UIImage imageNamed:@"open_new_tab_background"]
                 imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
     linkImage.translatesAutoresizingMaskIntoConstraints = NO;
-    linkImage.tintColor = [UIColor colorWithWhite:0.4 alpha:1];
+    linkImage.tintColor = [UIColor colorNamed:kToolbarButtonColor];
 
     [self addSubview:linkImage];
 
@@ -131,8 +150,8 @@ CGFloat kRotationAngleInRadians = 20.0 / 180 * M_PI;
                              fromView:tabGridButtonLayoutGuide.owningView];
 }
 
-// Returns the animation duration, based on the |parentSize| and the |yDiff| and
-// |xDiff| between the origin and destination point. The animation is faster the
+// Returns the animation duration, based on the `parentSize` and the `yDiff` and
+// `xDiff` between the origin and destination point. The animation is faster the
 // closer the origin and destination are.
 - (CGFloat)animationDurationWithParentSize:(CGSize)parentSize
                                      xDiff:(CGFloat)xDiff
@@ -148,8 +167,8 @@ CGFloat kRotationAngleInRadians = 20.0 / 180 * M_PI;
 }
 
 // Returns the BezierPath that should be followed by the animated view, based on
-// the |parentSize| and the |yDiff| and |xDiff| between the |origin| and
-// |destination| point.
+// the `parentSize` and the `yDiff` and `xDiff` between the `origin` and
+// `destination` point.
 - (UIBezierPath*)positionPathWithParentHeight:(CGFloat)parentHeight
                                         xDiff:(CGFloat)xDiff
                                         yDiff:(CGFloat)yDiff

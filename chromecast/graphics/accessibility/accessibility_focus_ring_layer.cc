@@ -7,6 +7,8 @@
 
 #include "chromecast/graphics/accessibility/accessibility_focus_ring_layer.h"
 
+#include <algorithm>
+
 #include "base/bind.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
@@ -73,8 +75,8 @@ SkPath MakePath(const AccessibilityFocusRing& input_ring,
   }
 
   SkPath path;
-  gfx::Point p0 = ring.points[0] - offset;
-  path.moveTo(SkIntToScalar(p0.x()), SkIntToScalar(p0.y()));
+  gfx::Point start = ring.points[0] - offset;
+  path.moveTo(SkIntToScalar(start.x()), SkIntToScalar(start.y()));
   for (int i = 0; i < 12; i++) {
     int index0 = ((3 * i) + 1) % 36;
     int index1 = ((3 * i) + 2) % 36;
@@ -104,13 +106,28 @@ void AccessibilityFocusRingLayer::Set(const AccessibilityFocusRing& ring) {
 
   gfx::Rect bounds = ring.GetBounds();
   int inset = kGradientWidth;
-  bounds.Inset(-inset, -inset, -inset, -inset);
+  bounds.Inset(-inset);
 
   DCHECK(root_window());
   display::Display display =
       display::Screen::GetScreen()->GetDisplayMatching(bounds);
   ::wm::ConvertRectFromScreen(root_window(), &bounds);
   CreateOrUpdateLayer(root_window(), "AccessibilityFocusRing", bounds);
+
+  gfx::Rect wbounds = root_window()->bounds();
+  wbounds.Inset(inset / 2);
+  int top = wbounds.x();
+  int left = wbounds.y();
+  int bottom = top + wbounds.height();
+  int right = left + wbounds.width();
+
+  for (int i = 0; i < 36; i++) {
+    gfx::Point& p = ring_.points[i];
+    p.set_x(std::max(p.x(), left));
+    p.set_x(std::min(p.x(), right));
+    p.set_y(std::max(p.y(), top));
+    p.set_y(std::min(p.y(), bottom));
+  }
 }
 
 void AccessibilityFocusRingLayer::OnPaintLayer(

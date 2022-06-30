@@ -5,16 +5,13 @@
 #ifndef CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_DOCUMENT_WRITE_PAGE_LOAD_METRICS_OBSERVER_H_
 #define CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_DOCUMENT_WRITE_PAGE_LOAD_METRICS_OBSERVER_H_
 
-#include "base/macros.h"
-#include "chrome/browser/page_load_metrics/page_load_metrics_observer.h"
+#include "components/page_load_metrics/browser/page_load_metrics_observer.h"
 
 namespace internal {
 
 // Expose metrics for tests.
 extern const char kHistogramDocWriteParseStartToFirstContentfulPaint[];
 extern const char kHistogramDocWriteBlockParseStartToFirstContentfulPaint[];
-extern const char kHistogramDocWriteBlockCount[];
-extern const char kHistogramDocWriteBlockReloadCount[];
 
 }  // namespace internal
 
@@ -23,23 +20,24 @@ class DocumentWritePageLoadMetricsObserver
  public:
   DocumentWritePageLoadMetricsObserver() = default;
 
+  DocumentWritePageLoadMetricsObserver(
+      const DocumentWritePageLoadMetricsObserver&) = delete;
+  DocumentWritePageLoadMetricsObserver& operator=(
+      const DocumentWritePageLoadMetricsObserver&) = delete;
+
   // page_load_metrics::PageLoadMetricsObserver implementation:
+  ObservePolicy OnFencedFramesStart(
+      content::NavigationHandle* navigation_handle,
+      const GURL& currently_committed_url) override;
+
   void OnFirstContentfulPaintInPage(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
 
   void OnFirstMeaningfulPaintInMainFrameDocument(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
 
   void OnParseStop(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
-
-  void OnLoadingBehaviorObserved(
-      content::RenderFrameHost* rfh,
-      int behavior_flags,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
 
   enum DocumentWriteLoadingBehavior {
     LOADING_BEHAVIOR_BLOCK,
@@ -49,26 +47,14 @@ class DocumentWritePageLoadMetricsObserver
   };
 
  private:
-  static void LogLoadingBehaviorMetrics(DocumentWriteLoadingBehavior behavior,
-                                        ukm::SourceId source_id);
-
   void LogDocumentWriteBlockFirstContentfulPaint(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& info);
+      const page_load_metrics::mojom::PageLoadTiming& timing);
 
   void LogDocumentWriteBlockParseStop(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& info);
+      const page_load_metrics::mojom::PageLoadTiming& timing);
 
   void LogDocumentWriteBlockFirstMeaningfulPaint(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& info);
-
-  bool doc_write_same_site_diff_scheme_ = false;
-  bool doc_write_block_observed_ = false;
-  bool doc_write_block_reload_observed_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(DocumentWritePageLoadMetricsObserver);
+      const page_load_metrics::mojom::PageLoadTiming& timing);
 };
 
 #endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_DOCUMENT_WRITE_PAGE_LOAD_METRICS_OBSERVER_H_

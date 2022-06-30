@@ -7,13 +7,16 @@
 
 #import <UIKit/UIKit.h>
 
-extern NSString* const kFormSuggestionsViewAccessibilityIdentifier;
-
 @class FormSuggestion;
 @protocol FormSuggestionClient;
 @class FormSuggestionView;
+@class LayoutGuideCenter;
 
 @protocol FormSuggestionViewDelegate <NSObject>
+
+// User accepted a suggestion from FormSuggestionView.
+- (void)formSuggestionView:(FormSuggestionView*)formSuggestionView
+       didAcceptSuggestion:(FormSuggestion*)suggestion;
 
 // The view received a long pull in the content direction. The delegate should
 // probably unlock the trailing view and reset to a clean state.
@@ -35,17 +38,22 @@ extern NSString* const kFormSuggestionsViewAccessibilityIdentifier;
 // A view added at the end of the current suggestions.
 @property(nonatomic, strong) UIView* trailingView;
 
-// Updates with |client| and |suggestions|.
-- (void)updateClient:(id<FormSuggestionClient>)client
-         suggestions:(NSArray<FormSuggestion*>*)suggestions;
+// The layout guide center to use to refer to the first suggestion label.
+@property(nonatomic, strong) LayoutGuideCenter* layoutGuideCenter;
+
+// Updates with |suggestions|.
+- (void)updateSuggestions:(NSArray<FormSuggestion*>*)suggestions;
 
 // Reset content insets back to zero and sets the delegate to nil. Used to stop
 // hearing for the pull gesture to reset and unlock the trailing view.
-- (void)resetContentInsetAndDelegate;
+- (void)resetContentInsetAndDelegateAnimated:(BOOL)animated;
 
 // Animates the content insets so the trailing view is showed as the first
 // thing.
 - (void)lockTrailingView;
+
+// Animates the first suggestion label.
+- (void)animateSuggestionLabel;
 
 @end
 

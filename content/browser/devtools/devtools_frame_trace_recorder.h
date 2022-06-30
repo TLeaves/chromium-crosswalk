@@ -5,27 +5,29 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_FRAME_TRACE_RECORDER_H_
 #define CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_FRAME_TRACE_RECORDER_H_
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+
+namespace cc {
+class RenderFrameMetadata;
+}
 
 namespace content {
 
 class RenderFrameHostImpl;
-struct DevToolsFrameMetadata;
 
 class DevToolsFrameTraceRecorder {
  public:
   DevToolsFrameTraceRecorder();
+
+  DevToolsFrameTraceRecorder(const DevToolsFrameTraceRecorder&) = delete;
+  DevToolsFrameTraceRecorder& operator=(const DevToolsFrameTraceRecorder&) =
+      delete;
+
   ~DevToolsFrameTraceRecorder();
 
-  void OnSynchronousSwapCompositorFrame(RenderFrameHostImpl* host,
-                                        const DevToolsFrameMetadata& metadata);
-
-  static constexpr int kMaximumNumberOfScreenshots = 450;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DevToolsFrameTraceRecorder);
+  void OnSynchronousSwapCompositorFrame(
+      RenderFrameHostImpl* host,
+      const cc::RenderFrameMetadata& metadata);
 };
 
 }  // namespace content

@@ -6,7 +6,7 @@
 #define EXTENSIONS_SHELL_BROWSER_SHELL_NACL_BROWSER_DELEGATE_H_
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "components/nacl/browser/nacl_browser_delegate.h"
 
 namespace content {
@@ -22,6 +22,10 @@ class ShellNaClBrowserDelegate : public NaClBrowserDelegate {
  public:
   // Uses |context| to look up extensions via InfoMap on the IO thread.
   explicit ShellNaClBrowserDelegate(content::BrowserContext* context);
+
+  ShellNaClBrowserDelegate(const ShellNaClBrowserDelegate&) = delete;
+  ShellNaClBrowserDelegate& operator=(const ShellNaClBrowserDelegate&) = delete;
+
   ~ShellNaClBrowserDelegate() override;
 
   // NaClBrowserDelegate overrides:
@@ -35,19 +39,13 @@ class ShellNaClBrowserDelegate : public NaClBrowserDelegate {
   std::string GetVersionString() const override;
   ppapi::host::HostFactory* CreatePpapiHostFactory(
       content::BrowserPpapiHost* ppapi_host) override;
-  bool MapUrlToLocalFilePath(const GURL& url,
-                             bool is_blocking,
-                             const base::FilePath& profile_directory,
-                             base::FilePath* file_path) override;
+  MapUrlToLocalFilePathCallback GetMapUrlToLocalFilePathCallback(
+      const base::FilePath& profile_directory) override;
   void SetDebugPatterns(const std::string& debug_patterns) override;
   bool URLMatchesDebugPatterns(const GURL& manifest_url) override;
-  bool IsNonSfiModeAllowed(const base::FilePath& profile_directory,
-                           const GURL& manifest_url) override;
 
  private:
-  content::BrowserContext* browser_context_;  // Not owned.
-
-  DISALLOW_COPY_AND_ASSIGN(ShellNaClBrowserDelegate);
+  raw_ptr<content::BrowserContext> browser_context_;  // Not owned.
 };
 
 }  // namespace extensions

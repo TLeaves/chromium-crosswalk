@@ -6,6 +6,7 @@
 
 #include <libproc.h>
 #include <mach/mach.h>
+#include <mach/mach_time.h>
 #include <mach/mach_vm.h>
 #include <mach/shared_region.h>
 #include <stddef.h>
@@ -20,6 +21,35 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
 #include "base/process/process_metrics_iocounters.h"
+#include "base/time/time.h"
+#include "build/build_config.h"
+
+namespace {
+
+// This is a standin for the private pm_task_energy_data_t struct.
+struct OpaquePMTaskEnergyData {
+  // Empirical size of the private struct.
+  uint8_t data[408];
+};
+
+// Sample everything but network usage, since fetching network
+// usage can hang.
+static constexpr uint8_t kPMSampleFlags = 0xff & ~0x8;
+
+}  // namespace
+
+extern "C" {
+
+// From libpmsample.dylib
+int pm_sample_task(mach_port_t task,
+                   OpaquePMTaskEnergyData* pm_energy,
+                   uint64_t mach_time,
+                   uint8_t flags);
+
+// From libpmenergy.dylib
+double pm_energy_impact(OpaquePMTaskEnergyData* pm_energy);
+
+}  // extern "C"
 
 namespace base {
 
@@ -57,6 +87,14 @@ bool GetPowerInfo(mach_port_t task, task_power_info* power_info_data) {
                                &power_info_count);
   // Most likely cause for failure: |task| is a zombie.
   return kr == KERN_SUCCESS;
+}
+
+double GetEnergyImpactInternal(mach_port_t task, uint64_t mach_time) {
+  OpaquePMTaskEnergyData energy_info{};
+
+  if (pm_sample_task(task, &energy_info, mach_time, kPMSampleFlags) != 0)
+    return 0.0;
+  return pm_energy_impact(&energy_info);
 }
 
 }  // namespace
@@ -114,7 +152,7 @@ TimeDelta ProcessMetrics::GetCumulativeCPUUsage() {
   timeradd(&user_timeval, &task_timeval, &task_timeval);
   timeradd(&system_timeval, &task_timeval, &task_timeval);
 
-  return TimeDelta::FromMicroseconds(TimeValToMicroseconds(task_timeval));
+  return Microseconds(TimeValToMicroseconds(task_timeval));
 }
 
 int ProcessMetrics::GetPackageIdleWakeupsPerSecond() {
@@ -144,6 +182,31 @@ int ProcessMetrics::GetIdleWakeupsPerSecond() {
   GetPowerInfo(task, &power_info_data);
 
   return CalculateIdleWakeupsPerSecond(power_info_data.task_interrupt_wakeups);
+}
+
+int ProcessMetrics::GetEnergyImpact() {
+  uint64_t now = mach_absolute_time();
+  if (last_energy_impact_ == 0) {
+    last_energy_impact_ = GetEnergyImpactInternal(TaskForPid(process_), now);
+    last_energy_impact_time_ = now;
+    return 0;
+  }
+
+  double total_energy_impact =
+      GetEnergyImpactInternal(TaskForPid(process_), now);
+  uint64_t delta = now - last_energy_impact_time_;
+  if (delta == 0)
+    return 0;
+
+  // Scale by 100 since the histogram is integral.
+  double seconds_since_last_measurement =
+      base::TimeTicks::FromMachAbsoluteTime(delta).since_origin().InSecondsF();
+  int energy_impact = 100 * (total_energy_impact - last_energy_impact_) /
+                      seconds_since_last_measurement;
+  last_energy_impact_ = total_energy_impact;
+  last_energy_impact_time_ = now;
+
+  return energy_impact;
 }
 
 int ProcessMetrics::GetOpenFdCount() const {
@@ -183,6 +246,7 @@ ProcessMetrics::ProcessMetrics(ProcessHandle process,
     : process_(process),
       last_absolute_idle_wakeups_(0),
       last_absolute_package_idle_wakeups_(0),
+      last_energy_impact_(0),
       port_provider_(port_provider) {}
 
 mach_port_t ProcessMetrics::TaskForPid(ProcessHandle process) const {
@@ -232,7 +296,12 @@ bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo) {
   }
   DCHECK_EQ(HOST_VM_INFO64_COUNT, count);
 
+#if defined(ARCH_CPU_ARM64)
+  // PAGE_SIZE is vm_page_size on arm, which isn't constexpr.
+  DCHECK_EQ(PAGE_SIZE % 1024, 0u) << "Invalid page size";
+#else
   static_assert(PAGE_SIZE % 1024 == 0, "Invalid page size");
+#endif
   meminfo->free = saturated_cast<int>(
       PAGE_SIZE / 1024 * (vm_info.free_count - vm_info.speculative_count));
   meminfo->speculative =

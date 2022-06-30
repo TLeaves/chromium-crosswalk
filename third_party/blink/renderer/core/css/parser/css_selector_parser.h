@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_PARSER_CSS_SELECTOR_PARSER_H_
 
 #include <memory>
-#include "base/macros.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_selector.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
@@ -17,7 +17,12 @@ class CSSParserContext;
 class CSSParserTokenStream;
 class CSSParserObserver;
 class CSSSelectorList;
+class Node;
 class StyleSheetContents;
+
+// SelectorVector is the list of CSS selectors as it is parsed,
+// where each selector can contain others (in a tree).
+using CSSSelectorVector = Vector<std::unique_ptr<CSSParserSelector>>;
 
 // FIXME: We should consider building CSSSelectors directly instead of using
 // the intermediate CSSParserSelector.
@@ -35,6 +40,29 @@ class CORE_EXPORT CSSSelectorParser {
 
   static bool ConsumeANPlusB(CSSParserTokenRange&, std::pair<int, int>&);
 
+  static bool SupportsComplexSelector(CSSParserTokenRange,
+                                      const CSSParserContext*);
+
+  static CSSSelector::PseudoType ParsePseudoType(const AtomicString&,
+                                                 bool has_arguments);
+  static PseudoId ParsePseudoElement(const String&, const Node*);
+  // Returns the argument of a parameterized pseudo-element. For example, for
+  // '::highlight(foo)' it returns 'foo'.
+  static AtomicString ParsePseudoElementArgument(const String&);
+
+  // https://drafts.csswg.org/css-cascade-6/#typedef-scope-start
+  // https://drafts.csswg.org/css-cascade-6/#typedef-scope-end
+  //
+  // Note that <scope-start> / <scope-end> are *forgiving* selector lists.
+  // Therefore empty lists, represented by !CSSSelectorList::IsValid(), are
+  // allowed.
+  //
+  // Parse errors are signalled by absl::nullopt.
+  static absl::optional<CSSSelectorList> ParseScopeBoundary(
+      CSSParserTokenRange,
+      const CSSParserContext*,
+      StyleSheetContents*);
+
  private:
   CSSSelectorParser(const CSSParserContext*, StyleSheetContents*);
 
@@ -44,9 +72,39 @@ class CORE_EXPORT CSSSelectorParser {
   CSSSelectorList ConsumeComplexSelectorList(CSSParserTokenStream&,
                                              CSSParserObserver*);
   CSSSelectorList ConsumeCompoundSelectorList(CSSParserTokenRange&);
+  // Consumes a complex selector list if inside_compound_pseudo_ is false,
+  // otherwise consumes a compound selector list.
+  CSSSelectorList ConsumeNestedSelectorList(CSSParserTokenRange&);
+  CSSSelectorList ConsumeForgivingNestedSelectorList(CSSParserTokenRange&);
+  // https://drafts.csswg.org/selectors/#typedef-forgiving-selector-list
+  CSSSelectorList ConsumeForgivingComplexSelectorList(CSSParserTokenRange&);
+  CSSSelectorList ConsumeForgivingCompoundSelectorList(CSSParserTokenRange&);
+  // https://drafts.csswg.org/selectors/#typedef-relative-selector-list
+  CSSSelectorList ConsumeForgivingRelativeSelectorList(CSSParserTokenRange&);
 
+  std::unique_ptr<CSSParserSelector> ConsumeRelativeSelector(
+      CSSParserTokenRange&);
   std::unique_ptr<CSSParserSelector> ConsumeComplexSelector(
       CSSParserTokenRange&);
+
+  // ConsumePartialComplexSelector() method provides the common logic of
+  // consuming a complex selector and consuming a relative selector.
+  //
+  // After consuming the left-most combinator of a relative selector, we can
+  // consume the remaining selectors with the common logic.
+  // For example, after consuming the left-most combinator '~' of the relative
+  // selector '~ .a ~ .b', we can consume remaining selectors '.a ~ .b'
+  // with this method.
+  //
+  // After consuming the left-most compound selector and a combinator of a
+  // complex selector, we can also use this method to consume the remaining
+  // selectors of the complex selector.
+  std::unique_ptr<CSSParserSelector> ConsumePartialComplexSelector(
+      CSSParserTokenRange&,
+      CSSSelector::RelationType& /* current combinator */,
+      std::unique_ptr<CSSParserSelector> /* previous compound selector */,
+      unsigned& /* previous compound flags */);
+
   std::unique_ptr<CSSParserSelector> ConsumeCompoundSelector(
       CSSParserTokenRange&);
   // This doesn't include element names, since they're handled specially
@@ -80,12 +138,46 @@ class CORE_EXPORT CSSSelectorParser {
   SplitCompoundAtImplicitShadowCrossingCombinator(
       std::unique_ptr<CSSParserSelector> compound_selector);
   void RecordUsageAndDeprecations(const CSSSelectorList&);
+  static bool ContainsUnknownWebkitPseudoElements(
+      const CSSSelector& complex_selector);
 
-  Member<const CSSParserContext> context_;
-  Member<const StyleSheetContents> style_sheet_;
+  const CSSParserContext* context_;
+  const StyleSheetContents* style_sheet_;
 
   bool failed_parsing_ = false;
   bool disallow_pseudo_elements_ = false;
+  // If we're inside a pseudo class that only accepts compound selectors,
+  // for example :host, inner :is()/:where() pseudo classes are also only
+  // allowed to contain compound selectors.
+  bool inside_compound_pseudo_ = false;
+  // When parsing a compound which includes a pseudo-element, the simple
+  // selectors permitted to follow that pseudo-element may be restricted.
+  // If this is the case, then restricting_pseudo_element_ will be set to the
+  // PseudoType of the pseudo-element causing the restriction.
+  CSSSelector::PseudoType restricting_pseudo_element_ =
+      CSSSelector::kPseudoUnknown;
+  // If we're _resisting_ the default namespace, it means that we are inside
+  // a nested selector (:is(), :where(), etc) where we should _consider_
+  // ignoring the default namespace (depending on circumstance). See the
+  // relevant spec text [1] regarding default namespaces for information about
+  // those circumstances.
+  //
+  // [1] https://drafts.csswg.org/selectors/#matches
+  bool resist_default_namespace_ = false;
+  // While this flag is true, the default namespace is ignored. In other words,
+  // the default namespace is '*' while this flag is true.
+  bool ignore_default_namespace_ = false;
+
+  // The 'found_pseudo_in_has_argument_' flag is true when we found any pseudo
+  // in :has() argument while parsing.
+  bool found_pseudo_in_has_argument_ = false;
+  bool is_inside_has_argument_ = false;
+
+  // The 'found_complex_logical_combinations_in_has_argument_' flag is true when
+  // we found any logical combinations (:is(), :where(), :not()) containing
+  // complex selector in :has() argument while parsing.
+  bool found_complex_logical_combinations_in_has_argument_ = false;
+  bool is_inside_logical_combination_in_has_argument_ = false;
 
   class DisallowPseudoElementsScope {
     STACK_ALLOCATED();
@@ -95,6 +187,9 @@ class CORE_EXPORT CSSSelectorParser {
         : parser_(parser), was_disallowed_(parser_->disallow_pseudo_elements_) {
       parser_->disallow_pseudo_elements_ = true;
     }
+    DisallowPseudoElementsScope(const DisallowPseudoElementsScope&) = delete;
+    DisallowPseudoElementsScope& operator=(const DisallowPseudoElementsScope&) =
+        delete;
 
     ~DisallowPseudoElementsScope() {
       parser_->disallow_pseudo_elements_ = was_disallowed_;
@@ -103,7 +198,6 @@ class CORE_EXPORT CSSSelectorParser {
    private:
     CSSSelectorParser* parser_;
     bool was_disallowed_;
-    DISALLOW_COPY_AND_ASSIGN(DisallowPseudoElementsScope);
   };
 };
 

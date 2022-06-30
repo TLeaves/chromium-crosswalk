@@ -5,6 +5,9 @@
 #ifndef BASE_MESSAGE_LOOP_TIMER_SLACK_H_
 #define BASE_MESSAGE_LOOP_TIMER_SLACK_H_
 
+#include "base/base_export.h"
+#include "base/time/time.h"
+
 namespace base {
 
 // Amount of timer slack to use for delayed timers.  Increasing timer slack

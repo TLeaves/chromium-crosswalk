@@ -33,8 +33,8 @@ bool WMEvent::IsCompoundEvent() const {
     case WM_EVENT_TOGGLE_VERTICAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_HORIZONTAL_MAXIMIZE:
     case WM_EVENT_TOGGLE_FULLSCREEN:
-    case WM_EVENT_CYCLE_SNAP_LEFT:
-    case WM_EVENT_CYCLE_SNAP_RIGHT:
+    case WM_EVENT_CYCLE_SNAP_PRIMARY:
+    case WM_EVENT_CYCLE_SNAP_SECONDARY:
       return true;
     default:
       break;
@@ -70,17 +70,25 @@ bool WMEvent::IsTransitionEvent() const {
     case WM_EVENT_MAXIMIZE:
     case WM_EVENT_MINIMIZE:
     case WM_EVENT_FULLSCREEN:
-    case WM_EVENT_SNAP_LEFT:
-    case WM_EVENT_SNAP_RIGHT:
+    case WM_EVENT_SNAP_PRIMARY:
+    case WM_EVENT_SNAP_SECONDARY:
+    case WM_EVENT_RESTORE:
     case WM_EVENT_SHOW_INACTIVE:
     case WM_EVENT_PIN:
     case WM_EVENT_TRUSTED_PIN:
     case WM_EVENT_PIP:
+    case WM_EVENT_FLOAT:
       return true;
     default:
       break;
   }
   return false;
+}
+
+const DisplayMetricsChangedWMEvent* WMEvent::AsDisplayMetricsChangedWMEvent()
+    const {
+  DCHECK_EQ(type(), WM_EVENT_DISPLAY_BOUNDS_CHANGED);
+  return static_cast<const DisplayMetricsChangedWMEvent*>(this);
 }
 
 SetBoundsWMEvent::SetBoundsWMEvent(const gfx::Rect& bounds,
@@ -99,5 +107,11 @@ SetBoundsWMEvent::SetBoundsWMEvent(const gfx::Rect& requested_bounds,
       animate_(false) {}
 
 SetBoundsWMEvent::~SetBoundsWMEvent() = default;
+
+DisplayMetricsChangedWMEvent::DisplayMetricsChangedWMEvent(int changed_metrics)
+    : WMEvent(WM_EVENT_DISPLAY_BOUNDS_CHANGED),
+      changed_metrics_(changed_metrics) {}
+
+DisplayMetricsChangedWMEvent::~DisplayMetricsChangedWMEvent() = default;
 
 }  // namespace ash

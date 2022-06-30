@@ -7,6 +7,8 @@
 
 #import <Foundation/Foundation.h>
 
+#import <UIKit/UIKit.h>
+
 @class ElementSelector;
 @protocol GREYAction;
 
@@ -23,8 +25,12 @@
 + (id<GREYAction>)longPressElement:(ElementSelector*)selector
                 triggerContextMenu:(BOOL)triggerContextMenu;
 
-// Action to turn the switch of a SettingsSwitchCell to the given |on| state.
-+ (id<GREYAction>)turnSettingsSwitchOn:(BOOL)on;
+// Action to scroll a web element described by the given |selector| to visible
+// on the current web state.
++ (id<GREYAction>)scrollElementToVisible:(ElementSelector*)selector;
+
+// Action to turn the switch of a TableViewSwitchCell to the given |on| state.
++ (id<GREYAction>)turnTableViewSwitchOn:(BOOL)on;
 
 // Action to turn the switch of a SyncSwitchCell to the given |on| state.
 + (id<GREYAction>)turnSyncSwitchOn:(BOOL)on;
@@ -32,6 +38,18 @@
 // Action to tap a web element described by the given |selector| on the current
 // web state.
 + (id<GREYAction>)tapWebElement:(ElementSelector*)selector;
+
+// Action to scroll to top of a collection.
+// On iOS 13 the settings menu appears as a card that can be dismissed with a
+// downward swipe, for this reason we need to swipe up programatically to
+// avoid dismissing the VC.
++ (id<GREYAction>)scrollToTop;
+
+// Action to tap an element at the given xOriginStartPercentage as a percentage
+// of the total width and yOriginStartPercentage as a percentage of the total
+// height. Percentages are between 0 and 1, where 1 is 100%.
++ (id<GREYAction>)tapAtPointAtxOriginStartPercentage:(CGFloat)x
+                              yOriginStartPercentage:(CGFloat)y;
 
 @end
 

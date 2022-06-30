@@ -13,7 +13,6 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/logging.h"
 #include "build/build_config.h"
 #include "components/services/filesystem/file_impl.h"
 #include "components/services/filesystem/lock_table.h"
@@ -48,8 +47,8 @@ void DirectoryImpl::Read(ReadCallback callback) {
 
   std::move(callback).Run(base::File::Error::FILE_OK,
                           entries.empty()
-                              ? base::nullopt
-                              : base::make_optional(std::move(entries)));
+                              ? absl::nullopt
+                              : absl::make_optional(std::move(entries)));
 }
 
 // TODO(erg): Consider adding an implementation of Stat()/Touch() to the
@@ -140,7 +139,6 @@ void DirectoryImpl::OpenDirectory(
       return;
     }
 
-    base::File::Error error;
     if (!base::CreateDirectoryAndGetError(path, &error)) {
       std::move(callback).Run(error);
       return;
@@ -219,8 +217,12 @@ void DirectoryImpl::Delete(const std::string& raw_path,
     return;
   }
 
-  bool recursive = delete_flags & mojom::kDeleteFlagRecursive;
-  if (!base::DeleteFile(path, recursive)) {
+  bool success;
+  if (delete_flags & mojom::kDeleteFlagRecursive)
+    success = base::DeletePathRecursively(path);
+  else
+    success = base::DeleteFile(path);
+  if (!success) {
     std::move(callback).Run(base::File::Error::FILE_ERROR_FAILED);
     return;
   }
@@ -257,7 +259,7 @@ void DirectoryImpl::IsWritable(const std::string& raw_path,
 void DirectoryImpl::Flush(FlushCallback callback) {
 // On Windows no need to sync directories. Their metadata will be updated when
 // files are created, without an explicit sync.
-#if !defined(OS_WIN)
+#if !BUILDFLAG(IS_WIN)
   base::File file(directory_path_,
                   base::File::FLAG_OPEN | base::File::FLAG_READ);
   if (!file.IsValid()) {

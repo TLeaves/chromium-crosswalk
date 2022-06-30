@@ -2,77 +2,131 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//third_party/closure_compiler/compile_js.gni")
+import("//chrome/common/features.gni")
+import("//tools/grit/grit_rule.gni")
+import("//tools/grit/preprocess_if_expr.gni")
+import("//tools/polymer/css_to_wrapper.gni")
+import("//tools/polymer/html_to_wrapper.gni")
+import("//tools/typescript/ts_library.gni")
+import("//ui/webui/resources/tools/generate_grd.gni")
+import("welcome.gni")
 
-group("closure_compile") {
-  deps = [
-    ":welcome_files",
-    "./google_apps:closure_compile",
-    "./ntp_background:closure_compile",
-    "./set_as_default:closure_compile",
+assert(!is_chromeos_ash && !is_android)
+
+preprocess_folder = "preprocessed"
+
+generate_grd("build_grd") {
+  grd_prefix = "welcome"
+  out_grd = "$target_gen_dir/${grd_prefix}_resources.grd"
+  input_files = [
+    "images/background_svgs/bookmarks_background.svg",
+    "images/background_svgs/bookmarks_foreground.svg",
+    "images/background_svgs/devices_check.svg",
+    "images/background_svgs/devices.svg",
+    "images/background_svgs/hexagon.svg",
+    "images/background_svgs/lozenge.svg",
+    "images/background_svgs/password_field.svg",
+    "images/background_svgs/password.svg",
+    "images/background_svgs/square.svg",
+    "images/background_svgs/streamer_circle.svg",
+    "images/background_svgs/streamer_line.svg",
+    "images/background_svgs/triangle.svg",
+    "welcome.html",
+    "welcome.css",
   ]
+  input_files_base_dir = rebase_path(".", "//")
+
+  deps = [ ":build_ts" ]
+  manifest_files = [ "$target_gen_dir/tsconfig.manifest" ]
+
+  if (is_chrome_branded) {
+    deps += [ ":build_icons_grdp" ]
+    grdp_files = [ "$target_gen_dir/icon_resources.grdp" ]
+  }
 }
 
-js_type_check("welcome_files") {
-  deps = [
-    ":landing_view",
-    ":signin_view",
-    ":welcome_app",
-  ]
+if (is_chrome_branded) {
+  generate_grd("build_icons_grdp") {
+    grd_prefix = "welcome_images"
+    out_grd = "$target_gen_dir/icon_resources.grdp"
+    input_files = [
+      "module_icons/add_bookmarks.svg",
+      "module_icons/pick_a_background.svg",
+      "module_icons/set_default_dark.svg",
+      "module_icons/set_default_light.svg",
+      "ntp_thumbnails/art.jpg",
+      "ntp_thumbnails/cityscape.jpg",
+      "ntp_thumbnails/earth.jpg",
+      "ntp_thumbnails/geometric_shapes.jpg",
+      "ntp_thumbnails/landscape.jpg",
+      "set_default_dark.svg",
+      "set_default_light.svg",
+    ]
+    input_files_base_dir =
+        rebase_path("//chrome/app/theme/google_chrome/welcome/", "//")
+    resource_path_prefix = "images"
+  }
 }
 
-js_library("landing_view") {
-  deps = [
-    ":landing_view_proxy",
-    ":navigation_behavior",
-    ":welcome_browser_proxy",
-    "//ui/webui/resources/js:load_time_data",
-  ]
+preprocess_if_expr("preprocess") {
+  in_folder = "."
+  out_folder = "$target_gen_dir/$preprocess_folder"
+  in_files = ts_files
 }
 
-js_library("landing_view_proxy") {
+preprocess_if_expr("preprocess_generated") {
   deps = [
-    "//ui/webui/resources/js:cr",
+    ":css_wrapper_files",
+    ":html_wrapper_files",
   ]
-  externs_list = [ "$externs_path/metrics_private.js" ]
+  in_folder = target_gen_dir
+  out_folder = "$target_gen_dir/$preprocess_folder"
+  in_files = html_wrapper_files + css_wrapper_files
 }
 
-js_library("signin_view") {
-  deps = [
-    ":navigation_behavior",
-    ":signin_view_proxy",
-    ":welcome_browser_proxy",
+grit("resources") {
+  defines = chrome_grit_defines
+
+  # These arguments are needed since the grd is generated at build time.
+  enable_input_discovery_for_gn_analyze = false
+  source = "$target_gen_dir/welcome_resources.grd"
+  deps = [ ":build_grd" ]
+
+  outputs = [
+    "grit/welcome_resources.h",
+    "grit/welcome_resources_map.cc",
+    "grit/welcome_resources_map.h",
+    "welcome_resources.pak",
   ]
+  output_dir = "$root_gen_dir/chrome"
 }
 
-js_library("signin_view_proxy") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
-  externs_list = [ "$externs_path/metrics_private.js" ]
+css_to_wrapper("css_wrapper_files") {
+  in_files = css_files
 }
 
-js_library("navigation_behavior") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
+html_to_wrapper("html_wrapper_files") {
+  in_files = html_files
 }
 
-js_library("welcome_app") {
-  deps = [
-    ":navigation_behavior",
-    ":welcome_browser_proxy",
-    "./set_as_default/:nux_set_as_default_proxy",
-    "./shared:bookmark_proxy",
-    "./shared:nux_types",
-    "//ui/webui/resources/cr_elements/cr_view_manager:cr_view_manager",
-    "//ui/webui/resources/js:load_time_data",
+ts_library("build_ts") {
+  root_dir = "$target_gen_dir/$preprocess_folder"
+  out_dir = "$target_gen_dir/tsc"
+  composite = true
+  tsconfig_base = "tsconfig_base.json"
+  in_files = ts_files + css_wrapper_files + html_wrapper_files
+  definitions = [
+    "//tools/typescript/definitions/bookmarks.d.ts",
+    "//tools/typescript/definitions/chrome_event.d.ts",
+    "//tools/typescript/definitions/chrome_send.d.ts",
+    "//tools/typescript/definitions/metrics_private.d.ts",
   ]
-}
-
-js_library("welcome_browser_proxy") {
   deps = [
-    "//ui/webui/resources/js:cr",
+    "//third_party/polymer/v3_0:library",
+    "//ui/webui/resources:library",
   ]
-  externs_list = [ "$externs_path/chrome_send.js" ]
+  extra_deps = [
+    ":preprocess",
+    ":preprocess_generated",
+  ]
 }

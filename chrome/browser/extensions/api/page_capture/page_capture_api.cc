@@ -6,17 +6,19 @@
 
 #include <limits>
 #include <memory>
+#include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/files/file_util.h"
-#include "base/task/post_task.h"
+#include "base/task/thread_pool.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/sessions/session_tab_helper.h"
+#include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
@@ -28,8 +30,9 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/permissions/permissions_data.h"
 
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/chromeos/extensions/public_session_permission_helper.h"
+#include "extensions/common/permissions/api_permission_set.h"
 #endif
 
 using content::BrowserThread;
@@ -48,7 +51,7 @@ const char kTemporaryFileError[] = "Failed to create a temporary file.";
 const char kTabClosedError[] = "Cannot find the tab for this request.";
 const char kPageCaptureNotAllowed[] =
     "Don't have permissions required to capture this page.";
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
 const char kUserDenied[] = "User denied request.";
 #endif
 constexpr base::TaskTraits kCreateTemporaryFileTaskTraits = {
@@ -74,8 +77,8 @@ PageCaptureSaveAsMHTMLFunction::PageCaptureSaveAsMHTMLFunction() {
 
 PageCaptureSaveAsMHTMLFunction::~PageCaptureSaveAsMHTMLFunction() {
   if (mhtml_file_.get()) {
-    base::PostTaskWithTraits(
-        FROM_HERE, {BrowserThread::IO},
+    content::GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE,
         base::BindOnce(&ClearFileReferenceOnIOThread, std::move(mhtml_file_)));
   }
 }
@@ -84,51 +87,51 @@ void PageCaptureSaveAsMHTMLFunction::SetTestDelegate(TestDelegate* delegate) {
   test_delegate_ = delegate;
 }
 
-bool PageCaptureSaveAsMHTMLFunction::RunAsync() {
-  params_ = SaveAsMHTML::Params::Create(*args_);
+ExtensionFunction::ResponseAction PageCaptureSaveAsMHTMLFunction::Run() {
+  params_ = SaveAsMHTML::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
-  AddRef();  // Balanced in ReturnFailure/ReturnSuccess()
-
+#if BUILDFLAG(IS_CHROMEOS)
   // In Public Sessions, extensions (and apps) are force-installed by admin
   // policy so the user does not get a chance to review the permissions for
   // these extensions. This is not acceptable from a security/privacy
   // standpoint, so when an extension uses the PageCapture API for the first
-  // time, we show the user a dialog where they can choose whether to allow the
-  // extension access to the API.
-#if defined(OS_CHROMEOS)
+  // time, we show the user a dialog where they can choose whether to allow
+  // the extension access to the API.
+  // TODO(https://crbug.com/1269409): This bypasses the CanCaptureCurrentPage()
+  // check below, which means we don't check certain restrictions.
   if (profiles::ArePublicSessionRestrictionsEnabled()) {
     WebContents* web_contents = GetWebContents();
     if (!web_contents) {
-      ReturnFailure(kTabClosedError);
-      return true;
+      return RespondNow(Error(kTabClosedError));
     }
-    // This Unretained is safe because this object is Released() in
-    // OnMessageReceived which gets called at some point after callback is run.
-    auto callback =
-        base::Bind(&PageCaptureSaveAsMHTMLFunction::ResolvePermissionRequest,
-                   base::Unretained(this));
+
     permission_helper::HandlePermissionRequest(
-        *extension(), {APIPermission::kPageCapture}, web_contents, callback,
+        *extension(), {mojom::APIPermissionID::kPageCapture}, web_contents,
+        base::BindOnce(
+            &PageCaptureSaveAsMHTMLFunction::ResolvePermissionRequest,
+            this),  // Callback increments refcount.
         permission_helper::PromptFactory());
-    return true;
+    return RespondLater();
   }
 #endif
 
-  if (!CanCaptureCurrentPage()) {
-    return false;
+  std::string error;
+  if (!CanCaptureCurrentPage(&error)) {
+    return RespondNow(Error(std::move(error)));
   }
-  base::PostTaskWithTraits(
+
+  base::ThreadPool::PostTask(
       FROM_HERE, kCreateTemporaryFileTaskTraits,
       base::BindOnce(&PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile,
-                     this));
-  return true;
+                     this));  // Callback increments refcount.
+  return RespondLater();
 }
 
-bool PageCaptureSaveAsMHTMLFunction::CanCaptureCurrentPage() {
+bool PageCaptureSaveAsMHTMLFunction::CanCaptureCurrentPage(std::string* error) {
   WebContents* web_contents = GetWebContents();
   if (!web_contents) {
-    error_ = kTabClosedError;
+    *error = kTabClosedError;
     return false;
   }
   const GURL& url = web_contents->GetLastCommittedURL();
@@ -141,14 +144,14 @@ bool PageCaptureSaveAsMHTMLFunction::CanCaptureCurrentPage() {
     can_capture_page = extensions::util::AllowFileAccess(
         extension()->id(), web_contents->GetBrowserContext());
   } else {
-    std::string error;
+    std::string unused_error;
     can_capture_page = extension()->permissions_data()->CanCaptureVisiblePage(
-        url, SessionTabHelper::IdForTab(web_contents).id(), &error,
-        extensions::CaptureRequirement::kPageCapture);
+        url, sessions::SessionTabHelper::IdForTab(web_contents).id(),
+        &unused_error, extensions::CaptureRequirement::kPageCapture);
   }
 
   if (!can_capture_page) {
-    error_ = kPageCaptureNotAllowed;
+    *error = kPageCaptureNotAllowed;
   }
   return can_capture_page;
 }
@@ -175,11 +178,21 @@ bool PageCaptureSaveAsMHTMLFunction::OnMessageReceived(
   return true;
 }
 
-#if defined(OS_CHROMEOS)
+void PageCaptureSaveAsMHTMLFunction::OnServiceWorkerAck() {
+  DCHECK(is_from_service_worker());
+  // The extension process has processed the response and has created a
+  // reference to the blob, it is safe for us to go away.
+  // This instance may be deleted after this call, so no code goes after
+  // this!!!
+  Release();  // Balanced in Run()
+}
+
+#if BUILDFLAG(IS_CHROMEOS)
 void PageCaptureSaveAsMHTMLFunction::ResolvePermissionRequest(
     const PermissionIDSet& allowed_permissions) {
-  if (allowed_permissions.ContainsID(APIPermission::kPageCapture)) {
-    base::PostTaskWithTraits(
+  if (allowed_permissions.ContainsID(
+          extensions::mojom::APIPermissionID::kPageCapture)) {
+    base::ThreadPool::PostTask(
         FROM_HERE, kCreateTemporaryFileTaskTraits,
         base::BindOnce(&PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile,
                        this));
@@ -191,8 +204,8 @@ void PageCaptureSaveAsMHTMLFunction::ResolvePermissionRequest(
 
 void PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile() {
   bool success = base::CreateTemporaryFile(&mhtml_path_);
-  base::PostTaskWithTraits(
-      FROM_HERE, {BrowserThread::IO},
+  content::GetIOThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnIO,
                      this, success));
 }
@@ -204,7 +217,7 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnIO(bool success) {
     // once it is no longer used.
     mhtml_file_ = ShareableFileReference::GetOrCreate(
         mhtml_path_, ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-        base::CreateSequencedTaskRunnerWithTraits(
+        base::ThreadPool::CreateSequencedTaskRunner(
             {// Requires IO.
              base::MayBlock(),
 
@@ -217,8 +230,13 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnIO(bool success) {
              base::TaskShutdownBehavior::BLOCK_SHUTDOWN})
             .get());
   }
-  base::PostTaskWithTraits(
-      FROM_HERE, {BrowserThread::UI},
+
+  // Let the delegate know the reference has been created.
+  if (test_delegate_)
+    test_delegate_->OnTemporaryFileCreated(mhtml_file_);
+
+  content::GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnUI,
                      this, success));
 }
@@ -229,9 +247,6 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreatedOnUI(bool success) {
     ReturnFailure(kTemporaryFileError);
     return;
   }
-
-  if (test_delegate_)
-    test_delegate_->OnTemporaryFileCreated(mhtml_path_);
 
   WebContents* web_contents = GetWebContents();
   if (!web_contents) {
@@ -260,19 +275,14 @@ void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(int64_t mhtml_file_size) {
 
 void PageCaptureSaveAsMHTMLFunction::ReturnFailure(const std::string& error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  error_ = error;
-
-  SendResponse(false);
-
-  // Must not Release() here, OnMessageReceived will call it eventually.
+  Respond(Error(error));
 }
 
 void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64_t file_size) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents = GetWebContents();
-  if (!web_contents || !render_frame_host()) {
+  if (!web_contents) {
     ReturnFailure(kTabClosedError);
     return;
   }
@@ -280,23 +290,30 @@ void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64_t file_size) {
   ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(source_process_id(),
                                                            mhtml_path_);
 
-  std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
-  dict->SetString("mhtmlFilePath", mhtml_path_.value());
-  dict->SetInteger("mhtmlFileLength", file_size);
-  SetResult(std::move(dict));
+  base::Value response(base::Value::Type::DICTIONARY);
+  response.SetStringKey("mhtmlFilePath", mhtml_path_.AsUTF8Unsafe());
+  response.SetIntKey("mhtmlFileLength", file_size);
+  response.SetIntKey("requestId", request_id());
 
-  SendResponse(true);
+  // Add a reference, extending the lifespan of this extension function until
+  // the response has been received by the renderer. This function generates a
+  // blob which contains a reference scoped to this object. In order for the
+  // blob to remain alive, we have to stick around until a reference has
+  // been obtained by the renderer. The response ack is the signal that the
+  // renderer has it's reference, so we can release ours.
+  // TODO(crbug.com/1050887): Potential memory leak here.
+  AddRef();  // Balanced in either OnMessageReceived()
+  if (is_from_service_worker())
+    AddWorkerResponseTarget();
 
-  // Note that we'll wait for a response ack message received in
-  // OnMessageReceived before we call Release() (to prevent the blob file from
-  // being deleted).
+  Respond(OneArgument(std::move(response)));
 }
 
 WebContents* PageCaptureSaveAsMHTMLFunction::GetWebContents() {
   Browser* browser = NULL;
   content::WebContents* web_contents = NULL;
 
-  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id, GetProfile(),
+  if (!ExtensionTabUtil::GetTabById(params_->details.tab_id, browser_context(),
                                     include_incognito_information(), &browser,
                                     NULL, &web_contents, NULL)) {
     return NULL;

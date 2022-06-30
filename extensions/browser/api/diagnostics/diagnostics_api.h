@@ -8,13 +8,13 @@
 #include <memory>
 #include <string>
 
-#include "base/optional.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/common/api/diagnostics.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace extensions {
 
-class DiagnosticsSendPacketFunction : public UIThreadExtensionFunction {
+class DiagnosticsSendPacketFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("diagnostics.sendPacket", DIAGNOSTICS_SENDPACKET)
 
@@ -23,11 +23,11 @@ class DiagnosticsSendPacketFunction : public UIThreadExtensionFunction {
  protected:
   ~DiagnosticsSendPacketFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
-  void OnTestICMPCompleted(base::Optional<std::string> status);
+  void OnTestICMPCompleted(absl::optional<std::string> status);
 };
 
 }  // namespace extensions

@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/macros.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/task_executor.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
@@ -40,7 +40,7 @@ class TestObserver : public Thread::TaskObserver {
 
   ~TestObserver() override = default;
 
-  void WillProcessTask(const base::PendingTask&) override {
+  void WillProcessTask(const base::PendingTask&, bool) override {
     calls_->Append(" willProcessTask");
   }
 
@@ -71,12 +71,14 @@ void ShutdownOnThread(Thread* thread) {
 class WorkerThreadTest : public testing::Test {
  public:
   WorkerThreadTest() = default;
+  WorkerThreadTest(const WorkerThreadTest&) = delete;
+  WorkerThreadTest& operator=(const WorkerThreadTest&) = delete;
 
   ~WorkerThreadTest() override = default;
 
   void SetUp() override {
     thread_ =
-        Thread::CreateThread(ThreadCreationParams(WebThreadType::kTestThread));
+        Thread::CreateThread(ThreadCreationParams(ThreadType::kTestThread));
   }
 
   void RunOnWorkerThread(const base::Location& from_here,
@@ -99,8 +101,6 @@ class WorkerThreadTest : public testing::Test {
   }
 
   std::unique_ptr<Thread> thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(WorkerThreadTest);
 };
 
 TEST_F(WorkerThreadTest, TestDefaultTask) {
@@ -157,8 +157,15 @@ TEST_F(WorkerThreadTest, TestShutdown) {
       *thread_->GetTaskRunner(), FROM_HERE,
       CrossThreadBindOnce(&MockTask::Run,
                           WTF::CrossThreadUnretained(&delayed_task)),
-      base::TimeDelta::FromMilliseconds(50));
+      base::Milliseconds(50));
   thread_.reset();
+}
+
+TEST_F(WorkerThreadTest, GetTaskExecutorForCurrentThreadInPostedTask) {
+  RunOnWorkerThread(FROM_HERE, base::BindOnce([]() {
+                      EXPECT_THAT(base::GetTaskExecutorForCurrentThread(),
+                                  testing::NotNull());
+                    }));
 }
 
 }  // namespace worker_thread_unittest

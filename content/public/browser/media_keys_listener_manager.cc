@@ -4,7 +4,10 @@
 
 #include "content/public/browser/media_keys_listener_manager.h"
 
-#if !defined(OS_CHROMEOS)
+#include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
+
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
 #include "base/feature_list.h"
 #include "media/base/media_switches.h"
 #endif
@@ -13,7 +16,7 @@ namespace content {
 
 // static
 bool MediaKeysListenerManager::IsMediaKeysListenerManagerEnabled() {
-#if defined(OS_CHROMEOS)
+#if BUILDFLAG(IS_CHROMEOS)
   return false;
 #else
   return base::FeatureList::IsEnabled(media::kHardwareMediaKeyHandling);

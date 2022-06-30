@@ -12,13 +12,11 @@
 
 @class ToolbarConfiguration;
 
-const NSUInteger ControlStateSpotlighted = 0x00010000;
-
 // UIButton subclass used as a Toolbar component.
 @interface ToolbarButton : UIButton
 
 // Configuration object used to get colors.
-@property(nonatomic, weak) ToolbarConfiguration* configuration;
+@property(nonatomic, weak) ToolbarConfiguration* toolbarConfiguration;
 // Bitmask used for SizeClass visibility.
 @property(nonatomic, assign) ToolbarComponentVisibility visibilityMask;
 // Returns true if the ToolbarButton should be hidden in the current SizeClass.
@@ -26,7 +24,7 @@ const NSUInteger ControlStateSpotlighted = 0x00010000;
 // Returns true if the ToolbarButton should be hidden due to a current UI state
 // or WebState.
 @property(nonatomic, assign) BOOL hiddenInCurrentState;
-// Named of the layout guide this button should be constrained to, if not nil.
+// Name of the layout guide this button should be constrained to, if not nil.
 // The constraints to the layout guide are only valid when the button is
 // displayed. Also, they can be dropped/changed upon size class changes or
 // rotations. Any view constrained to them is expected to be dismissed on such

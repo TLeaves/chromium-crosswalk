@@ -9,8 +9,10 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/task/post_task.h"
+#include "base/check.h"
+#include "base/notreached.h"
 #include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
 
 namespace {
 
@@ -36,7 +38,7 @@ UploadList::UploadInfo::UploadInfo(const std::string& upload_id,
 UploadList::UploadInfo::UploadInfo(const std::string& local_id,
                                    const base::Time& capture_time,
                                    State state,
-                                   const base::string16& file_size)
+                                   const std::u16string& file_size)
     : local_id(local_id),
       capture_time(capture_time),
       state(state),
@@ -52,6 +54,7 @@ UploadList::UploadInfo::UploadInfo(const UploadInfo& upload_info)
       local_id(upload_info.local_id),
       capture_time(upload_info.capture_time),
       state(upload_info.state),
+      source(upload_info.source),
       file_size(upload_info.file_size) {}
 
 UploadList::UploadInfo::~UploadInfo() = default;
@@ -63,10 +66,10 @@ UploadList::~UploadList() = default;
 void UploadList::Load(base::OnceClosure callback) {
   DCHECK(sequence_checker_.CalledOnValidSequence());
   load_callback_ = std::move(callback);
-  base::PostTaskWithTraitsAndReplyWithResult(
+  base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, kLoadingTaskTraits,
-      base::Bind(&UploadList::LoadUploadList, this),
-      base::Bind(&UploadList::OnLoadComplete, this));
+      base::BindOnce(&UploadList::LoadUploadList, this),
+      base::BindOnce(&UploadList::OnLoadComplete, this));
 }
 
 void UploadList::Clear(const base::Time& begin,
@@ -74,7 +77,7 @@ void UploadList::Clear(const base::Time& begin,
                        base::OnceClosure callback) {
   DCHECK(sequence_checker_.CalledOnValidSequence());
   clear_callback_ = std::move(callback);
-  base::PostTaskWithTraitsAndReply(
+  base::ThreadPool::PostTaskAndReply(
       FROM_HERE, kLoadingTaskTraits,
       base::BindOnce(&UploadList::ClearUploadList, this, begin, end),
       base::BindOnce(&UploadList::OnClearComplete, this));
@@ -86,7 +89,7 @@ void UploadList::CancelLoadCallback() {
 
 void UploadList::RequestSingleUploadAsync(const std::string& local_id) {
   DCHECK(sequence_checker_.CalledOnValidSequence());
-  base::PostTaskWithTraits(
+  base::ThreadPool::PostTask(
       FROM_HERE, kLoadingTaskTraits,
       base::BindOnce(&UploadList::RequestSingleUpload, this, local_id));
 }

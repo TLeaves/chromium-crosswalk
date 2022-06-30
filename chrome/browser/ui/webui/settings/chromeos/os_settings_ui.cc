@@ -4,154 +4,224 @@
 
 #include "chrome/browser/ui/webui/settings/chromeos/os_settings_ui.h"
 
-#include <stddef.h>
-
-#include <memory>
-#include <string>
 #include <utility>
-#include <vector>
 
-#include "ash/public/cpp/resources/grit/ash_public_unscaled_resources.h"
-#include "build/build_config.h"
+#include "ash/constants/ash_features.h"
+#include "ash/public/cpp/bluetooth_config_service.h"
+#include "ash/public/cpp/esim_manager.h"
+#include "ash/public/cpp/network_config_service.h"
+#include "ash/services/cellular_setup/cellular_setup_impl.h"
+#include "ash/services/cellular_setup/public/mojom/esim_manager.mojom.h"
+#include "ash/webui/personalization_app/search/search.mojom.h"
+#include "ash/webui/personalization_app/search/search_handler.h"
+#include "base/metrics/histogram_functions.h"
+#include "chrome/browser/ash/web_applications/personalization_app/personalization_app_manager.h"
+#include "chrome/browser/ash/web_applications/personalization_app/personalization_app_manager_factory.h"
+#include "chrome/browser/nearby_sharing/contacts/nearby_share_contact_manager.h"
+#include "chrome/browser/nearby_sharing/nearby_receive_manager.h"
+#include "chrome/browser/nearby_sharing/nearby_share_settings.h"
+#include "chrome/browser/nearby_sharing/nearby_sharing_service_factory.h"
+#include "chrome/browser/nearby_sharing/nearby_sharing_service_impl.h"
 #include "chrome/browser/ui/webui/managed_ui_handler.h"
-#include "chrome/browser/ui/webui/metrics_handler.h"
-#include "chrome/browser/ui/webui/plural_string_handler.h"
-#include "chrome/browser/ui/webui/settings/about_handler.h"
-#include "chrome/browser/ui/webui/settings/accessibility_main_handler.h"
-#include "chrome/browser/ui/webui/settings/appearance_handler.h"
-#include "chrome/browser/ui/webui/settings/browser_lifetime_handler.h"
-#include "chrome/browser/ui/webui/settings/downloads_handler.h"
-#include "chrome/browser/ui/webui/settings/extension_control_handler.h"
-#include "chrome/browser/ui/webui/settings/languages_handler.h"
-#include "chrome/browser/ui/webui/settings/people_handler.h"
-#include "chrome/browser/ui/webui/settings/profile_info_handler.h"
-#include "chrome/browser/ui/webui/settings/protocol_handlers_handler.h"
-#include "chrome/browser/ui/webui/settings/reset_settings_handler.h"
-#include "chrome/browser/ui/webui/settings/search_engines_handler.h"
-#include "chrome/browser/ui/webui/settings/settings_cookies_view_handler.h"
-#include "chrome/browser/ui/webui/settings/settings_localized_strings_provider.h"
-#include "chrome/browser/ui/webui/settings/settings_media_devices_selection_handler.h"
-#include "chrome/browser/ui/webui/settings/settings_ui.h"
-#include "chrome/browser/web_applications/system_web_app_manager.h"
+#include "chrome/browser/ui/webui/settings/ash/os_apps_page/app_notification_handler.h"
+#include "chrome/browser/ui/webui/settings/ash/search/search_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/device_storage_handler.h"
+#include "chrome/browser/ui/webui/settings/chromeos/os_settings_manager.h"
+#include "chrome/browser/ui/webui/settings/chromeos/os_settings_manager_factory.h"
+#include "chrome/browser/ui/webui/settings/chromeos/pref_names.h"
+#include "chrome/browser/ui/webui/settings/chromeos/settings_user_action_tracker.h"
+#include "chrome/browser/ui/webui/webui_util.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chrome/grit/browser_resources.h"
-#include "chrome/grit/generated_resources.h"
 #include "chrome/grit/os_settings_resources.h"
 #include "chrome/grit/os_settings_resources_map.h"
-#include "chromeos/services/network_config/public/mojom/constants.mojom.h"
-#include "components/password_manager/core/common/password_manager_features.h"
-#include "components/unified_consent/feature.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/prefs/pref_service.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "services/service_manager/public/cpp/connector.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "ui/gfx/native_widget_types.h"
+
+namespace {
+
+class AppManagementDelegate : public AppManagementPageHandler::Delegate {
+ public:
+  AppManagementDelegate() = default;
+  ~AppManagementDelegate() override = default;
+
+  gfx::NativeWindow GetUninstallAnchorWindow() const override {
+    return nullptr;
+  }
+};
+
+}  // namespace
 
 namespace chromeos {
 namespace settings {
 
+// static
+void OSSettingsUI::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(prefs::kSyncOsWallpaper, false);
+}
+
 OSSettingsUI::OSSettingsUI(content::WebUI* web_ui)
-    : ui::MojoWebUIController(web_ui, /*enable_chrome_send =*/true) {
+    : ui::MojoWebUIController(web_ui, /*enable_chrome_send=*/true),
+      time_when_opened_(base::TimeTicks::Now()),
+      webui_load_timer_(web_ui->GetWebContents(),
+                        "ChromeOS.Settings.LoadDocumentTime",
+                        "ChromeOS.Settings.LoadCompletedTime") {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(chrome::kChromeUIOSSettingsHost);
 
-  ::settings::SettingsUI::InitOSWebUIHandlers(profile, web_ui, html_source);
+  OsSettingsManager* manager = OsSettingsManagerFactory::GetForProfile(profile);
+  manager->AddHandlers(web_ui);
+  manager->AddLoadTimeData(html_source);
+  html_source->DisableTrustedTypesCSP();
 
-  // This handler is for chrome://os-settings.
-  html_source->AddBoolean("isOSSettings", true);
+  // TODO(khorimoto): Move to DeviceSection::AddHandler() once |html_source|
+  // parameter is removed.
+  web_ui->AddMessageHandler(
+      std::make_unique<chromeos::settings::StorageHandler>(profile,
+                                                           html_source));
 
-  // Needed for JS code shared between browser and OS settings (for example,
-  // page_visibility.js).
-  html_source->AddBoolean("showOSSettings", true);
-
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::AppearanceHandler>(web_ui));
-
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::AccessibilityMainHandler>());
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::BrowserLifetimeHandler>());
-  AddSettingsPageUIHandler(std::make_unique<::settings::CookiesViewHandler>());
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::DownloadsHandler>(profile));
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::ExtensionControlHandler>());
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::LanguagesHandler>(web_ui));
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::MediaDevicesSelectionHandler>(profile));
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::PeopleHandler>(profile));
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::ProfileInfoHandler>(profile));
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::ProtocolHandlersHandler>());
-  AddSettingsPageUIHandler(
-      std::make_unique<::settings::SearchEnginesHandler>(profile));
-
-  html_source->AddBoolean("unifiedConsentEnabled",
-                          unified_consent::IsUnifiedConsentFeatureEnabled());
-
-  AddSettingsPageUIHandler(
-      base::WrapUnique(::settings::AboutHandler::Create(html_source, profile)));
-  AddSettingsPageUIHandler(base::WrapUnique(
-      ::settings::ResetSettingsHandler::Create(html_source, profile)));
-
-  // Add the metrics handler to write uma stats.
-  web_ui->AddMessageHandler(std::make_unique<MetricsHandler>());
-
-  // Add the System Web App resources for Settings.
-  // TODO(jamescook|calamity): Migrate to chromeos::settings::OSSettingsUI.
-  if (web_app::SystemWebAppManager::IsEnabled()) {
-    html_source->AddResourcePath("icon-192.png", IDR_SETTINGS_LOGO_192);
-    html_source->AddResourcePath("pwa.html", IDR_PWA_HTML);
-    html_source->AddResourcePath("manifest.json", IDR_OS_SETTINGS_MANIFEST);
-  }
-
-#if BUILDFLAG(OPTIMIZE_WEBUI)
-  html_source->AddResourcePath("crisper.js", IDR_OS_SETTINGS_CRISPER_JS);
-  html_source->AddResourcePath("lazy_load.crisper.js",
-                               IDR_OS_SETTINGS_LAZY_LOAD_CRISPER_JS);
-  html_source->AddResourcePath("chromeos/lazy_load.html",
-                               IDR_OS_SETTINGS_LAZY_LOAD_VULCANIZED_HTML);
-  html_source->SetDefaultResource(IDR_OS_SETTINGS_VULCANIZED_HTML);
-#else
-  // Add all settings resources.
-  for (size_t i = 0; i < kOsSettingsResourcesSize; ++i) {
-    html_source->AddResourcePath(kOsSettingsResources[i].name,
-                                 kOsSettingsResources[i].value);
-  }
-  html_source->SetDefaultResource(IDR_OS_SETTINGS_SETTINGS_HTML);
-#endif
-
-  ::settings::AddLocalizedStrings(html_source, profile);
-
-  auto plural_string_handler = std::make_unique<PluralStringHandler>();
-  plural_string_handler->AddLocalizedString("profileLabel",
-                                            IDS_OS_SETTINGS_PROFILE_LABEL);
-  web_ui->AddMessageHandler(std::move(plural_string_handler));
+  webui::SetupWebUIDataSource(
+      html_source,
+      base::make_span(kOsSettingsResources, kOsSettingsResourcesSize),
+      IDR_OS_SETTINGS_OS_SETTINGS_V3_HTML);
 
   ManagedUIHandler::Initialize(web_ui, html_source);
 
   content::WebUIDataSource::Add(web_ui->GetWebContents()->GetBrowserContext(),
                                 html_source);
-
-  AddHandlerToRegistry(base::BindRepeating(&OSSettingsUI::BindCrosNetworkConfig,
-                                           base::Unretained(this)));
 }
 
-OSSettingsUI::~OSSettingsUI() = default;
-
-void OSSettingsUI::AddSettingsPageUIHandler(
-    std::unique_ptr<content::WebUIMessageHandler> handler) {
-  DCHECK(handler);
-  web_ui()->AddMessageHandler(std::move(handler));
+OSSettingsUI::~OSSettingsUI() {
+  // Note: OSSettingsUI lifetime is tied to the lifetime of the browser window.
+  base::UmaHistogramCustomTimes("ChromeOS.Settings.WindowOpenDuration",
+                                base::TimeTicks::Now() - time_when_opened_,
+                                /*min=*/base::Microseconds(500),
+                                /*max=*/base::Hours(1),
+                                /*buckets=*/50);
 }
 
-void OSSettingsUI::BindCrosNetworkConfig(
-    network_config::mojom::CrosNetworkConfigRequest request) {
-  content::BrowserContext::GetConnectorFor(
-      web_ui()->GetWebContents()->GetBrowserContext())
-      ->BindInterface(network_config::mojom::kServiceName, std::move(request));
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<ash::cellular_setup::mojom::CellularSetup> receiver) {
+  ash::cellular_setup::CellularSetupImpl::CreateAndBindToReciever(
+      std::move(receiver));
 }
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<ash::cellular_setup::mojom::ESimManager> receiver) {
+  ash::GetESimManager(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<network_config::mojom::CrosNetworkConfig> receiver) {
+  ash::GetNetworkConfigService(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<mojom::UserActionRecorder> receiver) {
+  OsSettingsManagerFactory::GetForProfile(Profile::FromWebUI(web_ui()))
+      ->settings_user_action_tracker()
+      ->BindInterface(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<mojom::SearchHandler> receiver) {
+  OsSettingsManagerFactory::GetForProfile(Profile::FromWebUI(web_ui()))
+      ->search_handler()
+      ->BindInterface(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<::ash::personalization_app::mojom::SearchHandler>
+        receiver) {
+  DCHECK(ash::features::IsPersonalizationHubEnabled())
+      << "This interface should only be bound if personalization hub feature "
+         "is enabled";
+
+  auto* profile = Profile::FromWebUI(web_ui());
+  DCHECK(profile->IsRegularProfile())
+      << "This interface should only be bound for regular profiles";
+
+  auto* search_handler =
+      ::ash::personalization_app::PersonalizationAppManagerFactory::
+          GetForBrowserContext(profile)
+              ->search_handler();
+  DCHECK(search_handler);
+  search_handler->BindInterface(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<app_notification::mojom::AppNotificationsHandler>
+        receiver) {
+  OsSettingsManagerFactory::GetForProfile(Profile::FromWebUI(web_ui()))
+      ->app_notification_handler()
+      ->BindInterface(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<app_management::mojom::PageHandlerFactory> receiver) {
+  if (!app_management_page_handler_factory_) {
+    auto delegate = std::make_unique<AppManagementDelegate>();
+    app_management_page_handler_factory_ =
+        std::make_unique<AppManagementPageHandlerFactory>(
+            Profile::FromWebUI(web_ui()), std::move(delegate));
+  }
+  app_management_page_handler_factory_->Bind(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<nearby_share::mojom::NearbyShareSettings> receiver) {
+  if (!NearbySharingServiceFactory::IsNearbyShareSupportedForBrowserContext(
+          Profile::FromWebUI(web_ui()))) {
+    return;
+  }
+
+  NearbySharingService* service =
+      NearbySharingServiceFactory::GetForBrowserContext(
+          Profile::FromWebUI(web_ui()));
+  service->GetSettings()->Bind(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<nearby_share::mojom::ReceiveManager> receiver) {
+  if (!NearbySharingServiceFactory::IsNearbyShareSupportedForBrowserContext(
+          Profile::FromWebUI(web_ui()))) {
+    return;
+  }
+
+  NearbySharingService* service =
+      NearbySharingServiceFactory::GetForBrowserContext(
+          Profile::FromWebUI(web_ui()));
+  mojo::MakeSelfOwnedReceiver(std::make_unique<NearbyReceiveManager>(service),
+                              std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<nearby_share::mojom::ContactManager> receiver) {
+  if (!NearbySharingServiceFactory::IsNearbyShareSupportedForBrowserContext(
+          Profile::FromWebUI(web_ui()))) {
+    return;
+  }
+
+  NearbySharingService* service =
+      NearbySharingServiceFactory::GetForBrowserContext(
+          Profile::FromWebUI(web_ui()));
+  service->GetContactManager()->Bind(std::move(receiver));
+}
+
+void OSSettingsUI::BindInterface(
+    mojo::PendingReceiver<bluetooth_config::mojom::CrosBluetoothConfig>
+        receiver) {
+  DCHECK(features::IsBluetoothRevampEnabled());
+  ash::GetBluetoothConfigService(std::move(receiver));
+}
+
+WEB_UI_CONTROLLER_TYPE_IMPL(OSSettingsUI)
 
 }  // namespace settings
 }  // namespace chromeos

@@ -23,17 +23,15 @@ namespace android_webview {
 class AwDownloadManagerDelegate : public content::DownloadManagerDelegate,
                                   public base::SupportsUserData::Data {
  public:
+  AwDownloadManagerDelegate();
+
+  AwDownloadManagerDelegate(const AwDownloadManagerDelegate&) = delete;
+  AwDownloadManagerDelegate& operator=(const AwDownloadManagerDelegate&) =
+      delete;
+
   ~AwDownloadManagerDelegate() override;
 
   // content::DownloadManagerDelegate implementation.
-  bool DetermineDownloadTarget(
-      download::DownloadItem* item,
-      const content::DownloadTargetCallback& callback) override;
-  bool ShouldCompleteDownload(download::DownloadItem* item,
-                              const base::Closure& complete_callback) override;
-  bool ShouldOpenDownload(
-      download::DownloadItem* item,
-      const content::DownloadOpenDelayedCallback& callback) override;
   bool InterceptDownloadIfApplicable(
       const GURL& url,
       const std::string& user_agent,
@@ -43,7 +41,6 @@ class AwDownloadManagerDelegate : public content::DownloadManagerDelegate,
       int64_t content_length,
       bool is_transient,
       content::WebContents* web_contents) override;
-  void GetNextId(const content::DownloadIdCallback& callback) override;
 };
 
 }  // namespace android_webview

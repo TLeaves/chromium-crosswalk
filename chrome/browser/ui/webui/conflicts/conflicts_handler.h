@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/webui/conflicts/conflicts_data_fetcher.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -22,6 +21,10 @@ class Listvalue;
 class ConflictsHandler : public content::WebUIMessageHandler {
  public:
   ConflictsHandler();
+
+  ConflictsHandler(const ConflictsHandler&) = delete;
+  ConflictsHandler& operator=(const ConflictsHandler&) = delete;
+
   ~ConflictsHandler() override;
 
  private:
@@ -40,9 +43,7 @@ class ConflictsHandler : public content::WebUIMessageHandler {
   // lives on a different sequence.
   ConflictsDataFetcher::UniquePtr conflicts_data_fetcher_;
 
-  base::WeakPtrFactory<ConflictsHandler> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ConflictsHandler);
+  base::WeakPtrFactory<ConflictsHandler> weak_ptr_factory_{this};
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_CONFLICTS_CONFLICTS_HANDLER_H_

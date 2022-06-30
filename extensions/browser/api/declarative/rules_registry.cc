@@ -4,15 +4,15 @@
 
 #include "extensions/browser/api/declarative/rules_registry.h"
 
+#include <memory>
 #include <utility>
 
 #include "base/bind.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/post_task.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -22,6 +22,7 @@
 #include "extensions/browser/api/declarative/rules_cache_delegate.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/state_store.h"
@@ -42,24 +43,22 @@ const char kErrorCannotRemoveManifestRules[] =
 base::Value RulesToValue(const std::vector<const api::events::Rule*>& rules) {
   base::Value value(base::Value::Type::LIST);
   for (const auto* rule : rules)
-    value.GetList().push_back(std::move(*rule->ToValue()));
+    value.Append(std::move(*rule->ToValue()));
   return value;
 }
 
 std::vector<api::events::Rule> RulesFromValue(const base::Value* value) {
   std::vector<api::events::Rule> rules;
 
-  const base::ListValue* list = NULL;
-  if (!value || !value->GetAsList(&list))
+  if (!value || !value->is_list())
     return rules;
 
-  rules.reserve(list->GetSize());
-  for (size_t i = 0; i < list->GetSize(); ++i) {
-    const base::DictionaryValue* dict = NULL;
-    if (!list->GetDictionary(i, &dict))
+  rules.reserve(value->GetList().size());
+  for (const base::Value& value : value->GetList()) {
+    if (!value.is_dict())
       continue;
     api::events::Rule rule;
-    if (api::events::Rule::Populate(*dict, &rule))
+    if (api::events::Rule::Populate(value, &rule))
       rules.push_back(std::move(rule));
   }
 
@@ -312,6 +311,14 @@ void RulesRegistry::DeserializeAndAddRules(const std::string& extension_id,
                                            std::unique_ptr<base::Value> rules) {
   DCHECK_CURRENTLY_ON(owner_thread());
 
+  // Since this is called in response to asynchronously loading rules from
+  // storage, the extension may have been unloaded by the time this is called.
+  if (!ExtensionRegistry::Get(browser_context())
+           ->enabled_extensions()
+           .Contains(extension_id)) {
+    return;
+  }
+
   std::string error = AddRulesNoFill(extension_id, RulesFromValue(rules.get()),
                                      &rules_, nullptr);
   if (!error.empty())
@@ -348,8 +355,8 @@ void RulesRegistry::ProcessChangedRules(const std::string& extension_id) {
 
   std::vector<const api::events::Rule*> new_rules;
   GetRules(extension_id, &rules_, &new_rules);
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::UI},
+  content::GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&RulesCacheDelegate::UpdateRules, cache_delegate_,
                      extension_id, RulesToValue(new_rules)));
 }
@@ -409,7 +416,7 @@ std::string RulesRegistry::CheckAndFillInOptionalRules(
   // cannot fail so we do not need to keep track of a rollback log.
   for (auto& rule : *rules) {
     if (!rule.id.get()) {
-      rule.id.reset(new std::string(GenerateUniqueId(extension_id)));
+      rule.id = std::make_unique<std::string>(GenerateUniqueId(extension_id));
       used_rule_identifiers_[extension_id].insert(*(rule.id));
     }
   }
@@ -420,7 +427,7 @@ void RulesRegistry::FillInOptionalPriorities(
     std::vector<api::events::Rule>* rules) {
   for (auto& rule : *rules) {
     if (!rule.priority.get())
-      rule.priority.reset(new int(DEFAULT_PRIORITY));
+      rule.priority = std::make_unique<int>(DEFAULT_PRIORITY);
   }
 }
 

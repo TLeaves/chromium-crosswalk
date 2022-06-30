@@ -9,8 +9,9 @@
 #include <algorithm>
 
 #include "base/bind.h"
+#include "base/check_op.h"
 #include "base/location.h"
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -22,7 +23,7 @@
 
 namespace {
 
-net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+const net::NetworkTrafficAnnotationTag kTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("socket_bio_adapter", R"(
       semantics {
         sender: "Socket BIO Adapter"
@@ -61,11 +62,7 @@ SocketBIOAdapter::SocketBIOAdapter(StreamSocket* socket,
                                    Delegate* delegate)
     : socket_(socket),
       read_buffer_capacity_(read_buffer_capacity),
-      read_offset_(0),
-      read_result_(0),
       write_buffer_capacity_(write_buffer_capacity),
-      write_buffer_used_(0),
-      write_error_(OK),
       delegate_(delegate) {
   bio_.reset(BIO_new(&kBIOMethod));
   bio_->ptr = this;

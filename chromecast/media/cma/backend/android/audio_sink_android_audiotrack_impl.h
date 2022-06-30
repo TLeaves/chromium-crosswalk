@@ -12,10 +12,10 @@
 
 #include "base/android/jni_android.h"
 #include "base/cancelable_callback.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "chromecast/media/cma/backend/android/audio_sink_android.h"
 #include "chromecast/media/cma/backend/android/media_pipeline_backend_android.h"
 
@@ -41,13 +41,13 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
   // buffer larger than this size and feed it in in smaller chunks.
   static const int kDirectBufferSize = 512 * 1024;
 
-  // Gets the Android audio session ids used for media and communication (TTS)
-  // tracks.
-  // Set a return value pointer to null if that id is not needed.
-  // Returns true if the ids populated are valid.
-  static bool GetSessionIds(int* media_id, int* communication_id);
+  AudioSinkAndroidAudioTrackImpl(const AudioSinkAndroidAudioTrackImpl&) =
+      delete;
+  AudioSinkAndroidAudioTrackImpl& operator=(
+      const AudioSinkAndroidAudioTrackImpl&) = delete;
 
-  static int64_t GetMinimumBufferedTime(int samples_per_second);
+  static int64_t GetMinimumBufferedTime(int num_channels,
+                                        int samples_per_second);
 
   // Called from Java so that we can cache the addresses of the Java-managed
   // byte_buffers.
@@ -69,7 +69,6 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
   bool primary() const override;
   std::string device_id() const override;
   AudioContentType content_type() const override;
-  const char* GetContentTypeName() const override;
 
   // Prevents any further calls to the delegate (ie, called when the delegate
   // is being destroyed).
@@ -81,8 +80,11 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
   friend class ManagedAudioSink;
 
   AudioSinkAndroidAudioTrackImpl(AudioSinkAndroid::Delegate* delegate,
+                                 int num_channels,
                                  int input_samples_per_second,
+                                 int audio_track_session_id,
                                  bool primary,
+                                 bool use_hw_av_sync,
                                  const std::string& device_id,
                                  AudioContentType content_type);
 
@@ -96,10 +98,11 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
   void ScheduleWaitForEosTask();
   void OnPlayoutDone();
 
-  // Reformats audio data from planar float into interleaved float for
-  // AudioTrack. I.e.:
+  // Reformats audio data from planar into interleaved for AudioTrack. I.e.:
   // "LLLLLLLLLLLLLLLLRRRRRRRRRRRRRRRR" -> "LRLRLRLRLRLRLRLRLRLRLRLRLRLRLRLR".
-  void ReformatData();
+  // If using hardware av sync, also convert audio data from float to int16_t.
+  // Returns the data size after reformatting.
+  int ReformatData();
 
   void TrackRawMonotonicClockDeviation();
 
@@ -113,28 +116,15 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
 
   // Config parameters provided into c'tor.
   Delegate* const delegate_;
+  const int num_channels_;
   const int input_samples_per_second_;
   const bool primary_;
+  const bool use_hw_av_sync_;
   const std::string device_id_;
   const AudioContentType content_type_;
 
   float stream_volume_multiplier_;
   float limiter_volume_multiplier_;
-
-  // Java AudioSinkAudioTrackImpl instance.
-  base::android::ScopedJavaGlobalRef<jobject> j_audio_sink_audiotrack_impl_;
-
-  // Thread that feeds audio data into the Java instance though JNI,
-  // potentially blocking. When in Play mode the Java AudioTrack blocks as it
-  // waits for queue space to become available for the new data. In Pause mode
-  // it returns immediately once all queue space has been filled up. This case
-  // is handled separately via FeedDataContinue().
-  base::Thread feeder_thread_;
-  scoped_refptr<base::SingleThreadTaskRunner> feeder_task_runner_;
-
-  base::CancelableClosure wait_for_eos_task_;
-
-  const scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner_;
 
   // Buffers shared between native and Java space to move data across the JNI.
   // We use direct buffers so that the native class can have access to the
@@ -146,17 +136,32 @@ class AudioSinkAndroidAudioTrackImpl : public AudioSinkAndroid {
   // rendering delay+timestamp return value, java->native
   uint64_t* direct_rendering_delay_address_;
 
+  // Java AudioSinkAudioTrackImpl instance.
+  const base::android::ScopedJavaGlobalRef<jobject>
+      j_audio_sink_audiotrack_impl_;
+
+  // Thread that feeds audio data into the Java instance though JNI,
+  // potentially blocking. When in Play mode the Java AudioTrack blocks as it
+  // waits for queue space to become available for the new data. In Pause mode
+  // it returns immediately once all queue space has been filled up. This case
+  // is handled separately via FeedDataContinue().
+  base::Thread feeder_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> feeder_task_runner_;
+
+  base::CancelableOnceClosure wait_for_eos_task_;
+
+  const scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner_;
+
   State state_;
 
   scoped_refptr<DecoderBufferBase> pending_data_;
+  int pending_data_bytes_after_reformat_;
   int pending_data_bytes_already_fed_;
 
   MediaPipelineBackendAndroid::RenderingDelay sink_rendering_delay_;
 
   base::WeakPtr<AudioSinkAndroidAudioTrackImpl> weak_this_;
   base::WeakPtrFactory<AudioSinkAndroidAudioTrackImpl> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(AudioSinkAndroidAudioTrackImpl);
 };
 
 }  // namespace media

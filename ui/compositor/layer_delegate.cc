@@ -16,7 +16,11 @@ void LayerDelegate::OnLayerOpacityChanged(PropertyChangeReason reason) {}
 
 void LayerDelegate::OnLayerAlphaShapeChanged() {}
 
-void LayerDelegate::OnLayerFillsBoundsOpaquelyChanged() {}
+void LayerDelegate::OnLayerFillsBoundsOpaquelyChanged(
+    PropertyChangeReason reason) {}
+
+void LayerDelegate::OnLayerClipRectChanged(const gfx::Rect& old_rect,
+                                           PropertyChangeReason reason) {}
 
 void LayerDelegate::UpdateVisualState() {}
 

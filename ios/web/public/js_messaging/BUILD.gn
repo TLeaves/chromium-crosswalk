@@ -2,14 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//ios/web/public/js_messaging/compile_ts.gni")
+
 source_set("js_messaging") {
   deps = [
     "//base",
     "//ios/web/public/",
     "//url",
   ]
+  public_deps = [ "//third_party/abseil-cpp:absl" ]
 
   sources = [
+    "java_script_feature.h",
+    "java_script_feature_util.h",
+    "script_message.h",
     "web_frame.h",
     "web_frame_user_data.h",
     "web_frame_util.h",
@@ -17,4 +23,9 @@ source_set("js_messaging") {
   ]
 
   configs += [ "//build/config/compiler:enable_arc" ]
+}
+
+compile_ts("util_scripts") {
+  allow_js = true
+  sources = [ "resources/utils.ts" ]
 }

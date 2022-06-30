@@ -5,7 +5,6 @@
 #ifndef MOJO_CORE_CONNECTION_PARAMS_H_
 #define MOJO_CORE_CONNECTION_PARAMS_H_
 
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "mojo/core/system_impl_export.h"
 #include "mojo/public/cpp/platform/platform_channel_endpoint.h"
@@ -21,6 +20,10 @@ class MOJO_SYSTEM_IMPL_EXPORT ConnectionParams {
   explicit ConnectionParams(PlatformChannelEndpoint endpoint);
   explicit ConnectionParams(PlatformChannelServerEndpoint server_endpoint);
   ConnectionParams(ConnectionParams&&);
+
+  ConnectionParams(const ConnectionParams&) = delete;
+  ConnectionParams& operator=(const ConnectionParams&) = delete;
+
   ~ConnectionParams();
 
   ConnectionParams& operator=(ConnectionParams&&);
@@ -36,11 +39,17 @@ class MOJO_SYSTEM_IMPL_EXPORT ConnectionParams {
     return std::move(server_endpoint_);
   }
 
+  void set_is_async(bool is_async) { is_async_ = is_async; }
+  bool is_async() const { return is_async_; }
+
+  void set_leak_endpoint(bool leak_endpoint) { leak_endpoint_ = leak_endpoint; }
+  bool leak_endpoint() const { return leak_endpoint_; }
+
  private:
+  bool is_async_ = false;
+  bool leak_endpoint_ = false;
   PlatformChannelEndpoint endpoint_;
   PlatformChannelServerEndpoint server_endpoint_;
-
-  DISALLOW_COPY_AND_ASSIGN(ConnectionParams);
 };
 
 }  // namespace core

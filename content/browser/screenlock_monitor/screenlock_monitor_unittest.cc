@@ -4,10 +4,10 @@
 
 #include "content/browser/screenlock_monitor/screenlock_monitor.h"
 
-#include "base/macros.h"
-#include "base/message_loop/message_loop_current.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/task/current_thread.h"
+#include "base/test/task_environment.h"
 #include "content/browser/screenlock_monitor/screenlock_monitor_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -16,8 +16,8 @@ namespace content {
 class ScreenlockMonitorTestSource : public ScreenlockMonitorSource {
  public:
   ScreenlockMonitorTestSource() {
-    DCHECK(base::MessageLoopCurrent::Get())
-        << "ScreenlocMonitorTestSource requires a MessageLoop.";
+    DCHECK(base::CurrentThread::Get())
+        << "ScreenlockMonitorTestSource requires a MessageLoop.";
   }
   ~ScreenlockMonitorTestSource() override = default;
 
@@ -48,6 +48,10 @@ class ScreenlockMonitorTestObserver : public ScreenlockObserver {
 };
 
 class ScreenlockMonitorTest : public testing::Test {
+ public:
+  ScreenlockMonitorTest(const ScreenlockMonitorTest&) = delete;
+  ScreenlockMonitorTest& operator=(const ScreenlockMonitorTest&) = delete;
+
  protected:
   ScreenlockMonitorTest() {
     screenlock_monitor_source_ = new ScreenlockMonitorTestSource();
@@ -57,13 +61,11 @@ class ScreenlockMonitorTest : public testing::Test {
   ~ScreenlockMonitorTest() override = default;
 
  protected:
-  ScreenlockMonitorTestSource* screenlock_monitor_source_;
+  raw_ptr<ScreenlockMonitorTestSource> screenlock_monitor_source_;
   std::unique_ptr<ScreenlockMonitor> screenlock_monitor_;
 
  private:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScreenlockMonitorTest);
+  base::test::SingleThreadTaskEnvironment task_environment_;
 };
 
 TEST_F(ScreenlockMonitorTest, ScreenlockNotifications) {

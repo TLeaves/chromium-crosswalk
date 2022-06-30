@@ -8,14 +8,19 @@
 #import <Foundation/Foundation.h>
 
 #include <map>
+#include <string>
+#include <vector>
 
-enum NTPTabOpeningPostOpeningAction {
+enum class ApplicationModeForTabOpening { NORMAL, INCOGNITO, CURRENT };
+
+enum TabOpeningPostOpeningAction {
   // No action should be done
   NO_ACTION = 0,
   START_VOICE_SEARCH,
   START_QR_CODE_SCANNER,
   FOCUS_OMNIBOX,
-  NTP_TAB_OPENING_POST_OPENING_ACTION_COUNT,
+  SHOW_DEFAULT_BROWSER_SETTINGS,
+  TAB_OPENING_POST_OPENING_ACTION_COUNT,
 };
 
 class GURL;
@@ -31,8 +36,12 @@ class GURL;
 @property(nonatomic, readonly, assign) const GURL& externalURL;
 
 // Original URL that should be opened. May or may not be the same as
-// |externalURL|.
+// `externalURL`.
 @property(nonatomic, readonly, assign) const GURL& completeURL;
+
+// The list of URLs to open. First URL in the vector is the same
+// as `externalURL`.
+@property(nonatomic, readonly, assign) const std::vector<GURL>& URLs;
 
 // The URL query string parameters in the case that the app was launched as a
 // result of Universal Link navigation. The map associates query string
@@ -42,15 +51,26 @@ class GURL;
 
 // Boolean to track if the app should launch in incognito mode.
 @property(nonatomic, readwrite, assign) BOOL launchInIncognito;
-// Action to be taken after opening the initial NTP.
+// The mode in which the tab must be opened.
+@property(nonatomic, readonly) ApplicationModeForTabOpening applicationMode;
+// Action to be taken after loading the URL.
 @property(nonatomic, readwrite, assign)
-    NTPTabOpeningPostOpeningAction postOpeningAction;
+    TabOpeningPostOpeningAction postOpeningAction;
 // Boolean to track if a Payment Request response is requested at startup.
 @property(nonatomic, readwrite, assign) BOOL completePaymentRequest;
 // Text query that should be executed on startup.
 @property(nonatomic, readwrite, copy) NSString* textQuery;
 // Data for UIImage for image query that should be executed on startup.
 @property(nonatomic, readwrite, strong) NSData* imageSearchData;
+// Boolean to track if the app is open in an user unexpected mode.
+// When a certain enterprise policy has been set, it's possible that one browser
+// mode is disabled. When the user intends to open an unavailable mode of
+// Chrome, the browser won't proceed in that disabled mode, and it will signal
+// to the user that a different mode is opened.
+@property(nonatomic, readwrite, getter=isUnexpectedMode) BOOL unexpectedMode;
+// Boolean to track whether the app was opened via a custom scheme from another
+// first-party app.
+@property(nonatomic, readwrite, assign) BOOL openedViaFirstPartyScheme;
 
 - (instancetype)init NS_UNAVAILABLE;
 
@@ -58,7 +78,7 @@ class GURL;
                         completeURL:(const GURL&)completeURL
     NS_DESIGNATED_INITIALIZER;
 
-- (instancetype)initWithUniversalLink:(const GURL&)universalLink;
+- (instancetype)initWithURLs:(const std::vector<GURL>&)URLs;
 
 @end
 

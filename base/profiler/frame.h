@@ -5,9 +5,8 @@
 #ifndef BASE_PROFILER_FRAME_H_
 #define BASE_PROFILER_FRAME_H_
 
-#include <memory>
-
-#include "base/sampling_heap_profiler/module_cache.h"
+#include "base/base_export.h"
+#include "base/profiler/module_cache.h"
 
 namespace base {
 

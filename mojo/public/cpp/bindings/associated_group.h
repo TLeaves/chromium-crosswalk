@@ -7,12 +7,12 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/memory/ref_counted.h"
-#include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
+#include "base/memory/scoped_refptr.h"
 
 namespace mojo {
 
 class AssociatedGroupController;
+class ScopedInterfaceEndpointHandle;
 
 // AssociatedGroup refers to all the interface endpoints running at one end of a
 // message pipe.
@@ -42,7 +42,7 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS_BASE) AssociatedGroup {
   AssociatedGroupController* GetController();
 
  private:
-  base::Callback<AssociatedGroupController*()> controller_getter_;
+  base::RepeatingCallback<AssociatedGroupController*()> controller_getter_;
   scoped_refptr<AssociatedGroupController> controller_;
 };
 

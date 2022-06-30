@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_ORIGIN_POLICY_H_
 #define THIRD_PARTY_BLINK_PUBLIC_WEB_WEB_ORIGIN_POLICY_H_
 
+#include "third_party/blink/public/platform/web_common.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_vector.h"
 
@@ -16,10 +17,12 @@ namespace blink {
 
 // Origin Policy spec: https://wicg.github.io/origin-policy/
 struct BLINK_EXPORT WebOriginPolicy {
-  // The feature policy that is dictated by the origin policy. Each feature
-  // is one member of the array.
-  // https://w3c.github.io/webappsec-feature-policy/
-  WebVector<WebString> features;
+  // https://wicg.github.io/origin-policy/#origin-policy-ids
+  WebVector<WebString> ids;
+
+  // The permissions policy that is dictated by the origin policy, if any.
+  // https://w3c.github.io/webappsec-permissions-policy/
+  WebString permissions_policy;
 
   // These two fields together represent the CSP that should be applied to the
   // origin, based on the origin policy.

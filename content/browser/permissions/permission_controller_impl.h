@@ -6,13 +6,25 @@
 #define CONTENT_BROWSER_PERMISSIONS_PERMISSION_CONTROLLER_IMPL_H_
 
 #include "base/containers/id_map.h"
+#include "base/memory/raw_ptr.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/devtools_permission_overrides.h"
 #include "content/public/browser/permission_controller.h"
 #include "url/gurl.h"
+#include "url/origin.h"
+
+namespace blink {
+enum class PermissionType;
+}
 
 namespace content {
 
 class BrowserContext;
+class PermissionControllerImplTest;
+class RenderProcessHost;
+class PermissionServiceImpl;
+
+using blink::PermissionType;
 
 // Implementation of the PermissionController interface. This
 // is used by content/ layer to manage permissions.
@@ -20,70 +32,105 @@ class BrowserContext;
 class CONTENT_EXPORT PermissionControllerImpl : public PermissionController {
  public:
   explicit PermissionControllerImpl(BrowserContext* browser_context);
+
+  PermissionControllerImpl(const PermissionControllerImpl&) = delete;
+  PermissionControllerImpl& operator=(const PermissionControllerImpl&) = delete;
+
   ~PermissionControllerImpl() override;
 
   static PermissionControllerImpl* FromBrowserContext(
       BrowserContext* browser_context);
 
-  using PermissionOverrides = std::set<PermissionType>;
-  // For the given |origin|, grant permissions that belong to |overrides|
-  // and reject all others.
-  void SetPermissionOverridesForDevTools(const GURL& origin,
-                                         const PermissionOverrides& overrides);
-  void ResetPermissionOverridesForDevTools();
+  using PermissionOverrides = DevToolsPermissionOverrides::PermissionOverrides;
+  enum class OverrideStatus { kOverrideNotSet, kOverrideSet };
 
-  // PermissionController implementation.
-  blink::mojom::PermissionStatus GetPermissionStatus(
+  // For the given |origin|, grant permissions in |overrides| and reject all
+  // others. If no |origin| is specified, grant permissions to all origins in
+  // the browser context.
+  OverrideStatus GrantOverridesForDevTools(
+      const absl::optional<url::Origin>& origin,
+      const std::vector<PermissionType>& permissions);
+  OverrideStatus SetOverrideForDevTools(
+      const absl::optional<url::Origin>& origin,
       PermissionType permission,
-      const GURL& requesting_origin,
-      const GURL& embedding_origin) override;
-
-  blink::mojom::PermissionStatus GetPermissionStatusForFrame(
-      PermissionType permission,
-      RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin) override;
-
-  int RequestPermission(
-      PermissionType permission,
-      RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin,
-      bool user_gesture,
-      const base::Callback<void(blink::mojom::PermissionStatus)>& callback);
-
-  int RequestPermissions(
-      const std::vector<PermissionType>& permission,
-      RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin,
-      bool user_gesture,
-      const base::Callback<
-          void(const std::vector<blink::mojom::PermissionStatus>&)>& callback);
+      const blink::mojom::PermissionStatus& status);
+  void ResetOverridesForDevTools();
 
   void ResetPermission(PermissionType permission,
                        const GURL& requesting_origin,
                        const GURL& embedding_origin);
 
-  int SubscribePermissionStatusChange(
+  // Only one of |render_process_host| and |render_frame_host| should be set,
+  // or neither. RenderProcessHost will be inferred from |render_frame_host|.
+  SubscriptionId SubscribePermissionStatusChange(
       PermissionType permission,
+      RenderProcessHost* render_process_host,
       RenderFrameHost* render_frame_host,
       const GURL& requesting_origin,
-      const base::Callback<void(blink::mojom::PermissionStatus)>& callback);
+      const base::RepeatingCallback<void(blink::mojom::PermissionStatus)>&
+          callback);
 
-  void UnsubscribePermissionStatusChange(int subscription_id);
+  void UnsubscribePermissionStatusChange(SubscriptionId subscription_id);
 
  private:
+  friend class PermissionControllerImplTest;
+  friend class PermissionServiceImpl;
+
+  blink::mojom::PermissionStatus DeprecatedGetPermissionStatus(
+      PermissionType permission,
+      const GURL& requesting_origin,
+      const GURL& embedding_origin);
+
+  // PermissionController implementation.
+  blink::mojom::PermissionStatus GetPermissionStatusForWorker(
+      PermissionType permission,
+      RenderProcessHost* render_process_host,
+      const url::Origin& worker_origin) override;
+  blink::mojom::PermissionStatus GetPermissionStatusForCurrentDocument(
+      PermissionType permission,
+      RenderFrameHost* render_frame_host) override;
+  blink::mojom::PermissionStatus GetPermissionStatusForOriginWithoutContext(
+      PermissionType permission,
+      const url::Origin& origin) override;
+  void RequestPermissionFromCurrentDocument(
+      PermissionType permission,
+      RenderFrameHost* render_frame_host,
+      bool user_gesture,
+      base::OnceCallback<void(blink::mojom::PermissionStatus)> callback)
+      override;
+  void RequestPermissionsFromCurrentDocument(
+      const std::vector<PermissionType>& permissions,
+      RenderFrameHost* render_frame_host,
+      bool user_gesture,
+      base::OnceCallback<
+          void(const std::vector<blink::mojom::PermissionStatus>&)> callback)
+      override;
+
   struct Subscription;
-  using SubscriptionsMap = base::IDMap<std::unique_ptr<Subscription>>;
+  using SubscriptionsMap =
+      base::IDMap<std::unique_ptr<Subscription>, SubscriptionId>;
+  using SubscriptionsStatusMap =
+      base::flat_map<SubscriptionsMap::KeyType, blink::mojom::PermissionStatus>;
 
   blink::mojom::PermissionStatus GetSubscriptionCurrentValue(
       const Subscription& subscription);
-  void OnDelegatePermissionStatusChange(Subscription* subscription,
+  SubscriptionsStatusMap GetSubscriptionsStatuses(
+      const absl::optional<GURL>& origin = absl::nullopt);
+  void NotifyChangedSubscriptions(const SubscriptionsStatusMap& old_statuses);
+  void OnDelegatePermissionStatusChange(SubscriptionId subscription_id,
                                         blink::mojom::PermissionStatus status);
+  void UpdateDelegateOverridesForDevTools(
+      const absl::optional<url::Origin>& origin);
 
-  std::map<GURL, PermissionOverrides> devtools_permission_overrides_;
+  DevToolsPermissionOverrides devtools_permission_overrides_;
+
+  // Note that SubscriptionId is distinct from
+  // PermissionControllerDelegate::SubscriptionId, and the concrete ID values
+  // may be different as well.
   SubscriptionsMap subscriptions_;
-  BrowserContext* browser_context_;
+  SubscriptionId::Generator subscription_id_generator_;
 
-  DISALLOW_COPY_AND_ASSIGN(PermissionControllerImpl);
+  raw_ptr<BrowserContext> browser_context_;
 };
 
 }  // namespace content

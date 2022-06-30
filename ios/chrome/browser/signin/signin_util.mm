@@ -5,10 +5,11 @@
 #include "ios/chrome/browser/signin/signin_util.h"
 
 #include "base/strings/sys_string_conversions.h"
+#import "components/signin/public/identity_manager/tribool.h"
 #include "google_apis/gaia/gaia_auth_util.h"
-#import "ios/public/provider/chrome/browser/chrome_browser_provider.h"
+#include "ios/chrome/browser/signin/signin_util_internal.h"
 #import "ios/public/provider/chrome/browser/signin/chrome_identity.h"
-#include "ios/public/provider/chrome/browser/signin/signin_error_provider.h"
+#import "ios/public/provider/chrome/browser/signin/signin_error_api.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -22,19 +23,35 @@ NSArray* GetScopeArray(const std::set<std::string>& scopes) {
   return scopes_array;
 }
 
-std::string GetCanonicalizedEmailForIdentity(ChromeIdentity* identity) {
-  NSString* nsEmail = [identity userEmail];
-  if (!nsEmail)
-    return std::string();
-  std::string email = base::SysNSStringToUTF8(nsEmail);
-  return gaia::CanonicalizeEmail(gaia::SanitizeEmail(email));
+bool ShouldHandleSigninError(NSError* error) {
+  return ios::provider::GetSigninErrorCategory(error) !=
+         ios::provider::SigninErrorCategory::kUserCancellationError;
 }
 
-bool ShouldHandleSigninError(NSError* error) {
-  ios::SigninErrorProvider* provider =
-      ios::GetChromeBrowserProvider()->GetSigninErrorProvider();
-  return ![provider->GetSigninErrorDomain() isEqualToString:error.domain] ||
-         (error.code != provider->GetCode(ios::SigninError::CANCELED) &&
-          error.code !=
-              provider->GetCode(ios::SigninError::HANDLED_INTERNALLY));
+CGSize GetSizeForIdentityAvatarSize(IdentityAvatarSize avatar_size) {
+  CGFloat size = 0;
+  switch (avatar_size) {
+    case IdentityAvatarSize::TableViewIcon:
+      size = 30.;
+      break;
+    case IdentityAvatarSize::SmallSize:
+      size = 32.;
+      break;
+    case IdentityAvatarSize::DefaultLarge:
+      size = 40.;
+      break;
+  }
+  DCHECK_NE(size, 0);
+  return CGSizeMake(size, size);
+}
+
+signin::Tribool IsFirstSessionAfterDeviceRestore() {
+  static signin::Tribool is_first_session_after_device_restore =
+      signin::Tribool::kUnknown;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    is_first_session_after_device_restore =
+        IsFirstSessionAfterDeviceRestoreInternal();
+  });
+  return is_first_session_after_device_restore;
 }

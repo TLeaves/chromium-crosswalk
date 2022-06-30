@@ -5,12 +5,14 @@
 #include "components/invalidation/public/identity_provider.h"
 
 #include "base/i18n/time_formatting.h"
+#include "base/observer_list.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace invalidation {
 
-IdentityProvider::Observer::~Observer() {}
+IdentityProvider::IdentityProvider() = default;
 
-IdentityProvider::~IdentityProvider() {}
+IdentityProvider::~IdentityProvider() = default;
 
 void IdentityProvider::AddObserver(Observer* observer) {
   observers_.AddObserver(observer);
@@ -19,8 +21,6 @@ void IdentityProvider::AddObserver(Observer* observer) {
 void IdentityProvider::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
-
-IdentityProvider::IdentityProvider() {}
 
 void IdentityProvider::ProcessRefreshTokenUpdateForAccount(
     const CoreAccountId& account_id) {
@@ -39,8 +39,6 @@ void IdentityProvider::ProcessRefreshTokenRemovalForAccount(
     diagnostic_info_.token_removal_for_not_active_account_count++;
     return;
   }
-  for (auto& observer : observers_)
-    observer.OnActiveAccountRefreshTokenRemoved();
 }
 
 void IdentityProvider::FireOnActiveAccountLogin() {
@@ -59,17 +57,17 @@ void IdentityProvider::RequestDetailedStatus(
   return_callback.Run(diagnostic_info_.CollectDebugData());
 }
 
-IdentityProvider::Diagnostics::Diagnostics() {}
+IdentityProvider::Diagnostics::Diagnostics() = default;
 
 base::DictionaryValue IdentityProvider::Diagnostics::CollectDebugData() const {
   base::DictionaryValue status;
 
-  status.SetInteger("IdentityProvider.token-removal-for-not-active-account",
+  status.SetIntPath("IdentityProvider.token-removal-for-not-active-account",
                     token_removal_for_not_active_account_count);
-  status.SetInteger("IdentityProvider.token-update-for-not-active-account",
+  status.SetIntPath("IdentityProvider.token-update-for-not-active-account",
                     token_update_for_not_active_account_count);
-  status.SetString("IdentityProvider.account-token-updated",
-                   base::TimeFormatShortDateAndTime(account_token_updated));
+  status.SetStringPath("IdentityProvider.account-token-updated",
+                       base::TimeFormatShortDateAndTime(account_token_updated));
   return status;
 }
 

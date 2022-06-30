@@ -14,13 +14,15 @@ var startCharacter = '#';
 var croshName = 'crosh';
 var invalidName = 'some name';
 
-var invalidNameError = 'Invalid process name.';
+var invalidNameError = 'Invalid process name: some name';
 
 var testLineNum = 10;
 var testProcessTotal = 2;
 
 var testProcessCount = 0;
 var testProcesses = [];
+
+const decoder = new TextDecoder();
 
 function TestProcess(id, type) {
   this.id_ = id;
@@ -164,10 +166,12 @@ function getProcessIndexForId(id) {
   return undefined;
 };
 
-function processOutputListener(id, type, text) {
+function processOutputListener(id, type, data) {
   var processIndex = getProcessIndexForId(id);
   if (processIndex == undefined)
     return;
+
+  const text = decoder.decode(data);
 
   var process = testProcesses[processIndex];
 
@@ -260,5 +264,78 @@ chrome.test.runTests([
   function invalidProcessNameTest() {
     chrome.terminalPrivate.openTerminalProcess(invalidName,
         chrome.test.callbackFail(invalidNameError));
-  }
+  },
+
+  function prefsTest() {
+    const pContainers = 'crostini.containers';
+    const pSettings = 'crostini.terminal_settings';
+    const pA11y = 'settings.accessibility';
+    const paths = [pContainers, pSettings, pA11y, 'unknown-ignored'];
+    const validateGetPrefs = (prefs, settingsLength) => {
+      chrome.test.assertEq(3, Object.keys(prefs).length);
+      chrome.test.assertTrue(Array.isArray(prefs[pContainers]));
+      chrome.test.assertEq(0, prefs[pContainers].length);
+      chrome.test.assertEq('object', typeof prefs[pSettings]);
+      chrome.test.assertEq(
+          settingsLength, Object.keys(prefs[pSettings]).length);
+      chrome.test.assertEq('boolean', typeof prefs[pA11y]);
+      chrome.test.assertFalse(prefs[pA11y]);
+    };
+
+    const listener = (prefs) => {
+      // 3. Event is fired - only includes settings with {'k': 'v'}.
+      chrome.test.assertEq(1, Object.keys(prefs).length);
+      chrome.test.assertEq('object', typeof prefs[pSettings]);
+      chrome.test.assertEq(1, Object.keys(prefs[pSettings]).length);
+      chrome.test.assertEq('v', prefs[pSettings]['k']);
+
+      // 4. Get prefs - settings has {'k': 'v'}, others unchanged.
+      chrome.terminalPrivate.getPrefs(paths, (prefs) => {
+        chrome.test.assertNoLastError();
+        validateGetPrefs(prefs, 1);
+        chrome.test.assertEq('v', prefs[pSettings]['k']);
+
+        // 5. Cleanup.
+        chrome.terminalPrivate.onPrefChanged.removeListener(listener);
+        chrome.terminalPrivate.onPrefChanged.addListener(chrome.test.succeed);
+        chrome.terminalPrivate.setPrefs(
+            {[pSettings]: {}}, chrome.test.assertNoLastError);
+      });
+    };
+    chrome.terminalPrivate.onPrefChanged.addListener(listener);
+
+    // 1. Get prefs - 3 valid, plus another unknown (will be ignored).
+    chrome.terminalPrivate.getPrefs(paths, (prefs) => {
+        chrome.test.assertNoLastError();
+        validateGetPrefs(prefs, 0);
+
+        // 2. Set prefs - only settings allows write.
+        chrome.terminalPrivate.setPrefs({
+            [pContainers]: [{k1: 'v1'}, {k2: 'v2'}],
+            [pSettings]: {k: 'v'},
+            [pA11y]: true,
+            'unknown-ignored': 'ignored',
+          }, chrome.test.assertNoLastError);
+    });
+  },
+
+  function invalidTerminalIdTest() {
+    const foreign_id = (new URLSearchParams(location.search)).get('foreign_id');
+    chrome.test.assertTrue(!!foreign_id);
+
+    const callbackFail = chrome.test.callbackFail;
+
+    [foreign_id, 'invalid id'].forEach((id) => {
+      // Ideally, we will also want to test ackOutput, but it does not have a
+      // result callback.
+      chrome.terminalPrivate.closeTerminalProcess(
+          id, callbackFail('invalid terminal id'));
+      // If this manages to write to the `foreign_id` process, we should detect
+      // some output in terminal_private_apitest.cc.
+      chrome.terminalPrivate.sendInput(
+          id, 'hello', callbackFail('invalid terminal id'));
+      chrome.terminalPrivate.onTerminalResize(
+          id, 10, 10, callbackFail('invalid terminal id'));
+    });
+  },
 ]);

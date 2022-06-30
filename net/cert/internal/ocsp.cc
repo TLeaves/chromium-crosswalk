@@ -37,18 +37,6 @@ OCSPResponseData::~OCSPResponseData() = default;
 OCSPResponse::OCSPResponse() = default;
 OCSPResponse::~OCSPResponse() = default;
 
-der::Input BasicOCSPResponseOid() {
-  // From RFC 6960:
-  //
-  // id-pkix-ocsp           OBJECT IDENTIFIER ::= { id-ad-ocsp }
-  // id-pkix-ocsp-basic     OBJECT IDENTIFIER ::= { id-pkix-ocsp 1 }
-  //
-  // In dotted notation: 1.3.6.1.5.5.7.48.1.1
-  static const uint8_t oid[] = {0x2b, 0x06, 0x01, 0x05, 0x05,
-                                0x07, 0x30, 0x01, 0x01};
-  return der::Input(oid);
-}
-
 // CertID ::= SEQUENCE {
 //    hashAlgorithm           AlgorithmIdentifier,
 //    issuerNameHash          OCTET STRING, -- Hash of issuer's DN
@@ -356,8 +344,10 @@ bool ParseBasicOCSPResponse(const der::Input& raw_tlv, OCSPResponse* out) {
   out->signature_algorithm = SignatureAlgorithm::Create(sigalg_tlv, &errors);
   if (!out->signature_algorithm)
     return false;
-  if (!parser.ReadBitString(&(out->signature)))
+  absl::optional<der::BitString> signature = parser.ReadBitString();
+  if (!signature)
     return false;
+  out->signature = signature.value();
   der::Input certs_input;
   if (!parser.ReadOptionalTag(der::ContextSpecificConstructed(0), &certs_input,
                               &(out->has_certs))) {
@@ -431,7 +421,7 @@ bool ParseOCSPResponse(const der::Input& raw_tlv, OCSPResponse* out) {
     der::Input type_oid;
     if (!bytes_parser.ReadTag(der::kOid, &type_oid))
       return false;
-    if (type_oid != BasicOCSPResponseOid())
+    if (type_oid != der::Input(kBasicOCSPResponseOid))
       return false;
 
     // As per RFC 6960 Section 4.2.1, the value of |response| SHALL be the DER
@@ -484,7 +474,7 @@ bool GetSubjectPublicKeyBytes(const der::Input& spki_tlv, der::Input* spk_tlv) {
   // ExtractSubjectPublicKeyFromSPKI() includes the unused bit count. For this
   // application, the unused bit count must be zero, and is not included in the
   // result.
-  if (!spk_strpiece.starts_with("\0"))
+  if (!base::StartsWith(spk_strpiece, "\0"))
     return false;
   spk_strpiece.remove_prefix(1);
 
@@ -541,16 +531,14 @@ scoped_refptr<ParsedCertificate> OCSPParseCertificate(base::StringPiece der) {
   // TODO(eroman): Swallows the parsing errors. However uses a permissive
   // parsing model.
   CertErrors errors;
-  return ParsedCertificate::Create(
-      x509_util::CreateCryptoBuffer(
-          reinterpret_cast<const uint8_t*>(der.data()), der.size()),
-      {}, &errors);
+  return ParsedCertificate::Create(x509_util::CreateCryptoBuffer(der), {},
+                                   &errors);
 }
 
 // Checks that the ResponderID |id| matches the certificate |cert| either
 // by verifying the name matches that of the certificate or that the hash
 // matches the certificate's public key hash (RFC 6960, 4.2.2.3).
-WARN_UNUSED_RESULT bool CheckResponderIDMatchesCertificate(
+[[nodiscard]] bool CheckResponderIDMatchesCertificate(
     const OCSPResponseData::ResponderID& id,
     const ParsedCertificate* cert) {
   switch (id.type) {
@@ -583,7 +571,7 @@ WARN_UNUSED_RESULT bool CheckResponderIDMatchesCertificate(
 // TODO(eroman): Not all properties of the certificate are verified, only the
 //     signature and EKU. Can full RFC 5280 validation be used, or are there
 //     compatibility concerns?
-WARN_UNUSED_RESULT bool VerifyAuthorizedResponderCert(
+[[nodiscard]] bool VerifyAuthorizedResponderCert(
     const ParsedCertificate* responder_certificate,
     const ParsedCertificate* issuer_certificate) {
   // The Authorized Responder must be directly signed by the issuer of the
@@ -602,13 +590,15 @@ WARN_UNUSED_RESULT bool VerifyAuthorizedResponderCert(
     return false;
   const std::vector<der::Input>& ekus =
       responder_certificate->extended_key_usage();
-  if (std::find(ekus.begin(), ekus.end(), OCSPSigning()) == ekus.end())
+  if (std::find(ekus.begin(), ekus.end(), der::Input(kOCSPSigning)) ==
+      ekus.end()) {
     return false;
+  }
 
   return true;
 }
 
-WARN_UNUSED_RESULT bool VerifyOCSPResponseSignatureGivenCert(
+[[nodiscard]] bool VerifyOCSPResponseSignatureGivenCert(
     const OCSPResponse& response,
     const ParsedCertificate* cert) {
   // TODO(eroman): Must check the signature algorithm against policy.
@@ -619,7 +609,7 @@ WARN_UNUSED_RESULT bool VerifyOCSPResponseSignatureGivenCert(
 // Verifies that the OCSP response has a valid signature using
 // |issuer_certificate|, or an authorized responder issued by
 // |issuer_certificate| for OCSP signing.
-WARN_UNUSED_RESULT bool VerifyOCSPResponseSignature(
+[[nodiscard]] bool VerifyOCSPResponseSignature(
     const OCSPResponse& response,
     const OCSPResponseData& response_data,
     const ParsedCertificate* issuer_certificate) {
@@ -672,6 +662,65 @@ WARN_UNUSED_RESULT bool VerifyOCSPResponseSignature(
   return false;
 }
 
+// Parse ResponseData and return false if any unhandled critical extensions are
+// found. No known critical ResponseData extensions exist.
+bool ParseOCSPResponseDataExtensions(
+    const der::Input& response_extensions,
+    OCSPVerifyResult::ResponseStatus* response_details) {
+  std::map<der::Input, ParsedExtension> extensions;
+  if (!ParseExtensions(response_extensions, &extensions)) {
+    *response_details = OCSPVerifyResult::PARSE_RESPONSE_DATA_ERROR;
+    return false;
+  }
+
+  for (const auto& ext : extensions) {
+    // TODO: handle ResponseData extensions
+
+    if (ext.second.critical) {
+      *response_details = OCSPVerifyResult::UNHANDLED_CRITICAL_EXTENSION;
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Parse SingleResponse and return false if any unhandled critical extensions
+// (other than the CT extension) are found. The CT-SCT extension is not required
+// to be marked critical, but since it is handled by Chrome, we will overlook
+// the flag setting.
+bool ParseOCSPSingleResponseExtensions(
+    const der::Input& single_extensions,
+    OCSPVerifyResult::ResponseStatus* response_details) {
+  std::map<der::Input, ParsedExtension> extensions;
+  if (!ParseExtensions(single_extensions, &extensions)) {
+    *response_details = OCSPVerifyResult::PARSE_RESPONSE_DATA_ERROR;
+    return false;
+  }
+
+  // The wire form of the OID 1.3.6.1.4.1.11129.2.4.5 - OCSP SingleExtension for
+  // X.509v3 Certificate Transparency Signed Certificate Timestamp List, see
+  // Section 3.3 of RFC6962.
+  const uint8_t ct_ocsp_ext_oid[] = {0x2B, 0x06, 0x01, 0x04, 0x01,
+                                     0xD6, 0x79, 0x02, 0x04, 0x05};
+  der::Input ct_ext_oid(ct_ocsp_ext_oid);
+
+  for (const auto& ext : extensions) {
+    // The CT OCSP extension is handled in ct::ExtractSCTListFromOCSPResponse
+    if (ext.second.oid == ct_ext_oid)
+      continue;
+
+    // TODO: handle SingleResponse extensions
+
+    if (ext.second.critical) {
+      *response_details = OCSPVerifyResult::UNHANDLED_CRITICAL_EXTENSION;
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Loops through the OCSPSingleResponses to find the best match for |cert|.
 OCSPRevocationStatus GetRevocationStatusForCert(
     const OCSPResponseData& response_data,
@@ -694,6 +743,14 @@ OCSPRevocationStatus GetRevocationStatusForCert(
     OCSPSingleResponse single_response;
     if (!ParseOCSPSingleResponse(single_response_der, &single_response))
       return OCSPRevocationStatus::UNKNOWN;
+
+    // Reject unhandled critical extensions in SingleResponse
+    if (single_response.has_extensions &&
+        !ParseOCSPSingleResponseExtensions(single_response.extensions,
+                                           response_details)) {
+      return OCSPRevocationStatus::UNKNOWN;
+    }
+
     OCSPCertID cert_id;
     if (!ParseOCSPCertID(single_response.cert_id_tlv, &cert_id))
       return OCSPRevocationStatus::UNKNOWN;
@@ -728,12 +785,12 @@ OCSPRevocationStatus GetRevocationStatusForCert(
   return result;
 }
 
-}  // namespace
-
 OCSPRevocationStatus CheckOCSP(
     base::StringPiece raw_response,
     base::StringPiece certificate_der,
+    const ParsedCertificate* certificate,
     base::StringPiece issuer_certificate_der,
+    const ParsedCertificate* issuer_certificate,
     const base::Time& verify_time,
     const base::TimeDelta& max_age,
     OCSPVerifyResult::ResponseStatus* response_details) {
@@ -781,10 +838,24 @@ OCSPRevocationStatus CheckOCSP(
     return OCSPRevocationStatus::UNKNOWN;
   }
 
-  scoped_refptr<ParsedCertificate> certificate =
-      OCSPParseCertificate(certificate_der);
-  scoped_refptr<ParsedCertificate> issuer_certificate =
-      OCSPParseCertificate(issuer_certificate_der);
+  // Process the OCSP ResponseData extensions. In particular, must reject if
+  // there are any critical extensions that are not understood.
+  if (response_data.has_extensions &&
+      !ParseOCSPResponseDataExtensions(response_data.extensions,
+                                       response_details)) {
+    return OCSPRevocationStatus::UNKNOWN;
+  }
+
+  scoped_refptr<ParsedCertificate> parsed_certificate;
+  scoped_refptr<ParsedCertificate> parsed_issuer_certificate;
+  if (!certificate) {
+    parsed_certificate = OCSPParseCertificate(certificate_der);
+    certificate = parsed_certificate.get();
+  }
+  if (!issuer_certificate) {
+    parsed_issuer_certificate = OCSPParseCertificate(issuer_certificate_der);
+    issuer_certificate = parsed_issuer_certificate.get();
+  }
 
   if (!certificate || !issuer_certificate) {
     *response_details = OCSPVerifyResult::NOT_CHECKED;
@@ -801,22 +872,45 @@ OCSPRevocationStatus CheckOCSP(
 
   // Look through all of the OCSPSingleResponses for a match (based on CertID
   // and time).
-  OCSPRevocationStatus status = GetRevocationStatusForCert(
-      response_data, certificate.get(), issuer_certificate.get(), verify_time,
-      max_age, response_details);
-
-  // TODO(eroman): Process the OCSP extensions. In particular, must reject if
-  // there are any critical extensions that are not understood.
+  OCSPRevocationStatus status =
+      GetRevocationStatusForCert(response_data, certificate, issuer_certificate,
+                                 verify_time, max_age, response_details);
 
   // Check that the OCSP response has a valid signature. It must either be
   // signed directly by the issuing certificate, or a valid authorized
   // responder.
   if (!VerifyOCSPResponseSignature(response, response_data,
-                                   issuer_certificate.get())) {
+                                   issuer_certificate)) {
     return OCSPRevocationStatus::UNKNOWN;
   }
 
   return status;
+}
+
+}  // namespace
+
+OCSPRevocationStatus CheckOCSP(
+    base::StringPiece raw_response,
+    base::StringPiece certificate_der,
+    base::StringPiece issuer_certificate_der,
+    const base::Time& verify_time,
+    const base::TimeDelta& max_age,
+    OCSPVerifyResult::ResponseStatus* response_details) {
+  return CheckOCSP(raw_response, certificate_der, nullptr,
+                   issuer_certificate_der, nullptr, verify_time, max_age,
+                   response_details);
+}
+
+OCSPRevocationStatus CheckOCSP(
+    base::StringPiece raw_response,
+    const ParsedCertificate* certificate,
+    const ParsedCertificate* issuer_certificate,
+    const base::Time& verify_time,
+    const base::TimeDelta& max_age,
+    OCSPVerifyResult::ResponseStatus* response_details) {
+  return CheckOCSP(raw_response, base::StringPiece(), certificate,
+                   base::StringPiece(), issuer_certificate, verify_time,
+                   max_age, response_details);
 }
 
 bool CreateOCSPRequest(const ParsedCertificate* cert,

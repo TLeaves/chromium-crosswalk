@@ -29,7 +29,7 @@
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/css/style_rule_css_style_declaration.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/platform/heap/heap.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -65,7 +65,7 @@ String CSSStyleRule::selectorText() const {
   }
 
   DCHECK(!GetSelectorTextCache().Contains(this));
-  String text = style_rule_->SelectorList().SelectorsText();
+  String text = style_rule_->SelectorsText();
   GetSelectorTextCache().Set(this, text);
   SetHasCachedSelectorText(true);
   return text;
@@ -100,7 +100,7 @@ String CSSStyleRule::cssText() const {
   if (!decls.IsEmpty())
     result.Append(' ');
   result.Append('}');
-  return result.ToString();
+  return result.ReleaseString();
 }
 
 void CSSStyleRule::Reattach(StyleRuleBase* rule) {
@@ -110,7 +110,7 @@ void CSSStyleRule::Reattach(StyleRuleBase* rule) {
     properties_cssom_wrapper_->Reattach(style_rule_->MutableProperties());
 }
 
-void CSSStyleRule::Trace(blink::Visitor* visitor) {
+void CSSStyleRule::Trace(Visitor* visitor) const {
   visitor->Trace(style_rule_);
   visitor->Trace(properties_cssom_wrapper_);
   visitor->Trace(style_map_);

@@ -31,6 +31,12 @@ BASE_EXPORT extern const char kDotConfigDir[];
 // The XDG config directory environment variable.
 BASE_EXPORT extern const char kXdgConfigHomeEnvVar[];
 
+// The XDG current desktop environment variable.
+BASE_EXPORT extern const char kXdgCurrentDesktopEnvVar[];
+
+// The XDG session type environment variable.
+BASE_EXPORT extern const char kXdgSessionTypeEnvVar[];
+
 // Utility function for getting XDG directories.
 // |env_name| is the name of an environment variable that we want to use to get
 // a directory path. |fallback_dir| is the directory relative to $HOME that we
@@ -48,6 +54,7 @@ BASE_EXPORT FilePath GetXDGUserDirectory(const char* dir_name,
 enum DesktopEnvironment {
   DESKTOP_ENVIRONMENT_OTHER,
   DESKTOP_ENVIRONMENT_CINNAMON,
+  DESKTOP_ENVIRONMENT_DEEPIN,
   DESKTOP_ENVIRONMENT_GNOME,
   // KDE3, KDE4 and KDE5 are sufficiently different that we count
   // them as different desktop environments here.
@@ -55,6 +62,7 @@ enum DesktopEnvironment {
   DESKTOP_ENVIRONMENT_KDE4,
   DESKTOP_ENVIRONMENT_KDE5,
   DESKTOP_ENVIRONMENT_PANTHEON,
+  DESKTOP_ENVIRONMENT_UKUI,
   DESKTOP_ENVIRONMENT_UNITY,
   DESKTOP_ENVIRONMENT_XFCE,
 };

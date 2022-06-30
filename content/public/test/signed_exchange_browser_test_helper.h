@@ -46,6 +46,12 @@ namespace content {
 class SignedExchangeBrowserTestHelper {
  public:
   SignedExchangeBrowserTestHelper();
+
+  SignedExchangeBrowserTestHelper(const SignedExchangeBrowserTestHelper&) =
+      delete;
+  SignedExchangeBrowserTestHelper& operator=(
+      const SignedExchangeBrowserTestHelper&) = delete;
+
   ~SignedExchangeBrowserTestHelper();
 
   void SetUp();
@@ -72,15 +78,10 @@ class SignedExchangeBrowserTestHelper {
   static const uint64_t kSignatureHeaderExpires;
 
  private:
-  static void InstallMockInterceptors(const GURL& url,
-                                      const std::string& data_path);
-
   bool OnInterceptCallback(URLLoaderInterceptor::RequestParams* params);
 
   std::unique_ptr<URLLoaderInterceptor> interceptor_;
   std::map<GURL, std::string> interceptor_data_path_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(SignedExchangeBrowserTestHelper);
 };
 
 }  // namespace content

@@ -11,11 +11,11 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/sequenced_task_runner.h"
-#include "base/single_thread_task_runner.h"
-#include "base/task/post_task.h"
-#include "base/task/thread_pool/thread_pool.h"
-#include "base/task_runner_util.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/task/task_runner_util.h"
+#include "base/task/thread_pool.h"
+#include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/common/url_constants.h"
 #include "net/base/mime_util.h"
@@ -23,39 +23,38 @@
 namespace chromeos {
 namespace {
 
-const char kWhitelistedDirectory[] = "oobe_videos";
+const char kAllowlistedDirectory[] = "oobe_videos";
 
-bool IsWhitelisted(const std::string& path) {
+bool IsAllowlisted(const std::string& path) {
   base::FilePath file_path(path);
   if (file_path.ReferencesParent())
     return false;
 
-  // Check if the path starts with a whitelisted directory.
-  std::vector<std::string> components;
-  file_path.GetComponents(&components);
+  // Check if the path starts with a allowlisted directory.
+  std::vector<std::string> components = file_path.GetComponents();
   if (components.empty())
     return false;
-  return components[0] == kWhitelistedDirectory;
+  return components[0] == kAllowlistedDirectory;
 }
 
 // Callback for user_manager::UserImageLoader.
-void VideoLoaded(
-    const content::URLDataSource::GotDataCallback& got_data_callback,
-    std::unique_ptr<std::string> video_data,
-    bool did_load_file) {
+void VideoLoaded(content::URLDataSource::GotDataCallback got_data_callback,
+                 std::unique_ptr<std::string> video_data,
+                 bool did_load_file) {
   if (video_data->size() && did_load_file) {
-    got_data_callback.Run(new base::RefCountedBytes(
-        reinterpret_cast<const unsigned char*>(video_data->data()),
-        video_data->size()));
+    std::move(got_data_callback)
+        .Run(new base::RefCountedBytes(
+            reinterpret_cast<const unsigned char*>(video_data->data()),
+            video_data->size()));
   } else {
-    got_data_callback.Run(nullptr);
+    std::move(got_data_callback).Run(nullptr);
   }
 }
 
 }  // namespace
 
-VideoSource::VideoSource() : weak_factory_(this) {
-  task_runner_ = base::CreateSequencedTaskRunnerWithTraits(
+VideoSource::VideoSource() {
+  task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
 }
@@ -67,22 +66,23 @@ std::string VideoSource::GetSource() {
 }
 
 void VideoSource::StartDataRequest(
-    const std::string& path,
-    const content::ResourceRequestInfo::WebContentsGetter& wc_getter,
-    const content::URLDataSource::GotDataCallback& got_data_callback) {
-  if (!IsWhitelisted(path)) {
-    got_data_callback.Run(nullptr);
+    const GURL& url,
+    const content::WebContents::Getter& wc_getter,
+    content::URLDataSource::GotDataCallback got_data_callback) {
+  const std::string path = content::URLDataSource::URLToRequestPath(url);
+  if (!IsAllowlisted(path)) {
+    std::move(got_data_callback).Run(nullptr);
     return;
   }
 
   const base::FilePath asset_dir(chrome::kChromeOSAssetPath);
   const base::FilePath video_path = asset_dir.AppendASCII(path);
-  base::PostTaskWithTraitsAndReplyWithResult(
+  base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&base::PathExists, video_path),
       base::BindOnce(&VideoSource::StartDataRequestAfterPathExists,
                      weak_factory_.GetWeakPtr(), video_path,
-                     got_data_callback));
+                     std::move(got_data_callback)));
 }
 
 std::string VideoSource::GetMimeType(const std::string& path) {
@@ -95,7 +95,7 @@ std::string VideoSource::GetMimeType(const std::string& path) {
 
 void VideoSource::StartDataRequestAfterPathExists(
     const base::FilePath& video_path,
-    const content::URLDataSource::GotDataCallback& got_data_callback,
+    content::URLDataSource::GotDataCallback got_data_callback,
     bool path_exists) {
   if (path_exists) {
     auto video_data = std::make_unique<std::string>();
@@ -103,10 +103,11 @@ void VideoSource::StartDataRequestAfterPathExists(
     base::PostTaskAndReplyWithResult(
         task_runner_.get(), FROM_HERE,
         base::BindOnce(&base::ReadFileToString, video_path, data),
-        base::BindOnce(&VideoLoaded, got_data_callback, std::move(video_data)));
+        base::BindOnce(&VideoLoaded, std::move(got_data_callback),
+                       std::move(video_data)));
 
   } else {
-    got_data_callback.Run(nullptr);
+    std::move(got_data_callback).Run(nullptr);
   }
 }
 

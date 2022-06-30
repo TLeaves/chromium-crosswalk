@@ -8,10 +8,12 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/logging.h"
+#include "base/callback_helpers.h"
+#include "base/check.h"
+#include "base/guid.h"
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -32,34 +34,34 @@ const char ManagedBookmarksTracker::kFolderName[] = "toplevel_name";
 ManagedBookmarksTracker::ManagedBookmarksTracker(
     BookmarkModel* model,
     PrefService* prefs,
-    const GetManagementDomainCallback& callback)
+    GetManagementDomainCallback callback)
     : model_(model),
       managed_node_(nullptr),
       prefs_(prefs),
-      get_management_domain_callback_(callback) {}
+      get_management_domain_callback_(std::move(callback)) {}
 
 ManagedBookmarksTracker::~ManagedBookmarksTracker() {}
 
-std::unique_ptr<base::ListValue>
-ManagedBookmarksTracker::GetInitialManagedBookmarks() {
-  const base::ListValue* list = prefs_->GetList(prefs::kManagedBookmarks);
-  return base::WrapUnique(list->DeepCopy());
+base::Value ManagedBookmarksTracker::GetInitialManagedBookmarks() {
+  const base::Value* list = prefs_->GetList(prefs::kManagedBookmarks);
+  return list->Clone();
 }
 
 // static
 int64_t ManagedBookmarksTracker::LoadInitial(BookmarkNode* folder,
-                                             const base::ListValue* list,
+                                             const base::Value* list,
                                              int64_t next_node_id) {
-  for (size_t i = 0; i < list->GetSize(); ++i) {
+  DCHECK(list->is_list());
+  for (size_t i = 0; i < list->GetListDeprecated().size(); ++i) {
     // Extract the data for the next bookmark from the |list|.
-    base::string16 title;
+    std::u16string title;
     GURL url;
-    const base::ListValue* children = nullptr;
+    const base::Value* children = nullptr;
     if (!LoadBookmark(list, i, &title, &url, &children))
       continue;
 
-    BookmarkNode* child =
-        folder->Add(std::make_unique<BookmarkNode>(next_node_id++, url));
+    BookmarkNode* child = folder->Add(std::make_unique<BookmarkNode>(
+        next_node_id++, base::GUID::GenerateRandomV4(), url));
     child->SetTitle(title);
     if (children) {
       child->set_date_folder_modified(base::Time::Now());
@@ -75,9 +77,10 @@ int64_t ManagedBookmarksTracker::LoadInitial(BookmarkNode* folder,
 void ManagedBookmarksTracker::Init(BookmarkPermanentNode* managed_node) {
   managed_node_ = managed_node;
   registrar_.Init(prefs_);
-  registrar_.Add(prefs::kManagedBookmarks,
-                 base::Bind(&ManagedBookmarksTracker::ReloadManagedBookmarks,
-                            base::Unretained(this)));
+  registrar_.Add(
+      prefs::kManagedBookmarks,
+      base::BindRepeating(&ManagedBookmarksTracker::ReloadManagedBookmarks,
+                          base::Unretained(this)));
   // Reload now just in case something changed since the initial load started.
   // Note that  we must not load managed bookmarks until the cloud policy system
   // has been fully initialized (which will make our preference a managed
@@ -86,7 +89,7 @@ void ManagedBookmarksTracker::Init(BookmarkPermanentNode* managed_node) {
     ReloadManagedBookmarks();
 }
 
-base::string16 ManagedBookmarksTracker::GetBookmarksFolderTitle() const {
+std::u16string ManagedBookmarksTracker::GetBookmarksFolderTitle() const {
   std::string name = prefs_->GetString(prefs::kManagedBookmarksFolderName);
   if (!name.empty())
     return base::UTF8ToUTF16(name);
@@ -105,21 +108,19 @@ void ManagedBookmarksTracker::ReloadManagedBookmarks() {
   model_->SetTitle(managed_node_, GetBookmarksFolderTitle());
 
   // Recursively update all the managed bookmarks and folders.
-  const base::ListValue* list = prefs_->GetList(prefs::kManagedBookmarks);
+  const base::Value* list = prefs_->GetList(prefs::kManagedBookmarks);
   UpdateBookmarks(managed_node_, list);
-
-  // The managed bookmarks folder isn't visible when that pref isn't present.
-  managed_node_->set_visible(!managed_node_->children().empty());
 }
 
 void ManagedBookmarksTracker::UpdateBookmarks(const BookmarkNode* folder,
-                                              const base::ListValue* list) {
+                                              const base::Value* list) {
+  DCHECK(list->is_list());
   size_t folder_index = 0;
-  for (size_t i = 0; i < list->GetSize(); ++i) {
+  for (size_t i = 0; i < list->GetListDeprecated().size(); ++i) {
     // Extract the data for the next bookmark from the |list|.
-    base::string16 title;
+    std::u16string title;
     GURL url;
-    const base::ListValue* children = nullptr;
+    const base::Value* children = nullptr;
     if (!LoadBookmark(list, i, &title, &url, &children)) {
       // Skip this bookmark from |list| but don't advance |folder_index|.
       continue;
@@ -156,25 +157,33 @@ void ManagedBookmarksTracker::UpdateBookmarks(const BookmarkNode* folder,
 }
 
 // static
-bool ManagedBookmarksTracker::LoadBookmark(const base::ListValue* list,
+bool ManagedBookmarksTracker::LoadBookmark(const base::Value* list,
                                            size_t index,
-                                           base::string16* title,
+                                           std::u16string* title,
                                            GURL* url,
-                                           const base::ListValue** children) {
-  std::string spec;
+                                           const base::Value** children) {
+  DCHECK(list->is_list());
   *url = GURL();
   *children = nullptr;
-  const base::DictionaryValue* dict = nullptr;
-  if (!list->GetDictionary(index, &dict) ||
-      !dict->GetString(kName, title) ||
-      (!dict->GetString(kUrl, &spec) &&
-       !dict->GetList(kChildren, children))) {
+  const base::Value& dict = list->GetListDeprecated()[index];
+  if (!dict.is_dict()) {
     // Should never happen after policy validation.
     NOTREACHED();
     return false;
   }
+  const std::string* name = dict.FindStringKey(kName);
+  const std::string* spec = dict.FindStringKey(kUrl);
+  const base::Value* children_list = dict.FindListKey(kChildren);
+  if (!dict.is_dict() || !name || (!spec && !children_list)) {
+    // Should never happen after policy validation.
+    NOTREACHED();
+    return false;
+  }
+
+  *title = base::UTF8ToUTF16(*name);
+  *children = children_list;
   if (!*children) {
-    *url = GURL(spec);
+    *url = GURL(*spec);
     DCHECK(url->is_valid());
   }
   return true;

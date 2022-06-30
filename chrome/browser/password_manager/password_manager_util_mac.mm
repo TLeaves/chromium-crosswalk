@@ -11,7 +11,6 @@
 #include "base/mac/authorization_util.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_authorizationref.h"
-#include "base/stl_util.h"
 #include "chrome/grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -26,12 +25,20 @@ bool AuthenticateUser(password_manager::ReauthPurpose purpose) {
   // kAuthorizationRuleAuthenticateAsSessionUser, to ensure that the session
   // user password, as opposed to an admin's password, is required.
   AuthorizationItem right_items[] = {{"system.login.screensaver", 0, NULL, 0}};
-  AuthorizationRights rights = {base::size(right_items), right_items};
+  AuthorizationRights rights = {std::size(right_items), right_items};
 
   NSString* prompt;
   switch (purpose) {
     case password_manager::ReauthPurpose::VIEW_PASSWORD:
       prompt = l10n_util::GetNSString(IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT);
+      break;
+    case password_manager::ReauthPurpose::COPY_PASSWORD:
+      prompt =
+          l10n_util::GetNSString(IDS_PASSWORDS_PAGE_COPY_AUTHENTICATION_PROMPT);
+      break;
+    case password_manager::ReauthPurpose::EDIT_PASSWORD:
+      prompt =
+          l10n_util::GetNSString(IDS_PASSWORDS_PAGE_EDIT_AUTHENTICATION_PROMPT);
       break;
     case password_manager::ReauthPurpose::EXPORT:
       prompt = l10n_util::GetNSString(

@@ -4,11 +4,14 @@
 
 #include "components/invalidation/impl/fcm_sync_network_channel.h"
 
-namespace syncer {
+#include "base/logging.h"
+#include "base/observer_list.h"
+
+namespace invalidation {
 
 FCMSyncNetworkChannel::FCMSyncNetworkChannel() : received_messages_count_(0) {}
 
-FCMSyncNetworkChannel::~FCMSyncNetworkChannel() {}
+FCMSyncNetworkChannel::~FCMSyncNetworkChannel() = default;
 
 void FCMSyncNetworkChannel::SetMessageReceiver(
     MessageCallback incoming_receiver) {
@@ -38,7 +41,7 @@ bool FCMSyncNetworkChannel::DeliverIncomingMessage(
     const std::string& payload,
     const std::string& private_topic,
     const std::string& public_topic,
-    const std::string& version) {
+    int64_t version) {
   if (!incoming_receiver_) {
     DLOG(ERROR) << "No receiver for incoming notification";
     return false;
@@ -58,11 +61,4 @@ bool FCMSyncNetworkChannel::DeliverToken(const std::string& token) {
   return true;
 }
 
-int FCMSyncNetworkChannel::GetReceivedMessagesCount() const {
-  return received_messages_count_;
-}
-
-void FCMSyncNetworkChannel::RequestDetailedStatus(
-    base::Callback<void(const base::DictionaryValue&)> callback) {}
-
-}  // namespace syncer
+}  // namespace invalidation

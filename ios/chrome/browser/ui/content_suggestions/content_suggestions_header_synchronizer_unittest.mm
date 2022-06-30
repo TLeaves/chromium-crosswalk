@@ -6,9 +6,11 @@
 
 #include <memory>
 
+#include "base/run_loop.h"
+#include "base/test/task_environment.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_collection_controlling.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_header_controlling.h"
-#import "ios/chrome/test/base/scoped_block_swizzler.h"
+#import "ios/testing/scoped_block_swizzler.h"
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 #import "third_party/ocmock/gtest_support.h"
@@ -45,6 +47,7 @@ class ContentSuggestionsHeaderSynchronizerTest : public PlatformTest {
   }
 
  private:
+  base::test::TaskEnvironment task_environment_;
   ContentSuggestionsHeaderSynchronizer* synchronizer_;
   id header_controller_;
   id collection_controller_;
@@ -55,10 +58,11 @@ class ContentSuggestionsHeaderSynchronizerTest : public PlatformTest {
 TEST_F(ContentSuggestionsHeaderSynchronizerTest, shiftUp) {
   // Setup.
   id collectionController = CollectionController();
-  OCMExpect([collectionController setScrolledToTop:YES]);
+  OCMExpect([collectionController setScrolledToMinimumHeight:YES]);
 
   // Action.
   [Synchronizer() shiftTilesUpWithAnimations:nil completion:nil];
+  base::RunLoop().RunUntilIdle();
 
   // Tests.
   EXPECT_OCMOCK_VERIFY(collectionController);
@@ -74,7 +78,7 @@ TEST_F(ContentSuggestionsHeaderSynchronizerTest, updateFakeOmnibox) {
   SetAsIPhone();
 
   // Action.
-  [Synchronizer() updateFakeOmniboxOnCollectionScroll];
+  [Synchronizer() updateFakeOmniboxForScrollPosition];
 
   // Tests.
   EXPECT_OCMOCK_VERIFY(headerController);

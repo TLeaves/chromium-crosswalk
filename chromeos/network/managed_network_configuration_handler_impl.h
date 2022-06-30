@@ -5,27 +5,30 @@
 #ifndef CHROMEOS_NETWORK_MANAGED_NETWORK_CONFIGURATION_HANDLER_IMPL_H_
 #define CHROMEOS_NETWORK_MANAGED_NETWORK_CONFIGURATION_HANDLER_IMPL_H_
 
-#include <map>
 #include <memory>
-#include <set>
 #include <string>
 
 #include "base/compiler_specific.h"
 #include "base/component_export.h"
-#include "base/macros.h"
+#include "base/containers/flat_map.h"
+#include "base/containers/flat_set.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
+#include "chromeos/ash/components/network/client_cert_util.h"
 #include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_profile_observer.h"
 #include "chromeos/network/policy_applicator.h"
+#include "chromeos/network/profile_policies.h"
 
 namespace base {
-class DictionaryValue;
 class Value;
-}
+}  // namespace base
 
 namespace chromeos {
 
+class CellularPolicyHandler;
+class ManagedCellularPrefHandler;
 class NetworkConfigurationHandler;
 struct NetworkProfile;
 class NetworkProfileHandler;
@@ -36,147 +39,212 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) ManagedNetworkConfigurationHandlerImpl
       public NetworkProfileObserver,
       public PolicyApplicator::ConfigurationHandler {
  public:
+  ManagedNetworkConfigurationHandlerImpl(
+      const ManagedNetworkConfigurationHandlerImpl&) = delete;
+  ManagedNetworkConfigurationHandlerImpl& operator=(
+      const ManagedNetworkConfigurationHandlerImpl&) = delete;
+
   ~ManagedNetworkConfigurationHandlerImpl() override;
 
   // ManagedNetworkConfigurationHandler overrides
   void AddObserver(NetworkPolicyObserver* observer) override;
   void RemoveObserver(NetworkPolicyObserver* observer) override;
+  bool HasObserver(NetworkPolicyObserver* observer) const override;
 
-  void GetProperties(
-      const std::string& userhash,
-      const std::string& service_path,
-      const network_handler::DictionaryResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback) override;
+  void GetProperties(const std::string& userhash,
+                     const std::string& service_path,
+                     network_handler::PropertiesCallback callback) override;
 
   void GetManagedProperties(
       const std::string& userhash,
       const std::string& service_path,
-      const network_handler::DictionaryResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback) override;
+      network_handler::PropertiesCallback callback) override;
 
-  void SetProperties(
-      const std::string& service_path,
-      const base::DictionaryValue& user_settings,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback) override;
-
-  void SetManagerProperty(
-      const std::string& property_name,
-      const base::Value& value,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback) override;
+  void SetProperties(const std::string& service_path,
+                     const base::Value& user_settings,
+                     base::OnceClosure callback,
+                     network_handler::ErrorCallback error_callback) override;
 
   void CreateConfiguration(
       const std::string& userhash,
-      const base::DictionaryValue& properties,
-      const network_handler::ServiceResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback) const override;
+      const base::Value& properties,
+      network_handler::ServiceResultCallback callback,
+      network_handler::ErrorCallback error_callback) const override;
+
+  void ConfigurePolicyNetwork(const base::Value& shill_properties,
+                              base::OnceClosure callback) const override;
 
   void RemoveConfiguration(
       const std::string& service_path,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback) const override;
+      base::OnceClosure callback,
+      network_handler::ErrorCallback error_callback) const override;
 
   void RemoveConfigurationFromCurrentProfile(
       const std::string& service_path,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback) const override;
+      base::OnceClosure callback,
+      network_handler::ErrorCallback error_callback) const override;
 
-  void SetPolicy(onc::ONCSource onc_source,
+  void SetPolicy(::onc::ONCSource onc_source,
                  const std::string& userhash,
-                 const base::ListValue& network_configs_onc,
-                 const base::DictionaryValue& global_network_config) override;
+                 const base::Value& network_configs_onc,
+                 const base::Value& global_network_config) override;
 
   bool IsAnyPolicyApplicationRunning() const override;
 
-  const base::DictionaryValue* FindPolicyByGUID(
+  void SetProfileWideVariableExpansions(
+      const std::string& userhash,
+      base::flat_map<std::string, std::string> expansions) override;
+
+  bool SetResolvedClientCertificate(
+      const std::string& userhash,
+      const std::string& guid,
+      client_cert::ResolvedCert resolved_cert) override;
+
+  const base::Value* FindPolicyByGUID(
       const std::string userhash,
       const std::string& guid,
-      onc::ONCSource* onc_source) const override;
+      ::onc::ONCSource* onc_source) const override;
 
-  const GuidToPolicyMap* GetNetworkConfigsFromPolicy(
+  bool HasAnyPolicyNetwork(const std::string& userhash) const override;
+
+  const base::Value* GetGlobalConfigFromPolicy(
       const std::string& userhash) const override;
 
-  const base::DictionaryValue* GetGlobalConfigFromPolicy(
-      const std::string& userhash) const override;
-
-  const base::DictionaryValue* FindPolicyByGuidAndProfile(
+  const base::Value* FindPolicyByGuidAndProfile(
       const std::string& guid,
       const std::string& profile_path,
-      onc::ONCSource* onc_source) const override;
+      PolicyType policy_type,
+      ::onc::ONCSource* onc_source,
+      std::string* userhash) const override;
 
-  bool AllowOnlyPolicyNetworksToConnect() const override;
-  bool AllowOnlyPolicyNetworksToConnectIfAvailable() const override;
+  bool IsNetworkConfiguredByPolicy(
+      const std::string& guid,
+      const std::string& profile_path) const override;
+
+  bool CanRemoveNetworkConfig(const std::string& guid,
+                              const std::string& profile_path) const override;
+
+  // This method should be called when the policy has been fully applied and is
+  // reflected in NetworkStateHandler, so it is safe to notify obserers.
+  // Notifying observers is the last step of policy application to
+  // |service_path|.
+  void NotifyPolicyAppliedToNetwork(
+      const std::string& service_path) const override;
+
+  void TriggerCellularPolicyApplication(
+      const NetworkProfile& profile,
+      const base::flat_set<std::string>& new_cellular_policy_guids);
+  void OnCellularPoliciesApplied(const NetworkProfile& profile) override;
+
+  bool AllowCellularSimLock() const override;
+  bool AllowOnlyPolicyCellularNetworks() const override;
+  bool AllowOnlyPolicyWiFiToConnect() const override;
+  bool AllowOnlyPolicyWiFiToConnectIfAvailable() const override;
   bool AllowOnlyPolicyNetworksToAutoconnect() const override;
-  std::vector<std::string> GetBlacklistedHexSSIDs() const override;
+  std::vector<std::string> GetBlockedHexSSIDs() const override;
 
   // NetworkProfileObserver overrides
   void OnProfileAdded(const NetworkProfile& profile) override;
   void OnProfileRemoved(const NetworkProfile& profile) override;
 
   // PolicyApplicator::ConfigurationHandler overrides
-  void CreateConfigurationFromPolicy(
-      const base::DictionaryValue& shill_properties,
-      base::OnceClosure callback) override;
+  void CreateConfigurationFromPolicy(const base::Value& shill_properties,
+                                     base::OnceClosure callback) override;
 
   void UpdateExistingConfigurationWithPropertiesFromPolicy(
-      const base::DictionaryValue& existing_properties,
-      const base::DictionaryValue& new_properties,
+      const base::Value& existing_properties,
+      const base::Value& new_properties,
       base::OnceClosure callback) override;
 
-  void OnPoliciesApplied(const NetworkProfile& profile) override;
+  void OnPoliciesApplied(
+      const NetworkProfile& profile,
+      const base::flat_set<std::string>& new_cellular_policy_guids) override;
+
+  void Shutdown() override;
 
  private:
   friend class AutoConnectHandlerTest;
   friend class ClientCertResolverTest;
+  friend class ESimPolicyLoginMetricsLoggerTest;
+  friend class ManagedNetworkConfigurationHandler;
   friend class ManagedNetworkConfigurationHandlerTest;
   friend class ManagedNetworkConfigurationHandlerMockTest;
   friend class NetworkConnectionHandlerImplTest;
   friend class NetworkHandler;
   friend class ProhibitedTechnologiesHandlerTest;
 
-  struct Policies;
-  typedef base::Callback<void(
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> properties)>
-      GetDevicePropertiesCallback;
-  typedef std::map<std::string, std::unique_ptr<Policies>> UserToPoliciesMap;
-  typedef std::map<std::string, std::unique_ptr<PolicyApplicator>>
-      UserToPolicyApplicatorMap;
-  typedef std::map<std::string, std::set<std::string>>
-      UserToModifiedPoliciesMap;
+  // This structure holds information about the status of ONC network policy
+  // application for a shill profile.
+  // ManagedNetworkConfigurationHandler maintains a map shill profile ->
+  // PolicyApplicationInfo.
+  struct PolicyApplicationInfo {
+    PolicyApplicationInfo();
+    ~PolicyApplicationInfo();
+
+    // Moveable type
+    PolicyApplicationInfo(const PolicyApplicationInfo& other) = delete;
+    PolicyApplicationInfo& operator=(const PolicyApplicationInfo& other) =
+        delete;
+    PolicyApplicationInfo(PolicyApplicationInfo&& other);
+    PolicyApplicationInfo& operator=(PolicyApplicationInfo&& other);
+
+    bool IsRunningOrRequired() const {
+      return application_required || running_policy_applicator;
+    }
+
+    // Holds the set of ONC NetworkConfiguration GUIDs which have been modified
+    // since network policy has been last applied.
+    base::flat_set<std::string> modified_policy_guids;
+    // If true, network policy application needs to happen for this shill
+    // profile, i.e. there were network policy changes that have not been
+    // applied yet. Note that this can be true even if |modified_policy_guids|
+    // is empty, e.g. if an ONC GlobalNetworkConfiguration parameter (which
+    // affects all networks in this shill profile) has changed, but the settings
+    // of the individual NetworkConfigurations remained the same.
+    bool application_required = false;
+    // If true, a task has already been scheduled to actually apply network
+    // policy for this shill profile.
+    bool task_scheduled = false;
+    // If present, network policy is currently being applied (which is an
+    // asynchronous process). The PolicyApplicator instance is responsible for
+    // applying it.
+    std::unique_ptr<PolicyApplicator> running_policy_applicator;
+  };
+
+  using UserToPoliciesMap =
+      base::flat_map<std::string, std::unique_ptr<ProfilePolicies>>;
+  using UserToPolicyApplicationInfo =
+      base::flat_map<std::string, PolicyApplicationInfo>;
+
+  // The type of properties to send after a Get{Managed}Properties call.
+  enum class PropertiesType {
+    kUnmanaged,
+    kManaged,
+  };
 
   ManagedNetworkConfigurationHandlerImpl();
 
-  // Handlers may be NULL in tests so long as they do not execute any paths
+  // Handlers may be null in tests so long as they do not execute any paths
   // that require the handlers.
-  void Init(NetworkStateHandler* network_state_handler,
+  void Init(CellularPolicyHandler* cellular_policy_handler,
+            ManagedCellularPrefHandler* managed_cellular_pref_handler,
+            NetworkStateHandler* network_state_handler,
             NetworkProfileHandler* network_profile_handler,
             NetworkConfigurationHandler* network_configuration_handler,
             NetworkDeviceHandler* network_device_handler,
             ProhibitedTechnologiesHandler* prohibitied_technologies_handler);
 
-  // Sends the response to the caller of GetManagedProperties.
-  void SendManagedProperties(
-      const std::string& userhash,
-      const network_handler::DictionaryResultCallback& callback,
-      const network_handler::ErrorCallback& error_callback,
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> shill_properties);
-
-  // Sends the response to the caller of GetProperties.
-  void SendProperties(const std::string& userhash,
-                      const network_handler::DictionaryResultCallback& callback,
-                      const network_handler::ErrorCallback& error_callback,
-                      const std::string& service_path,
-                      std::unique_ptr<base::DictionaryValue> shill_properties);
-
-  // Returns the Policies for the given |userhash|, or the device policies if
-  // |userhash| is empty.
-  const Policies* GetPoliciesForUser(const std::string& userhash) const;
-  // Returns the Policies for the given network |profile|. These could be either
-  // user or device policies.
-  const Policies* GetPoliciesForProfile(const NetworkProfile& profile) const;
+  // Returns the ProfilePolicies for the given |userhash|, or the device
+  // policies if |userhash| is empty. Creates the ProfilePolicies entry if it
+  // does not exist yet.
+  ProfilePolicies* GetOrCreatePoliciesForUser(const std::string& userhash);
+  // Returns the ProfilePolicies for the given |userhash|, or the device
+  // policies if |userhash| is empty.
+  const ProfilePolicies* GetPoliciesForUser(const std::string& userhash) const;
+  // Returns the ProfilePolicies for the given network |profile|. These could be
+  // either user or device policies.
+  const ProfilePolicies* GetPoliciesForProfile(
+      const NetworkProfile& profile) const;
 
   // Called when a policy identified by |guid| has been applied to the network
   // identified by |service_path|. Notifies observers and calls |callback|.
@@ -186,7 +254,7 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) ManagedNetworkConfigurationHandlerImpl
 
   // Helper method to append associated Device properties to |properties|.
   void GetDeviceStateProperties(const std::string& service_path,
-                                base::DictionaryValue* properties);
+                                base::Value* properties);
 
   // Callback for NetworkConfigurationHandler::GetProperties requests from
   // Get{Managed}Properties. This callback fills in properties from
@@ -194,68 +262,75 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) ManagedNetworkConfigurationHandlerImpl
   // Note: Requesting Device properties requires an additional fetch and
   // additional copying of data, so we only do it for Cellular networks which
   // contain a lot of necessary state in the associated Device object.
-  void GetPropertiesCallback(
-      GetDevicePropertiesCallback send_callback,
-      const std::string& service_path,
-      const base::DictionaryValue& shill_properties);
+  void GetPropertiesCallback(PropertiesType properties_type,
+                             const std::string& userhash,
+                             network_handler::PropertiesCallback callback,
+                             const std::string& service_path,
+                             absl::optional<base::Value> shill_properties);
 
-  void GetDevicePropertiesSuccess(
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> network_properties,
-      GetDevicePropertiesCallback send_callback,
-      const std::string& device_path,
-      const base::DictionaryValue& device_properties);
-  void GetDevicePropertiesFailure(
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> network_properties,
-      GetDevicePropertiesCallback send_callback,
-      const std::string& error_name,
-      std::unique_ptr<base::DictionaryValue> error_data);
+  void OnGetDeviceProperties(PropertiesType properties_type,
+                             const std::string& userhash,
+                             const std::string& service_path,
+                             network_handler::PropertiesCallback callback,
+                             absl::optional<base::Value> network_properties,
+                             const std::string& device_path,
+                             absl::optional<base::Value> device_properties);
+
+  void SendProperties(PropertiesType properties_type,
+                      const std::string& userhash,
+                      const std::string& service_path,
+                      network_handler::PropertiesCallback callback,
+                      absl::optional<base::Value> shill_properties);
 
   // Called from SetProperties, calls NCH::SetShillProperties.
-  void SetShillProperties(
-      const std::string& service_path,
-      std::unique_ptr<base::DictionaryValue> shill_dictionary,
-      const base::Closure& callback,
-      const network_handler::ErrorCallback& error_callback);
+  void SetShillProperties(const std::string& service_path,
+                          base::Value shill_dictionary,
+                          base::OnceClosure callback,
+                          network_handler::ErrorCallback error_callback);
 
-  // Applies policies for |userhash|. |modified_policies| must be not null and
-  // contain the GUIDs of the network configurations that changed since the last
-  // policy application. Returns true if policy application was started and
-  // false if it was queued or delayed.
-  bool ApplyOrQueuePolicies(const std::string& userhash,
-                            std::set<std::string>* modified_policies);
+  // Sets the active proxy values in managed network configurations depending on
+  // the source of the configuration. Proxy enforced by user policy
+  // (provided by kProxy prefence) should have precedence over configurations
+  // set by ONC policy.
+  void SetManagedActiveProxyValues(const std::string& guid,
+                                   base::Value* dictionary);
+
+  // Applies policies for |userhash|. |modified_policies| contains the GUIDs of
+  // the network configurations that changed since the last policy application.
+  void ApplyOrQueuePolicies(const std::string& userhash,
+                            base::flat_set<std::string> modified_policies);
+
+  void SchedulePolicyApplication(const std::string& userhash);
+  void StartPolicyApplication(const std::string& userhash);
+
+  void set_ui_proxy_config_service(
+      UIProxyConfigService* ui_proxy_config_service);
 
   // If present, the empty string maps to the device policy.
   UserToPoliciesMap policies_by_user_;
 
   // Local references to the associated handler instances.
-  NetworkStateHandler* network_state_handler_;
-  NetworkProfileHandler* network_profile_handler_;
-  NetworkConfigurationHandler* network_configuration_handler_;
-  NetworkDeviceHandler* network_device_handler_;
-  ProhibitedTechnologiesHandler* prohibited_technologies_handler_;
+  CellularPolicyHandler* cellular_policy_handler_ = nullptr;
+  ManagedCellularPrefHandler* managed_cellular_pref_handler_ = nullptr;
+  NetworkStateHandler* network_state_handler_ = nullptr;
+  NetworkProfileHandler* network_profile_handler_ = nullptr;
+  NetworkConfigurationHandler* network_configuration_handler_ = nullptr;
+  NetworkDeviceHandler* network_device_handler_ = nullptr;
+  ProhibitedTechnologiesHandler* prohibited_technologies_handler_ = nullptr;
+  UIProxyConfigService* ui_proxy_config_service_ = nullptr;
 
-  // Owns the currently running PolicyApplicators.
-  UserToPolicyApplicatorMap policy_applicators_;
-
-  // Per userhash (or empty string for device policy), contains the GUIDs of the
-  // policies that were modified.
-  // If this map contains a userhash as key, it means that a policy application
-  // for this userhash is pending even if no policies were modified and the
-  // associated set of GUIDs is empty.
-  UserToModifiedPoliciesMap queued_modified_policies_;
+  UserToPolicyApplicationInfo policy_application_info_map_;
 
   base::ObserverList<NetworkPolicyObserver, true>::Unchecked observers_;
 
-  bool user_policy_applied_;
-  bool device_policy_applied_;
+  bool user_policy_applied_ = false;
+  bool device_policy_applied_ = false;
+  // Ensure that Shutdown() gets called exactly once.
+  bool did_shutdown_ = false;
 
   // For Shill client callbacks
   base::WeakPtrFactory<ManagedNetworkConfigurationHandlerImpl>
-      weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ManagedNetworkConfigurationHandlerImpl);
+      weak_ptr_factory_{this};
 };
 
 }  // namespace chromeos

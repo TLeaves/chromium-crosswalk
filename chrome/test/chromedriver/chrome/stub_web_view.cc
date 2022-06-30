@@ -12,6 +12,10 @@ StubWebView::StubWebView(const std::string& id) : id_(id) {}
 
 StubWebView::~StubWebView() {}
 
+bool StubWebView::IsServiceWorker() const {
+  return false;
+}
+
 std::string StubWebView::GetId() {
   return id_;
 }
@@ -53,6 +57,13 @@ Status StubWebView::SendCommand(const std::string& cmd,
   return Status(kOk);
 }
 
+Status StubWebView::SendCommandFromWebSocket(
+    const std::string& cmd,
+    const base::DictionaryValue& params,
+    const int client_cmd_id) {
+  return Status(kOk);
+}
+
 Status StubWebView::SendCommandAndGetResult(
         const std::string& cmd,
         const base::DictionaryValue& params,
@@ -66,6 +77,7 @@ Status StubWebView::TraverseHistory(int delta, const Timeout* timeout) {
 
 Status StubWebView::EvaluateScript(const std::string& frame,
                                    const std::string& function,
+                                   const bool awaitPromise,
                                    std::unique_ptr<base::Value>* result) {
   return Status(kOk);
 }
@@ -109,24 +121,35 @@ Status StubWebView::GetFrameByFunction(const std::string& frame,
   return Status(kOk);
 }
 
-Status StubWebView::DispatchMouseEvents(const std::list<MouseEvent>& events,
-                                        const std::string& frame) {
+Status StubWebView::DispatchMouseEvents(const std::vector<MouseEvent>& events,
+                                        const std::string& frame,
+                                        bool async_dispatch_events) {
   return Status(kOk);
 }
 
-Status StubWebView::DispatchTouchEvent(const TouchEvent& event) {
+Status StubWebView::DispatchTouchEvent(const TouchEvent& event,
+                                       bool async_dispatch_events) {
   return Status(kOk);
 }
 
-Status StubWebView::DispatchTouchEvents(const std::list<TouchEvent>& events) {
+Status StubWebView::DispatchTouchEvents(const std::vector<TouchEvent>& events,
+                                        bool async_dispatch_events) {
   return Status(kOk);
 }
 
-Status StubWebView::DispatchKeyEvents(const std::list<KeyEvent>& events) {
+Status StubWebView::DispatchTouchEventWithMultiPoints(
+    const std::vector<TouchEvent>& events,
+    bool async_dispatch_events) {
   return Status(kOk);
 }
 
-Status StubWebView::GetCookies(std::unique_ptr<base::ListValue>* cookies,
+Status StubWebView::DispatchKeyEvents(const std::vector<KeyEvent>& events,
+                                      bool async_dispatch_events) {
+  return Status(kOk);
+}
+
+
+Status StubWebView::GetCookies(base::Value* cookies,
                                const std::string& current_page_url) {
   return Status(kOk);
 }
@@ -143,6 +166,7 @@ Status StubWebView::AddCookie(const std::string& name,
                               const std::string& value,
                               const std::string& domain,
                               const std::string& path,
+                              const std::string& sameSite,
                               bool secure,
                               bool httpOnly,
                               double expiry) {
@@ -155,14 +179,18 @@ Status StubWebView::WaitForPendingNavigations(const std::string& frame_id,
   return Status(kOk);
 }
 
-Status StubWebView::IsPendingNavigation(const std::string& frame_id,
-                                        const Timeout* timeout,
-                                        bool* is_pending) {
+Status StubWebView::IsPendingNavigation(const Timeout* timeout,
+                                        bool* is_pending) const {
   return Status(kOk);
 }
 
 JavaScriptDialogManager* StubWebView::GetJavaScriptDialogManager() {
-  return NULL;
+  return nullptr;
+}
+
+MobileEmulationOverrideManager* StubWebView::GetMobileEmulationOverrideManager()
+    const {
+  return nullptr;
 }
 
 Status StubWebView::OverrideGeolocation(const Geoposition& geoposition) {
@@ -185,8 +213,13 @@ Status StubWebView::CaptureScreenshot(
   return Status(kOk);
 }
 
+Status StubWebView::PrintToPDF(const base::DictionaryValue& params,
+                               std::string* pdf) {
+  return Status(kOk);
+}
+
 Status StubWebView::SetFileInputFiles(const std::string& frame,
-                                      const base::DictionaryValue& element,
+                                      const base::Value& element,
                                       const std::vector<base::FilePath>& files,
                                       const bool append) {
   return Status(kOk);
@@ -218,7 +251,7 @@ Status StubWebView::SynthesizeScrollGesture(int x,
   return Status(kOk);
 }
 
-bool StubWebView::IsOOPIF(const std::string& frame_id) {
+bool StubWebView::IsNonBlocking() const {
   return false;
 }
 
@@ -232,4 +265,12 @@ std::unique_ptr<base::Value> StubWebView::GetCastSinks() {
 
 std::unique_ptr<base::Value> StubWebView::GetCastIssueMessage() {
   return std::make_unique<base::Value>();
+}
+
+void StubWebView::SetFrame(const std::string& new_frame_id) {}
+
+Status StubWebView::GetBackendNodeIdByElement(const std::string& frame,
+                                              const base::Value& element,
+                                              int* node_id) {
+  return Status(kOk);
 }

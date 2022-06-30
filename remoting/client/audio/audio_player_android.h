@@ -8,7 +8,6 @@
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/client/audio/audio_player.h"
 
@@ -19,6 +18,10 @@ namespace remoting {
 class AudioPlayerAndroid : public AudioPlayer {
  public:
   AudioPlayerAndroid();
+
+  AudioPlayerAndroid(const AudioPlayerAndroid&) = delete;
+  AudioPlayerAndroid& operator=(const AudioPlayerAndroid&) = delete;
+
   ~AudioPlayerAndroid() override;
 
   base::WeakPtr<AudioPlayerAndroid> GetWeakPtr();
@@ -47,9 +50,7 @@ class AudioPlayerAndroid : public AudioPlayer {
   size_t buffer_size_ = 0;
   uint32_t sample_per_frame_ = 0;
 
-  base::WeakPtrFactory<AudioPlayerAndroid> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(AudioPlayerAndroid);
+  base::WeakPtrFactory<AudioPlayerAndroid> weak_factory_{this};
 };
 
 }  // namespace remoting

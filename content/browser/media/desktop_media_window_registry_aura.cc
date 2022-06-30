@@ -10,8 +10,8 @@
 
 namespace content {
 
-class DesktopMediaWindowRegistryAura : public DesktopMediaWindowRegistry,
-                                       public aura::WindowObserver {
+class DesktopMediaWindowRegistryAura final : public DesktopMediaWindowRegistry,
+                                             public aura::WindowObserver {
  public:
   static DesktopMediaWindowRegistryAura* GetInstance() {
     static base::NoDestructor<DesktopMediaWindowRegistryAura> instance;
@@ -20,7 +20,12 @@ class DesktopMediaWindowRegistryAura : public DesktopMediaWindowRegistry,
 
   DesktopMediaWindowRegistryAura() = default;
 
-  Id RegisterWindow(gfx::NativeWindow window) final {
+  DesktopMediaWindowRegistryAura(const DesktopMediaWindowRegistryAura&) =
+      delete;
+  DesktopMediaWindowRegistryAura& operator=(
+      const DesktopMediaWindowRegistryAura&) = delete;
+
+  DesktopMediaID::Id RegisterWindow(gfx::NativeWindow window) final {
     base::IDMap<aura::Window*>::const_iterator it(&registered_windows_);
     for (; !it.IsAtEnd(); it.Advance()) {
       if (it.GetCurrentValue() == window)
@@ -31,7 +36,7 @@ class DesktopMediaWindowRegistryAura : public DesktopMediaWindowRegistry,
     return registered_windows_.Add(window);
   }
 
-  gfx::NativeWindow GetWindowById(Id id) final {
+  gfx::NativeWindow GetWindowById(DesktopMediaID::Id id) final {
     return registered_windows_.Lookup(id);
   }
 
@@ -51,8 +56,6 @@ class DesktopMediaWindowRegistryAura : public DesktopMediaWindowRegistry,
   }
 
   base::IDMap<aura::Window*> registered_windows_;
-
-  DISALLOW_COPY_AND_ASSIGN(DesktopMediaWindowRegistryAura);
 };
 
 // static

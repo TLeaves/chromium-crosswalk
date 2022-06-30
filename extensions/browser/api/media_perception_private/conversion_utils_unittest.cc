@@ -4,7 +4,9 @@
 
 #include "extensions/browser/api/media_perception_private/conversion_utils.h"
 
-#include "chromeos/dbus/media_perception/media_perception.pb.h"
+#include <memory>
+
+#include "chromeos/ash/components/dbus/media_perception/media_perception.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media_perception = extensions::api::media_perception_private;
@@ -735,8 +737,8 @@ TEST(MediaPerceptionConversionUtilsTest, StateIdlToProto) {
 TEST(MediaPerceptionConversionUtilsTest, StateIdlToProtoWithVideoStreamParam) {
   media_perception::State state;
   state.status = media_perception::STATUS_RUNNING;
-  state.video_stream_param.reset(
-      new std::vector<media_perception::VideoStreamParam>(2));
+  state.video_stream_param =
+      std::make_unique<std::vector<media_perception::VideoStreamParam>>(2);
   InitializeVideoStreamParam(
       state.video_stream_param.get()->at(0), kVideoStreamIdForFaceDetection,
       kVideoStreamWidthForFaceDetection, kVideoStreamHeightForFaceDetection,

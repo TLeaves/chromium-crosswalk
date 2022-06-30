@@ -9,11 +9,13 @@
 #include "content/public/common/content_descriptors.h"
 
 enum {
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   kAndroidLocalePakDescriptor = kContentIPCDescriptorMax + 1,
   kAndroidSecondaryLocalePakDescriptor,
   kAndroidChrome100PercentPakDescriptor,
   kAndroidUIResourcesPakDescriptor,
+  // DFMs with native resources typically do not share file descriptors with
+  // child processes. Hence no corresponding *PakDescriptor is defined.
   kAndroidMinidumpDescriptor,
 #endif
 };

@@ -6,7 +6,8 @@
 
 #include <algorithm>
 
-#include "base/logging.h"
+#include "base/check.h"
+#include "base/notreached.h"
 
 namespace {
 // Construct GpuDriverBugWorkarounds from a set of enabled workaround IDs.
@@ -25,13 +26,12 @@ void IntSetToWorkarounds(const std::vector<int32_t>& enabled_workarounds,
         NOTIMPLEMENTED();
     }
   }
+  // TODO(crbug.com/1319451): Rename workaround.
   if (workarounds->max_texture_size_limit_4096)
-    workarounds->max_texture_size = 4096;
+    workarounds->client_max_texture_size = 4096;
 
   if (workarounds->max_copy_texture_chromium_size_1048576)
     workarounds->max_copy_texture_chromium_size = 1048576;
-  if (workarounds->max_copy_texture_chromium_size_262144)
-    workarounds->max_copy_texture_chromium_size = 262144;
 
   if (workarounds->max_3d_array_texture_size_1024)
     workarounds->max_3d_array_texture_size = 1024;
@@ -76,7 +76,8 @@ void GpuDriverBugWorkarounds::Append(const GpuDriverBugWorkarounds& extra) {
   GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
 #undef GPU_OP
 
-  max_texture_size = LowerMax(max_texture_size, extra.max_texture_size);
+  client_max_texture_size =
+      LowerMax(client_max_texture_size, extra.client_max_texture_size);
   max_copy_texture_chromium_size = LowerMax(
       max_copy_texture_chromium_size, extra.max_copy_texture_chromium_size);
   max_3d_array_texture_size =

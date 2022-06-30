@@ -84,7 +84,7 @@ def _ParseIntValue(value, on_error=-1):
   # Try to parse as int and, in case of error, return a pre-defined value.
   try:
     return int(value)
-  except StandardError:
+  except Exception:
     return on_error
 
 
@@ -129,6 +129,10 @@ def _DataFrameFromJsonV2(ts_key, data):
 
 
 def _DataFrameFromJsonV1(test_path, data):
+  # The dashboard API returns an empty list if there is no recent data for the
+  # timeseries.
+  if not data:
+    return DataFrame()
   assert test_path == data['test_path']
   config = _ParseConfigFromTestPath(data['test_path'])
   config['improvement_direction'] = _CODE_TO_IMPROVEMENT_DIRECTION.get(

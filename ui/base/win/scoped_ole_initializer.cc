@@ -6,7 +6,9 @@
 
 #include <ole2.h>
 
-#include "base/logging.h"
+#include <ostream>
+
+#include "base/check_op.h"
 
 namespace ui {
 

@@ -41,19 +41,17 @@ PaintedScrollbarLayerImpl::PaintedScrollbarLayerImpl(
                              is_overlay),
       track_ui_resource_id_(0),
       thumb_ui_resource_id_(0),
-      thumb_opacity_(1.f),
+      painted_opacity_(1.f),
       internal_contents_scale_(1.f),
+      jump_on_track_click_(false),
+      supports_drag_snap_back_(false),
       thumb_thickness_(0),
-      thumb_length_(0),
-      track_start_(0),
-      track_length_(0),
-      back_button_rect_(gfx::Rect(0, 0)),
-      forward_button_rect_(gfx::Rect(0, 0)) {}
+      thumb_length_(0) {}
 
 PaintedScrollbarLayerImpl::~PaintedScrollbarLayerImpl() = default;
 
 std::unique_ptr<LayerImpl> PaintedScrollbarLayerImpl::CreateLayerImpl(
-    LayerTreeImpl* tree_impl) {
+    LayerTreeImpl* tree_impl) const {
   return PaintedScrollbarLayerImpl::Create(tree_impl, id(), orientation(),
                                            is_left_side_vertical_scrollbar(),
                                            is_overlay_scrollbar());
@@ -68,17 +66,22 @@ void PaintedScrollbarLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   scrollbar_layer->set_internal_contents_scale_and_bounds(
       internal_contents_scale_, internal_content_bounds_);
 
+  scrollbar_layer->SetJumpOnTrackClick(jump_on_track_click_);
+  scrollbar_layer->SetSupportsDragSnapBack(supports_drag_snap_back_);
   scrollbar_layer->SetThumbThickness(thumb_thickness_);
   scrollbar_layer->SetThumbLength(thumb_length_);
-  scrollbar_layer->SetTrackStart(track_start_);
-  scrollbar_layer->SetTrackLength(track_length_);
   scrollbar_layer->SetBackButtonRect(back_button_rect_);
   scrollbar_layer->SetForwardButtonRect(forward_button_rect_);
+  scrollbar_layer->SetTrackRect(track_rect_);
 
   scrollbar_layer->set_track_ui_resource_id(track_ui_resource_id_);
   scrollbar_layer->set_thumb_ui_resource_id(thumb_ui_resource_id_);
 
-  scrollbar_layer->set_thumb_opacity(thumb_opacity_);
+  scrollbar_layer->SetScrollbarPaintedOpacity(painted_opacity_);
+}
+
+float PaintedScrollbarLayerImpl::OverlayScrollbarOpacity() const {
+  return painted_opacity_;
 }
 
 bool PaintedScrollbarLayerImpl::WillDraw(
@@ -89,7 +92,7 @@ bool PaintedScrollbarLayerImpl::WillDraw(
 }
 
 void PaintedScrollbarLayerImpl::AppendQuads(
-    viz::RenderPass* render_pass,
+    viz::CompositorRenderPass* render_pass,
     AppendQuadsData* append_quads_data) {
   bool premultipled_alpha = true;
   bool flipped = false;
@@ -121,8 +124,8 @@ void PaintedScrollbarLayerImpl::AppendQuads(
 
   if (thumb_resource_id && !visible_thumb_quad_rect.IsEmpty()) {
     bool needs_blending = true;
-    const float opacity[] = {thumb_opacity_, thumb_opacity_, thumb_opacity_,
-                             thumb_opacity_};
+    const float opacity[] = {painted_opacity_, painted_opacity_,
+                             painted_opacity_, painted_opacity_};
     auto* quad = render_pass->CreateAndAppendDrawQuad<viz::TextureDrawQuad>();
     quad->SetNew(shared_quad_state, scaled_thumb_quad_rect,
                  scaled_visible_thumb_quad_rect, needs_blending,
@@ -154,11 +157,35 @@ void PaintedScrollbarLayerImpl::AppendQuads(
   }
 }
 
-gfx::Rect PaintedScrollbarLayerImpl::GetEnclosingRectInTargetSpace() const {
+gfx::Rect PaintedScrollbarLayerImpl::GetEnclosingVisibleRectInTargetSpace()
+    const {
   if (internal_content_bounds_.IsEmpty())
     return gfx::Rect();
   DCHECK_GT(internal_contents_scale_, 0.f);
-  return GetScaledEnclosingRectInTargetSpace(internal_contents_scale_);
+  return GetScaledEnclosingVisibleRectInTargetSpace(internal_contents_scale_);
+}
+
+void PaintedScrollbarLayerImpl::SetJumpOnTrackClick(bool jump_on_track_click) {
+  if (jump_on_track_click_ == jump_on_track_click)
+    return;
+  jump_on_track_click_ = jump_on_track_click;
+  NoteLayerPropertyChanged();
+}
+
+bool PaintedScrollbarLayerImpl::JumpOnTrackClick() const {
+  return jump_on_track_click_;
+}
+
+void PaintedScrollbarLayerImpl::SetSupportsDragSnapBack(
+    bool supports_drag_snap_back) {
+  if (supports_drag_snap_back_ == supports_drag_snap_back)
+    return;
+  supports_drag_snap_back_ = supports_drag_snap_back;
+  NoteLayerPropertyChanged();
+}
+
+bool PaintedScrollbarLayerImpl::SupportsDragSnapBack() const {
+  return supports_drag_snap_back_;
 }
 
 void PaintedScrollbarLayerImpl::SetThumbThickness(int thumb_thickness) {
@@ -183,15 +210,9 @@ int PaintedScrollbarLayerImpl::ThumbLength() const {
   return thumb_length_;
 }
 
-void PaintedScrollbarLayerImpl::SetTrackStart(int track_start) {
-  if (track_start_ == track_start)
-    return;
-  track_start_ = track_start;
-  NoteLayerPropertyChanged();
-}
-
 int PaintedScrollbarLayerImpl::TrackStart() const {
-  return track_start_;
+  return orientation() == ScrollbarOrientation::VERTICAL ? track_rect_.y()
+                                                         : track_rect_.x();
 }
 
 void PaintedScrollbarLayerImpl::SetBackButtonRect(gfx::Rect back_button_rect) {
@@ -218,44 +239,57 @@ gfx::Rect PaintedScrollbarLayerImpl::ForwardButtonRect() const {
 }
 
 gfx::Rect PaintedScrollbarLayerImpl::BackTrackRect() const {
-  gfx::Rect thumb_rect = ComputeThumbQuadRect();
-  if (orientation() == HORIZONTAL) {
-    int rect_x = back_button_rect_.x() + back_button_rect_.width();
-    int rect_y = back_button_rect_.y();
-    return gfx::Rect(rect_x, rect_y, thumb_rect.x() - rect_x,
-                     back_button_rect_.height());
+  const gfx::Rect thumb_rect = ComputeThumbQuadRect();
+  const int rect_x = track_rect_.x();
+  const int rect_y = track_rect_.y();
+  if (orientation() == ScrollbarOrientation::HORIZONTAL) {
+    int width = thumb_rect.x() - rect_x;
+    int height = track_rect_.height();
+    return gfx::Rect(rect_x, rect_y, width, height);
   } else {
-    int rect_x = back_button_rect_.x();
-    int rect_y = back_button_rect_.y() + back_button_rect_.height();
-    return gfx::Rect(rect_x, rect_y, back_button_rect_.width(),
-                     thumb_rect.y() - rect_y);
+    int width = track_rect_.width();
+    int height = thumb_rect.y() - rect_y;
+    return gfx::Rect(rect_x, rect_y, width, height);
   }
 }
 
 gfx::Rect PaintedScrollbarLayerImpl::ForwardTrackRect() const {
-  gfx::Rect thumb_rect = ComputeThumbQuadRect();
-  if (orientation() == HORIZONTAL) {
-    int rect_x = thumb_rect.x() + thumb_rect.width();
-    int rect_y = thumb_rect.y();
-    return gfx::Rect(rect_x, rect_y, forward_button_rect_.x() - rect_x,
-                     forward_button_rect_.height());
+  const gfx::Rect thumb_rect = ComputeThumbQuadRect();
+  const int track_end = TrackStart() + TrackLength();
+  if (orientation() == ScrollbarOrientation::HORIZONTAL) {
+    int rect_x = thumb_rect.right();
+    int rect_y = track_rect_.y();
+    int width = track_end - rect_x;
+    int height = track_rect_.height();
+    return gfx::Rect(rect_x, rect_y, width, height);
   } else {
-    int rect_x = thumb_rect.x();
-    int rect_y = thumb_rect.y() + thumb_rect.height();
-    return gfx::Rect(rect_x, rect_y, forward_button_rect_.width(),
-                     forward_button_rect_.y() - rect_y);
+    int rect_x = track_rect_.x();
+    int rect_y = thumb_rect.bottom();
+    int width = track_rect_.width();
+    int height = track_end - rect_y;
+    return gfx::Rect(rect_x, rect_y, width, height);
   }
 }
 
-void PaintedScrollbarLayerImpl::SetTrackLength(int track_length) {
-  if (track_length_ == track_length)
+void PaintedScrollbarLayerImpl::SetTrackRect(gfx::Rect track_rect) {
+  if (track_rect_ == track_rect)
     return;
-  track_length_ = track_length;
+  track_rect_ = track_rect;
+  NoteLayerPropertyChanged();
+}
+
+void PaintedScrollbarLayerImpl::SetScrollbarPaintedOpacity(float opacity) {
+  if (painted_opacity_ == opacity)
+    return;
+  painted_opacity_ = opacity;
   NoteLayerPropertyChanged();
 }
 
 float PaintedScrollbarLayerImpl::TrackLength() const {
-  return track_length_ + (orientation() == VERTICAL ? vertical_adjust() : 0);
+  if (orientation() == ScrollbarOrientation::VERTICAL)
+    return track_rect_.height() + vertical_adjust();
+  else
+    return track_rect_.width();
 }
 
 bool PaintedScrollbarLayerImpl::IsThumbResizable() const {

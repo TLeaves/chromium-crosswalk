@@ -28,3 +28,19 @@ void SkDebugf_FileLine(const char* file, int line, const char* format, ...) {
 
   logging::LogMessage(file, line, severity).stream() << msg;
 }
+
+void SkAbort_FileLine(const char* file, int line, const char* format, ...) {
+  int severity = logging::LOG_FATAL;
+
+  va_list ap;
+  va_start(ap, format);
+
+  std::string msg;
+  base::StringAppendV(&msg, format, ap);
+  va_end(ap);
+
+  logging::LogMessage(file, line, severity).stream() << msg;
+  sk_abort_no_print();
+  // Extra safety abort().
+  abort();
+}

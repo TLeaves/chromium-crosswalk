@@ -32,6 +32,10 @@ class GURL;
 // Command handler for the accessibility custom actions.
 @property(nonatomic, weak, nullable) id<ContentSuggestionsGestureCommands>
     commandHandler;
+// Whether the incognito action should be available.
+@property(nonatomic, assign) BOOL incognitoAvailable;
+// Index position of this item.
+@property(nonatomic, assign) int index;
 
 @end
 

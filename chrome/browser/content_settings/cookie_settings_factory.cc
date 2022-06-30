@@ -4,19 +4,24 @@
 
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/buildflags/buildflags.h"
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/common/constants.h"
+#endif
+
+using content_settings::CookieControlsMode;
 
 // static
 scoped_refptr<content_settings::CookieSettings>
@@ -38,8 +43,7 @@ CookieSettingsFactory::CookieSettingsFactory()
   DependsOn(HostContentSettingsMapFactory::GetInstance());
 }
 
-CookieSettingsFactory::~CookieSettingsFactory() {
-}
+CookieSettingsFactory::~CookieSettingsFactory() = default;
 
 void CookieSettingsFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
@@ -56,23 +60,26 @@ content::BrowserContext* CookieSettingsFactory::GetBrowserContextToUse(
 scoped_refptr<RefcountedKeyedService>
 CookieSettingsFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
+  Profile* profile = Profile::FromBrowserContext(context);
+  PrefService* prefs = profile->GetPrefs();
+
+  // Record cookie setting histograms.
+  auto cookie_controls_mode = static_cast<CookieControlsMode>(
+      prefs->GetInteger(prefs::kCookieControlsMode));
   base::UmaHistogramBoolean(
       "Privacy.ThirdPartyCookieBlockingSetting",
-      profile->GetPrefs()->GetBoolean(prefs::kBlockThirdPartyCookies));
-  base::UmaHistogramBoolean(
-      "Privacy.CookieControlsSetting",
-      profile->GetPrefs()->GetBoolean(prefs::kCookieControlsEnabled));
-  // The DNT setting is only vaguely cookie-related. However, there is currently
-  // no DNT-related code that is executed once per Profile lifetime, and
-  // creating a new BrowserContextKeyedService to record this metric would be
-  // an overkill. Hence, we put it here.
-  // TODO(msramek): Find a better place for this metric.
-  base::UmaHistogramBoolean(
-      "Privacy.DoNotTrackSetting",
-      profile->GetPrefs()->GetBoolean(prefs::kEnableDoNotTrack));
+      cookie_controls_mode == CookieControlsMode::kBlockThirdParty);
+  base::UmaHistogramEnumeration("Privacy.CookieControlsSetting",
+                                cookie_controls_mode);
+
+  const char* extension_scheme =
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+      extensions::kExtensionScheme;
+#else
+      content_settings::kDummyExtensionScheme;
+#endif
+
   return new content_settings::CookieSettings(
-      HostContentSettingsMapFactory::GetForProfile(profile),
-      profile->GetPrefs(),
-      extensions::kExtensionScheme);
+      HostContentSettingsMapFactory::GetForProfile(profile), prefs,
+      profile->IsIncognitoProfile(), extension_scheme);
 }

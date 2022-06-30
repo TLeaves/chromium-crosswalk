@@ -8,10 +8,9 @@
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #include "base/test/test_reg_util_win.h"
 #include "chrome/browser/win/conflicts/module_info_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,6 +18,12 @@
 namespace {
 
 class EnumerateInputMethodEditorsTest : public testing::Test {
+ public:
+  EnumerateInputMethodEditorsTest(const EnumerateInputMethodEditorsTest&) =
+      delete;
+  EnumerateInputMethodEditorsTest& operator=(
+      const EnumerateInputMethodEditorsTest&) = delete;
+
  protected:
   EnumerateInputMethodEditorsTest() = default;
   ~EnumerateInputMethodEditorsTest() override = default;
@@ -33,14 +38,12 @@ class EnumerateInputMethodEditorsTest : public testing::Test {
         registry_override_manager_.OverrideRegistry(HKEY_LOCAL_MACHINE));
   }
 
-  void RunUntilIdle() { scoped_task_environment_.RunUntilIdle(); }
+  void RunUntilIdle() { task_environment_.RunUntilIdle(); }
 
  private:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::TaskEnvironment task_environment_;
 
   registry_util::RegistryOverrideManager registry_override_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(EnumerateInputMethodEditorsTest);
 };
 
 // Adds a fake IME entry to the registry that should be found by the

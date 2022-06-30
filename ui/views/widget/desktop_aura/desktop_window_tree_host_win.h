@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
@@ -19,8 +19,8 @@ namespace aura {
 namespace client {
 class DragDropClient;
 class FocusClient;
-}
-}
+}  // namespace client
+}  // namespace aura
 
 namespace ui {
 enum class DomCode;
@@ -54,10 +54,44 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   DesktopWindowTreeHostWin(
       internal::NativeWidgetDelegate* native_widget_delegate,
       DesktopNativeWidgetAura* desktop_native_widget_aura);
+
+  DesktopWindowTreeHostWin(const DesktopWindowTreeHostWin&) = delete;
+  DesktopWindowTreeHostWin& operator=(const DesktopWindowTreeHostWin&) = delete;
+
   ~DesktopWindowTreeHostWin() override;
 
   // A way of converting an HWND into a content window.
   static aura::Window* GetContentWindowForHWND(HWND hwnd);
+
+  // When DesktopDragDropClientWin starts a touch-initiated drag, it calls
+  // this method to record that we're in touch drag mode, and synthesizes
+  // right mouse button down and move events to get ::DoDragDrop started.
+  void StartTouchDrag(gfx::Point screen_point);
+
+  // If in touch drag mode, this method synthesizes a left mouse button up
+  // event to match the left mouse button down event in StartTouchDrag. It
+  // also restores the cursor pos to where the drag started, to avoid leaving
+  // the cursor outside the Chrome window doing the drag drop. This allows
+  // subsequent touch drag drops to succeed. Touch drag drop requires that
+  // the cursor be over the same window as the touch drag point.
+  // This needs to be called in two cases:
+  // 1. The normal case is that ::DoDragDrop starts, we get touch move events,
+  // which we turn into mouse move events, and then we get a touch release
+  // event. Calling FinishTouchDragIfInDrag generates a mouse up, which stops
+  // the drag drop.
+  // 2. ::DoDragDrop exits immediately, w/o us handling any touch events. In
+  // this case, FinishTouchDragIfInDrag makes sure we have a mouse button up to
+  // match the mouse button down, because we won't get a touch release event. We
+  // don't know for sure if ::DoDragDrop exited immediately, other than by
+  // checking if `in_touch_drag_` has been set to false.
+  //
+  // So, we always call FinishTouchDragIfInDrag after ::DoDragDrop exits, to
+  // make sure it gets called, and we make it handle getting called multiple
+  // times. Most of the time, FinishTouchDrag will have already been called when
+  // we get a touch release event, in which case the second call needs to be a
+  // noop, which is accomplished by checking if `in_touch_drag_` is already
+  // false.
+  void FinishTouchDrag(gfx::Point screen_point);
 
  protected:
   // Overridden from DesktopWindowTreeHost:
@@ -66,8 +100,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void OnActiveWindowChanged(bool active) override;
   void OnWidgetInitDone() override;
   std::unique_ptr<corewm::Tooltip> CreateTooltip() override;
-  std::unique_ptr<aura::client::DragDropClient> CreateDragDropClient(
-      DesktopNativeCursorManager* cursor_manager) override;
+  std::unique_ptr<aura::client::DragDropClient> CreateDragDropClient() override;
   void Close() override;
   void CloseNow() override;
   aura::WindowTreeHost* AsWindowTreeHost() override;
@@ -99,7 +132,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   ui::ZOrderLevel GetZOrderLevel() const override;
   void SetVisibleOnAllWorkspaces(bool always_visible) override;
   bool IsVisibleOnAllWorkspaces() const override;
-  bool SetWindowTitle(const base::string16& title) override;
+  bool SetWindowTitle(const std::u16string& title) override;
   void ClearNativeFocus() override;
   Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
@@ -107,7 +140,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
       Widget::MoveLoopEscapeBehavior escape_behavior) override;
   void EndMoveLoop() override;
   void SetVisibilityChangedAnimationsEnabled(bool value) override;
-  NonClientFrameView* CreateNonClientFrameView() override;
+  std::unique_ptr<NonClientFrameView> CreateNonClientFrameView() override;
   bool ShouldUseNativeFrame() const override;
   bool ShouldWindowContentsBeTransparent() const override;
   void FrameTypeChanged() override;
@@ -125,6 +158,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   bool ShouldUpdateWindowTransparency() const override;
   bool ShouldUseDesktopNativeCursorManager() const override;
   bool ShouldCreateVisibilityController() const override;
+  DesktopNativeCursorManager* GetSingletonDesktopNativeCursorManager() override;
+  void SetBoundsInDIP(const gfx::Rect& bounds) override;
 
   // Overridden from aura::WindowTreeHost:
   ui::EventSource* GetEventSource() override;
@@ -133,11 +168,12 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void HideImpl() override;
   gfx::Rect GetBoundsInPixels() const override;
   void SetBoundsInPixels(const gfx::Rect& bounds) override;
+  gfx::Rect GetBoundsInAcceleratedWidgetPixelCoordinates() override;
   gfx::Point GetLocationOnScreenInPixels() const override;
   void SetCapture() override;
   void ReleaseCapture() override;
   bool CaptureSystemKeyEventsImpl(
-      base::Optional<base::flat_set<ui::DomCode>> dom_codes) override;
+      absl::optional<base::flat_set<ui::DomCode>> dom_codes) override;
   void ReleaseSystemKeyEventCapture() override;
   bool IsKeyLocked(ui::DomCode dom_code) override;
   base::flat_map<std::string, std::string> GetKeyboardLayoutMap() override;
@@ -145,6 +181,10 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void OnCursorVisibilityChangedNative(bool show) override;
   void MoveCursorToScreenLocationInPixels(
       const gfx::Point& location_in_pixels) override;
+  std::unique_ptr<aura::ScopedEnableUnadjustedMouseEvents>
+  RequestUnadjustedMovement() override;
+  void LockMouse(aura::Window* window) override;
+  void UnlockMouse(aura::Window* window) override;
 
   // Overridden from aura::client::AnimationHost
   void SetHostTransitionOffsets(
@@ -167,7 +207,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   bool WidgetSizeIsClientSize() const override;
   bool IsModal() const override;
   int GetInitialShowState() const override;
-  bool WillProcessWorkAreaChange() const override;
   int GetNonClientComponent(const gfx::Point& point) const override;
   void GetWindowMask(const gfx::Size& size, SkPath* path) override;
   bool GetClientAreaInsets(gfx::Insets* insets,
@@ -179,7 +218,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void ResetWindowControls() override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
   void HandleActivationChanged(bool active) override;
-  bool HandleAppCommand(short command) override;
+  bool HandleAppCommand(int command) override;
   void HandleCancelMode() override;
   void HandleCaptureLost() override;
   void HandleClose() override;
@@ -194,7 +233,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   void HandleEndWMSizeMove() override;
   void HandleMove() override;
   void HandleWorkAreaChanged() override;
-  void HandleVisibilityChanging(bool visible) override;
   void HandleVisibilityChanged(bool visible) override;
   void HandleWindowMinimizedOrRestored(bool restored) override;
   void HandleClientSizeChanged(const gfx::Size& new_size) override;
@@ -233,8 +271,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
  private:
   friend class ::views::test::DesktopWindowTreeHostWinTestApi;
 
-  void SetWindowTransparency();
-
   // Returns true if a modal window is active in the current root window chain.
   bool IsModalWindowActive() const;
 
@@ -252,12 +288,12 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
 
   // TODO(beng): Consider providing an interface to DesktopNativeWidgetAura
   //             instead of providing this route back to Widget.
-  internal::NativeWidgetDelegate* native_widget_delegate_;
+  raw_ptr<internal::NativeWidgetDelegate> native_widget_delegate_;
 
-  DesktopNativeWidgetAura* desktop_native_widget_aura_;
+  raw_ptr<DesktopNativeWidgetAura> desktop_native_widget_aura_;
 
   // Owned by DesktopNativeWidgetAura.
-  DesktopDragDropClientWin* drag_drop_client_;
+  raw_ptr<DesktopDragDropClientWin> drag_drop_client_;
 
   // When certain windows are being shown, we augment the window size
   // temporarily for animation. The following two members contain the top left
@@ -290,7 +326,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
 
   // Owned by TooltipController, but we need to forward events to it so we keep
   // a reference.
-  corewm::TooltipWin* tooltip_;
+  raw_ptr<corewm::TooltipWin> tooltip_;
 
   // Visibility of the cursor. On Windows we can have multiple root windows and
   // the implementation of ::ShowCursor() is based on a counter, so making this
@@ -307,11 +343,17 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   // become activated.
   bool wants_mouse_events_when_inactive_ = false;
 
+  // Set to true when DesktopDragDropClientWin starts a touch-initiated drag
+  // drop and false when it finishes. While in touch drag, if touch move events
+  // are received, the equivalent mouse events are generated, because ole32
+  // ::DoDragDrop does not seem to handle touch events. WinRT drag drop does
+  // support touch, but we've been unable to use it in Chrome. See
+  // https://crbug.com/1236783 for more info.
+  bool in_touch_drag_ = false;
+
   // The z-order level of the window; the window exhibits "always on top"
   // behavior if > 0.
   ui::ZOrderLevel z_order_ = ui::ZOrderLevel::kNormal;
-
-  DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostWin);
 };
 
 }  // namespace views

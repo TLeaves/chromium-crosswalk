@@ -5,11 +5,11 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROMEOS_SMB_SHARES_SMB_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_SMB_SHARES_SMB_HANDLER_H_
 
+#include <string>
+
 #include "base/callback_forward.h"
-#include "base/files/file.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/smb_client/smb_service.h"
+#include "chrome/browser/ash/smb_client/smb_service.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
@@ -17,11 +17,17 @@ class Profile;
 namespace chromeos {
 namespace smb_dialog {
 
-using smb_client::SmbMountResult;
-
 class SmbHandler : public content::WebUIMessageHandler {
  public:
-  explicit SmbHandler(Profile* profile);
+  using UpdateCredentialsCallback =
+      base::OnceCallback<void(const std::string& username,
+                              const std::string& password)>;
+
+  SmbHandler(Profile* profile, UpdateCredentialsCallback update_cred_callback);
+
+  SmbHandler(const SmbHandler&) = delete;
+  SmbHandler& operator=(const SmbHandler&) = delete;
+
   ~SmbHandler() override;
 
  private:
@@ -39,7 +45,7 @@ class SmbHandler : public content::WebUIMessageHandler {
 
   // Callback handler for SmbMount.
   void HandleSmbMountResponse(const std::string& callback_id,
-                              SmbMountResult result);
+                              smb_client::SmbMountResult result);
 
   // Callback handler for StartDiscovery.
   void HandleGatherSharesResponse(
@@ -52,9 +58,8 @@ class SmbHandler : public content::WebUIMessageHandler {
   bool host_discovery_done_ = false;
   base::OnceClosure stored_mount_call_;
   Profile* const profile_;
-  base::WeakPtrFactory<SmbHandler> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(SmbHandler);
+  UpdateCredentialsCallback update_cred_callback_;
+  base::WeakPtrFactory<SmbHandler> weak_ptr_factory_{this};
 };
 
 }  // namespace smb_dialog

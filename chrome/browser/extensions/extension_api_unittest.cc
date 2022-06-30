@@ -17,9 +17,6 @@ namespace utils = extension_function_test_utils;
 
 namespace extensions {
 
-ExtensionApiUnittest::ExtensionApiUnittest() {
-}
-
 ExtensionApiUnittest::~ExtensionApiUnittest() {
 }
 
@@ -29,16 +26,15 @@ void ExtensionApiUnittest::SetUp() {
 }
 
 std::unique_ptr<base::Value> ExtensionApiUnittest::RunFunctionAndReturnValue(
-    UIThreadExtensionFunction* function,
+    ExtensionFunction* function,
     const std::string& args) {
   function->set_extension(extension());
-  return std::unique_ptr<base::Value>(
-      utils::RunFunctionAndReturnSingleResult(function, args, browser()));
+  return utils::RunFunctionAndReturnSingleResult(function, args, browser());
 }
 
 std::unique_ptr<base::DictionaryValue>
 ExtensionApiUnittest::RunFunctionAndReturnDictionary(
-    UIThreadExtensionFunction* function,
+    ExtensionFunction* function,
     const std::string& args) {
   base::Value* value = RunFunctionAndReturnValue(function, args).release();
   base::DictionaryValue* dict = NULL;
@@ -52,29 +48,28 @@ ExtensionApiUnittest::RunFunctionAndReturnDictionary(
   return std::unique_ptr<base::DictionaryValue>(dict);
 }
 
-std::unique_ptr<base::ListValue> ExtensionApiUnittest::RunFunctionAndReturnList(
-    UIThreadExtensionFunction* function,
+std::unique_ptr<base::Value> ExtensionApiUnittest::RunFunctionAndReturnList(
+    ExtensionFunction* function,
     const std::string& args) {
   base::Value* value = RunFunctionAndReturnValue(function, args).release();
-  base::ListValue* list = NULL;
 
-  if (value && !value->GetAsList(&list))
+  if (value && !value->is_list())
     delete value;
 
-  // We expect to either have successfuly retrieved a list from the value,
-  // or the value to have been NULL.
-  EXPECT_TRUE(list);
-  return std::unique_ptr<base::ListValue>(list);
+  // We expect to have successfully retrieved a list from the value.
+  EXPECT_TRUE(value && value->is_list());
+  return std::unique_ptr<base::Value>(value);
 }
 
 std::string ExtensionApiUnittest::RunFunctionAndReturnError(
-    UIThreadExtensionFunction* function, const std::string& args) {
+    ExtensionFunction* function,
+    const std::string& args) {
   function->set_extension(extension());
   return utils::RunFunctionAndReturnError(function, args, browser());
 }
 
-void ExtensionApiUnittest::RunFunction(
-    UIThreadExtensionFunction* function, const std::string& args) {
+void ExtensionApiUnittest::RunFunction(ExtensionFunction* function,
+                                       const std::string& args) {
   RunFunctionAndReturnValue(function, args);
 }
 

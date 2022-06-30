@@ -7,7 +7,7 @@
 
 #import <UIKit/UIKit.h>
 
-#import "ios/third_party/material_components_ios/src/components/CollectionCells/src/MDCCollectionViewCell.h"
+#import <MaterialComponents/MDCCollectionViewCell.h>
 
 // MDCCollectionViewCell that displays two text fields.
 @interface CollectionViewTextCell : MDCCollectionViewCell
@@ -18,8 +18,8 @@
 // The second line of detail text to display.
 @property(nonatomic, readonly, strong, nullable) UILabel* detailTextLabel;
 
-// Returns the height needed for a cell contained in |width| to display
-// |titleLabel| and |detailTextLabel|.
+// Returns the height needed for a cell contained in `width` to display
+// `titleLabel` and `detailTextLabel`.
 + (CGFloat)heightForTitleLabel:(nullable UILabel*)titleLabel
                detailTextLabel:(nullable UILabel*)detailTextLabel
                          width:(CGFloat)width;

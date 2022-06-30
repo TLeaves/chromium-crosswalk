@@ -6,7 +6,7 @@
 
 #include <vector>
 
-#include "base/stl_util.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "ui/gl/gl_context.h"
@@ -25,9 +25,6 @@ static CurrentGL* g_no_context_current_gl = nullptr;
 // If the null draw bindings are currently enabled.
 // TODO: Consider adding a new GLApi that no-ops these functions
 static bool g_null_draw_bindings_enabled = false;
-
-// If the GL debug bindings are enabled.
-static bool g_debug_bindings_enabled = false;
 
 namespace {
 
@@ -229,14 +226,6 @@ void ClearBindingsGL() {
   }
 }
 
-void InitializeDebugGLBindingsGL() {
-  g_debug_bindings_enabled = true;
-}
-
-bool GetDebugGLBindingsInitializedGL() {
-  return g_debug_bindings_enabled;
-}
-
 bool SetNullDrawGLBindingsEnabled(bool enabled) {
   bool old_value = g_null_draw_bindings_enabled;
   g_null_draw_bindings_enabled = enabled;
@@ -258,9 +247,7 @@ GLApi::GLApi() {
 GLApi::~GLApi() {
 }
 
-GLApiBase::GLApiBase()
-    : driver_(NULL) {
-}
+GLApiBase::GLApiBase() : driver_(nullptr) {}
 
 GLApiBase::~GLApiBase() {
 }
@@ -363,6 +350,35 @@ void RealGLApi::glTexStorage2DEXTFn(GLenum target,
   GLenum gl_internal_format = GetInternalFormat(version_.get(), internalformat);
   GLApiBase::glTexStorage2DEXTFn(target, levels, gl_internal_format, width,
                                  height);
+}
+
+void RealGLApi::glTexStorageMem2DEXTFn(GLenum target,
+                                       GLsizei levels,
+                                       GLenum internalformat,
+                                       GLsizei width,
+                                       GLsizei height,
+                                       GLuint memory,
+                                       GLuint64 offset) {
+  internalformat = GetInternalFormat(version_.get(), internalformat);
+  GLApiBase::glTexStorageMem2DEXTFn(target, levels, internalformat, width,
+                                    height, memory, offset);
+}
+
+void RealGLApi::glTexStorageMemFlags2DANGLEFn(
+    GLenum target,
+    GLsizei levels,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height,
+    GLuint memory,
+    GLuint64 offset,
+    GLbitfield createFlags,
+    GLbitfield usageFlags,
+    const void* imageCreateInfoPNext) {
+  internalformat = GetInternalFormat(version_.get(), internalformat);
+  GLApiBase::glTexStorageMemFlags2DANGLEFn(
+      target, levels, internalformat, width, height, memory, offset,
+      createFlags, usageFlags, imageCreateInfoPNext);
 }
 
 void RealGLApi::glRenderbufferStorageEXTFn(GLenum target,
@@ -548,9 +564,9 @@ void RealGLApi::set_version(std::unique_ptr<GLVersionInfo> version) {
 TraceGLApi::~TraceGLApi() {
 }
 
-DebugGLApi::DebugGLApi(GLApi* gl_api) : gl_api_(gl_api) {}
+LogGLApi::LogGLApi(GLApi* gl_api) : gl_api_(gl_api) {}
 
-DebugGLApi::~DebugGLApi() {}
+LogGLApi::~LogGLApi() {}
 
 NoContextGLApi::NoContextGLApi() {
 }

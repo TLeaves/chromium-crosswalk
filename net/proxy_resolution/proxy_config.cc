@@ -7,10 +7,13 @@
 #include <memory>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
+#include "base/notreached.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "net/base/proxy_server.h"
+#include "net/base/proxy_string_util.h"
 #include "net/proxy_resolution/proxy_info.h"
 
 namespace net {
@@ -32,16 +35,13 @@ void AddProxyURIListToProxyList(std::string uri_list,
   base::StringTokenizer proxy_uri_list(uri_list, ",");
   while (proxy_uri_list.GetNext()) {
     proxy_list->AddProxyServer(
-        ProxyServer::FromURI(proxy_uri_list.token(), default_scheme));
+        ProxyUriToProxyServer(proxy_uri_list.token(), default_scheme));
   }
 }
 
 }  // namespace
 
-ProxyConfig::ProxyRules::ProxyRules()
-    : reverse_bypass(false),
-      type(Type::EMPTY) {
-}
+ProxyConfig::ProxyRules::ProxyRules() = default;
 
 ProxyConfig::ProxyRules::ProxyRules(const ProxyRules& other) = default;
 
@@ -177,6 +177,27 @@ ProxyList* ProxyConfig::ProxyRules::MapUrlSchemeToProxyListNoFallback(
 
 const ProxyList* ProxyConfig::ProxyRules::GetProxyListForWebSocketScheme()
     const {
+  // Follow the recommendation from RFC 6455 section 4.1.3:
+  //
+  //       NOTE: Implementations that do not expose explicit UI for
+  //       selecting a proxy for WebSocket connections separate from other
+  //       proxies are encouraged to use a SOCKS5 [RFC1928] proxy for
+  //       WebSocket connections, if available, or failing that, to prefer
+  //       the proxy configured for HTTPS connections over the proxy
+  //       configured for HTTP connections.
+  //
+  // This interpretation is a bit different from the RFC, in
+  // that it favors both SOCKSv4 and SOCKSv5.
+  //
+  // When the net::ProxyRules came from system proxy settings,
+  // "fallback_proxies" will be empty, or a a single SOCKS
+  // proxy, making this ordering match the RFC.
+  //
+  // However for other configurations it is possible for
+  // "fallback_proxies" to be a list of any ProxyServer,
+  // including non-SOCKS. In this case "fallback_proxies" is
+  // still prioritized over proxies_for_http and
+  // proxies_for_https.
   if (!fallback_proxies.IsEmpty())
     return &fallback_proxies;
   if (!proxies_for_https.IsEmpty())
@@ -186,7 +207,7 @@ const ProxyList* ProxyConfig::ProxyRules::GetProxyListForWebSocketScheme()
   return nullptr;
 }
 
-ProxyConfig::ProxyConfig() : auto_detect_(false), pac_mandatory_(false) {}
+ProxyConfig::ProxyConfig() = default;
 
 ProxyConfig::ProxyConfig(const ProxyConfig& config) = default;
 
@@ -195,9 +216,9 @@ ProxyConfig::~ProxyConfig() = default;
 ProxyConfig& ProxyConfig::operator=(const ProxyConfig& config) = default;
 
 bool ProxyConfig::Equals(const ProxyConfig& other) const {
-  return auto_detect_ == other.auto_detect_ &&
-         pac_url_ == other.pac_url_ &&
+  return auto_detect_ == other.auto_detect_ && pac_url_ == other.pac_url_ &&
          pac_mandatory_ == other.pac_mandatory_ &&
+         from_system_ == other.from_system_ &&
          proxy_rules_.Equals(other.proxy_rules());
 }
 
@@ -221,6 +242,9 @@ base::Value ProxyConfig::ToValue() const {
     if (pac_mandatory_)
       dict.SetBoolKey("pac_mandatory", pac_mandatory_);
   }
+  if (from_system_) {
+    dict.SetBoolKey("from_system", from_system_);
+  }
 
   // Output the manual settings.
   if (proxy_rules_.type != ProxyRules::Type::EMPTY) {
@@ -234,7 +258,7 @@ base::Value ProxyConfig::ToValue() const {
         AddProxyListToValue("https", proxy_rules_.proxies_for_https, &dict2);
         AddProxyListToValue("ftp", proxy_rules_.proxies_for_ftp, &dict2);
         AddProxyListToValue("fallback", proxy_rules_.fallback_proxies, &dict2);
-        dict2.SetKey("proxy_per_scheme", std::move(dict2));
+        dict.SetKey("proxy_per_scheme", std::move(dict2));
         break;
       }
       default:
@@ -250,7 +274,7 @@ base::Value ProxyConfig::ToValue() const {
       base::Value list(base::Value::Type::LIST);
 
       for (const auto& bypass_rule : bypass.rules())
-        list.GetList().emplace_back(bypass_rule->ToString());
+        list.Append(bypass_rule->ToString());
 
       dict.SetKey("bypass_list", std::move(list));
     }

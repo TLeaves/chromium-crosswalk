@@ -7,21 +7,43 @@
 
 #import "ios/public/provider/chrome/browser/signin/chrome_identity.h"
 
+#include <string>
+
 // A fake ChromeIdentity used for testing.
-@interface FakeChromeIdentity : ChromeIdentity
+@interface FakeChromeIdentity : ChromeIdentity <NSSecureCoding>
+
+// Encodes |identities| into a string, using NSKeyedArchiver.
++ (std::string)encodeIdentitiesToBase64:
+    (NSArray<FakeChromeIdentity*>*)identities;
+
+// Returns a list of FakeChromeIdentity encoded using
+// |encodeIdentitiesToBase64:|.
++ (NSArray<FakeChromeIdentity*>*)identitiesFromBase64String:
+    (const std::string&)string;
+
+// Returns a fake identity.
++ (FakeChromeIdentity*)fakeIdentity1;
+
+// Returns a second fake identity.
++ (FakeChromeIdentity*)fakeIdentity2;
+
+// Returns a fake managed identity.
++ (FakeChromeIdentity*)fakeManagedIdentity;
 
 // Returns a ChromeIdentity based on |email|, |gaiaID| and |name|.
 // The |hashedGaiaID| property will be derived from |name|.
+// For simplicity, both |userGivenName| and |userFullName| properties use
+// |name|.
 + (FakeChromeIdentity*)identityWithEmail:(NSString*)email
                                   gaiaID:(NSString*)gaiaID
                                     name:(NSString*)name;
 
-// Returns a ChromeIdentity based on |email|, |gaiaID|, |name| and
-// |hostedDomain|. The |hashedGaiaID| property will be derived from |name|.
-+ (FakeChromeIdentity*)identityWithEmail:(NSString*)email
-                                  gaiaID:(NSString*)gaiaID
-                                    name:(NSString*)name
-                            hostedDomain:(NSString*)hostedDomain;
+// Redeclared as readwrite.
+@property(strong, nonatomic, readwrite) NSString* userEmail;
+@property(strong, nonatomic, readwrite) NSString* gaiaID;
+@property(strong, nonatomic, readwrite) NSString* userFullName;
+@property(strong, nonatomic, readwrite) NSString* userGivenName;
+@property(strong, nonatomic, readwrite) NSString* hashedGaiaID;
 
 @end
 

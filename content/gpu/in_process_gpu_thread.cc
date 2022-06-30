@@ -7,14 +7,19 @@
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "content/child/child_process.h"
 #include "content/gpu/gpu_child_thread.h"
-#include "content/gpu/gpu_process.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/ipc/service/gpu_init.h"
+#include "media/gpu/buildflags.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(USE_VAAPI)
+#include "media/gpu/vaapi/vaapi_wrapper.h"
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
 #include "base/android/jni_android.h"
 #endif
 
@@ -35,7 +40,7 @@ InProcessGpuThread::~InProcessGpuThread() {
 void InProcessGpuThread::Init() {
   base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // Call AttachCurrentThreadWithName, before any other AttachCurrentThread()
   // calls. The latter causes Java VM to assign Thread-??? to the thread name.
   // Please note calls to AttachCurrentThreadWithName after AttachCurrentThread
@@ -45,11 +50,15 @@ void InProcessGpuThread::Init() {
   io_thread_priority = base::ThreadPriority::DISPLAY;
 #endif
 
-  gpu_process_ = new GpuProcess(io_thread_priority);
+  gpu_process_ = new ChildProcess(io_thread_priority);
 
   auto gpu_init = std::make_unique<gpu::GpuInit>();
   gpu_init->InitializeInProcess(base::CommandLine::ForCurrentProcess(),
                                 gpu_preferences_);
+
+#if BUILDFLAG(USE_VAAPI)
+  media::VaapiWrapper::PreSandboxInitialization();
+#endif
 
   GetContentClient()->SetGpuInfo(gpu_init->gpu_info());
 

@@ -7,21 +7,41 @@
 
 #import <UIKit/UIKit.h>
 
+#include <memory>
 #include <string>
 
 #import "base/ios/block_types.h"
 #include "base/values.h"
 
 #include "ios/web/public/test/element_selector.h"
-#import "ios/web/public/web_state/web_state.h"
 
 namespace web {
+class JavaScriptFeature;
+class WebState;
+
 namespace test {
 
 // Synchronously returns the result of executed JavaScript, returning nullptr
 // if the JavaScript does not complete.
 std::unique_ptr<base::Value> ExecuteJavaScript(web::WebState* web_state,
                                                const std::string& script);
+
+// Synchronously returns the result of the executed JavaScript function by
+// calling |function| with |parameters| in web_state's main frame.
+std::unique_ptr<base::Value> CallJavaScriptFunction(
+    web::WebState* web_state,
+    const std::string& function,
+    const std::vector<base::Value>& parameters);
+
+// Synchronously returns the result of the executed JavaScript function by
+// calling |function| with |parameters| in web_state's main frame in the
+// content world associated with |feature|. If |feature| is null, the function
+// will be executed in the page content world.
+std::unique_ptr<base::Value> CallJavaScriptFunctionForFeature(
+    web::WebState* web_state,
+    const std::string& function,
+    const std::vector<base::Value>& parameters,
+    JavaScriptFeature* feature);
 
 // Returns the CGRect, in the coordinate system of web_state's view, that
 // encloses the element returned by |selector| in |web_state|'s webview.

@@ -12,10 +12,11 @@
 #import "ios/chrome/browser/ui/settings/language/language_settings_histograms.h"
 #import "ios/chrome/browser/ui/settings/language/language_settings_ui_constants.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller_constants.h"
+#import "ios/chrome/browser/ui/table_view/table_view_utils.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
-#import "ios/chrome/common/colors/semantic_color_names.h"
-#import "ios/chrome/common/ui_util/constraints_ui_util.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
+#import "ios/chrome/common/ui/util/constraints_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -64,11 +65,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
                                        delegate {
   DCHECK(dataSource);
   DCHECK(delegate);
-  UITableViewStyle style = base::FeatureList::IsEnabled(kSettingsRefresh)
-                               ? UITableViewStylePlain
-                               : UITableViewStyleGrouped;
-  self = [super initWithTableViewStyle:style
-                           appBarStyle:ChromeTableViewControllerStyleNoAppBar];
+
+  self = [super initWithStyle:ChromeTableViewStyle()];
   if (self) {
     _dataSource = dataSource;
     _delegate = delegate;
@@ -204,7 +202,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 #pragma mark - Helper methods
 
 // Populates the language items in the language section. Queries the data source
-// if |fromDataSource| is true. Otherwise uses the previously loaded items.
+// if `fromDataSource` is true. Otherwise uses the previously loaded items.
 - (void)populateLanguagesSectionFromDataSource:(BOOL)fromDataSource {
   TableViewModel* model = self.tableViewModel;
 
@@ -229,7 +227,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 // Reloads the language items in the language section. Queries the data source
-// if |fromDataSource| is true. Otherwise uses the previously loaded items.
+// if `fromDataSource` is true. Otherwise uses the previously loaded items.
 - (void)updateLanguagesSectionFromDataSource:(BOOL)fromDataSource {
   // Update the model.
   [self.tableViewModel
@@ -245,6 +243,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 
 // Shows the scrim overlay.
 - (void)showScrim {
+  self.tableView.accessibilityElementsHidden = YES;
   self.tableView.scrollEnabled = NO;
   [self.tableView addSubview:self.scrimView];
   // Attach constraints to the superview because tableView is a scrollView and
@@ -265,6 +264,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
       }
       completion:^(BOOL finished) {
         [self.scrimView removeFromSuperview];
+        self.tableView.accessibilityElementsHidden = NO;
         self.tableView.scrollEnabled = YES;
       }];
 }

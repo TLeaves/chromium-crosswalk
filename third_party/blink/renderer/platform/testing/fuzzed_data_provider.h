@@ -5,10 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_TESTING_FUZZED_DATA_PROVIDER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_TESTING_FUZZED_DATA_PROVIDER_H_
 
-#include "base/macros.h"
+#include <fuzzer/FuzzedDataProvider.h>
+
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
-#include "third_party/libFuzzer/src/utils/FuzzedDataProvider.h"
 
 namespace blink {
 
@@ -18,6 +18,8 @@ class FuzzedDataProvider {
 
  public:
   FuzzedDataProvider(const uint8_t* bytes, size_t num_bytes);
+  FuzzedDataProvider(const FuzzedDataProvider&) = delete;
+  FuzzedDataProvider& operator=(const FuzzedDataProvider&) = delete;
 
   // Returns a string with length between 0 and max_length.
   String ConsumeRandomLengthString(size_t max_length);
@@ -57,8 +59,6 @@ class FuzzedDataProvider {
 
  private:
   ::FuzzedDataProvider provider_;
-
-  DISALLOW_COPY_AND_ASSIGN(FuzzedDataProvider);
 };
 
 }  // namespace blink

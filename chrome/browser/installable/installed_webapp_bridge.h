@@ -5,18 +5,34 @@
 #ifndef CHROME_BROWSER_INSTALLABLE_INSTALLED_WEBAPP_BRIDGE_H_
 #define CHROME_BROWSER_INSTALLABLE_INSTALLED_WEBAPP_BRIDGE_H_
 
-#include "base/macros.h"
+#include "base/callback.h"
 #include "chrome/browser/installable/installed_webapp_provider.h"
+#include "components/content_settings/core/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_types.h"
+
+class GURL;
 
 class InstalledWebappBridge {
  public:
-  static InstalledWebappProvider::RuleList
-  GetInstalledWebappNotificationPermissions();
+  using PermissionCallback =
+      base::OnceCallback<void(ContentSetting setting, bool is_one_time)>;
+
+  InstalledWebappBridge() = delete;
+  InstalledWebappBridge(const InstalledWebappBridge&) = delete;
+  InstalledWebappBridge& operator=(const InstalledWebappBridge&) = delete;
+
+  static InstalledWebappProvider::RuleList GetInstalledWebappPermissions(
+      ContentSettingsType type);
 
   static void SetProviderInstance(InstalledWebappProvider* provider);
 
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(InstalledWebappBridge);
+  static void DecidePermission(const GURL& origin_url,
+                               PermissionCallback callback);
+
+  static void DecidePermission(ContentSettingsType type,
+                               const GURL& origin_url,
+                               const GURL& last_committed_url,
+                               PermissionCallback callback);
 };
 
 #endif  // CHROME_BROWSER_INSTALLABLE_INSTALLED_WEBAPP_BRIDGE_H_

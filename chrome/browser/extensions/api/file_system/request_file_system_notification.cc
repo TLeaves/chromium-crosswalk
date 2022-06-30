@@ -4,15 +4,15 @@
 
 #include "chrome/browser/extensions/api/file_system/request_file_system_notification.h"
 
+#include <string>
 #include <utility>
 
+#include "ash/constants/notifier_catalogs.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/ash/file_manager/volume_manager.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager.h"
 #include "chrome/browser/extensions/chrome_app_icon_loader.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/ui/app_icon_loader.h"
@@ -40,6 +40,9 @@ class AppNotificationLauncher : public AppIconLoaderDelegate {
   // This class owns and deletes itself after showing the notification.
   AppNotificationLauncher() = default;
 
+  AppNotificationLauncher(const AppNotificationLauncher&) = delete;
+  AppNotificationLauncher& operator=(const AppNotificationLauncher&) = delete;
+
   void InitAndShow(Profile* profile,
                    const Extension& extension,
                    std::unique_ptr<message_center::Notification> notification) {
@@ -56,9 +59,7 @@ class AppNotificationLauncher : public AppIconLoaderDelegate {
   // AppIconLoaderDelegate overrides:
   void OnAppImageUpdated(const std::string& id,
                          const gfx::ImageSkia& image) override {
-    extension_icon_ = gfx::Image(image);
-
-    pending_notification_->set_icon(extension_icon_);
+    pending_notification_->set_icon(ui::ImageModel::FromImageSkia(image));
     NotificationDisplayService::GetForProfile(profile_)->Display(
         NotificationHandler::Type::TRANSIENT, *pending_notification_,
         /*metadata=*/nullptr);
@@ -70,10 +71,7 @@ class AppNotificationLauncher : public AppIconLoaderDelegate {
 
   Profile* profile_;
   std::unique_ptr<AppIconLoader> icon_loader_;
-  gfx::Image extension_icon_;
   std::unique_ptr<message_center::Notification> pending_notification_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppNotificationLauncher);
 };
 
 }  // namespace
@@ -94,10 +92,10 @@ void ShowNotificationForAutoGrantedRequestFileSystem(
   message_center::RichNotificationData data;
 
   // TODO(mtomasz): Share this code with RequestFileSystemDialogView.
-  const base::string16 display_name =
+  const std::u16string display_name =
       base::UTF8ToUTF16(!volume->volume_label().empty() ? volume->volume_label()
                                                         : volume->volume_id());
-  const base::string16 message = l10n_util::GetStringFUTF16(
+  const std::u16string message = l10n_util::GetStringFUTF16(
       writable
           ? IDS_FILE_SYSTEM_REQUEST_FILE_SYSTEM_NOTIFICATION_WRITABLE_MESSAGE
           : IDS_FILE_SYSTEM_REQUEST_FILE_SYSTEM_NOTIFICATION_MESSAGE,
@@ -106,11 +104,12 @@ void ShowNotificationForAutoGrantedRequestFileSystem(
   std::unique_ptr<message_center::Notification> notification(new Notification(
       message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
       base::UTF8ToUTF16(extension.name()), message,
-      gfx::Image(),      // Updated asynchronously later.
-      base::string16(),  // display_source
+      ui::ImageModel(),  // Updated asynchronously later.
+      std::u16string(),  // display_source
       GURL(),
-      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 notification_id),
+      message_center::NotifierId(
+          message_center::NotifierType::SYSTEM_COMPONENT, notification_id,
+          ash::NotificationCatalogName::kRequestFileSystem),
       data, base::MakeRefCounted<message_center::NotificationDelegate>()));
 
   // AppNotificationLauncher will delete itself.

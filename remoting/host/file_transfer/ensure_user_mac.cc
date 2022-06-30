@@ -6,9 +6,11 @@
 
 #include <unistd.h>
 
+#include "base/logging.h"
+
 namespace remoting {
 
-protocol::FileTransferResult<Monostate> EnsureUserContext() {
+protocol::FileTransferResult<absl::monostate> EnsureUserContext() {
   // Make sure we're not on the log-in screen.
   if (getuid() == 0) {
     LOG(ERROR) << "Cannot transfer files on log-in screen.";

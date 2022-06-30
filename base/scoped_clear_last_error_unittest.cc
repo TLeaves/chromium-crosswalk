@@ -8,12 +8,12 @@
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include <windows.h>
-#endif  // defined(OS_WIN)
+#include "base/logging.h"
+#endif  // BUILDFLAG(IS_WIN)
 
 namespace base {
-namespace internal {
 
 TEST(ScopedClearLastError, TestNoError) {
   errno = 1;
@@ -33,7 +33,7 @@ TEST(ScopedClearLastError, TestError) {
   EXPECT_EQ(1, errno);
 }
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 
 TEST(ScopedClearLastError, TestNoErrorWin) {
   ::SetLastError(1);
@@ -53,7 +53,6 @@ TEST(ScopedClearLastError, TestErrorWin) {
   EXPECT_EQ(logging::SystemErrorCode(1), ::GetLastError());
 }
 
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
-}  // namespace internal
 }  // namespace base

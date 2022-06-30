@@ -8,18 +8,35 @@
 #include <vector>
 
 #include "base/files/file.h"
-#include "components/services/filesystem/files_test_base.h"
+#include "base/test/task_environment.h"
+#include "components/services/filesystem/directory_test_helper.h"
 #include "components/services/filesystem/public/mojom/directory.mojom.h"
+#include "components/services/filesystem/public/mojom/file.mojom.h"
+#include "components/services/filesystem/public/mojom/types.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace filesystem {
 namespace {
 
-using FileImplTest = FilesTestBase;
+class FileImplTest : public testing::Test {
+ public:
+  FileImplTest() = default;
+
+  FileImplTest(const FileImplTest&) = delete;
+  FileImplTest& operator=(const FileImplTest&) = delete;
+
+  mojo::Remote<mojom::Directory> CreateTempDir() {
+    return test_helper_.CreateTempDir();
+  }
+
+ private:
+  base::test::TaskEnvironment task_environment_;
+  DirectoryTestHelper test_helper_;
+};
 
 TEST_F(FileImplTest, CreateWriteCloseRenameOpenRead) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
   bool handled = false;
 
@@ -65,14 +82,14 @@ TEST_F(FileImplTest, CreateWriteCloseRenameOpenRead) {
     // Open my_file again.
     mojo::Remote<mojom::File> file;
     error = base::File::Error::FILE_ERROR_FAILED;
-    bool handled =
+    handled =
         directory->OpenFile("your_file", file.BindNewPipeAndPassReceiver(),
                             mojom::kFlagRead | mojom::kFlagOpen, &error);
     ASSERT_TRUE(handled);
     EXPECT_EQ(base::File::Error::FILE_OK, error);
 
     // Read from it.
-    base::Optional<std::vector<uint8_t>> bytes_read;
+    absl::optional<std::vector<uint8_t>> bytes_read;
     error = base::File::Error::FILE_ERROR_FAILED;
     handled = file->Read(3, 1, mojom::Whence::FROM_BEGIN, &error, &bytes_read);
     ASSERT_TRUE(handled);
@@ -88,8 +105,7 @@ TEST_F(FileImplTest, CreateWriteCloseRenameOpenRead) {
 }
 
 TEST_F(FileImplTest, CantWriteInReadMode) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   std::vector<uint8_t> bytes_to_write;
@@ -154,8 +170,7 @@ TEST_F(FileImplTest, CantWriteInReadMode) {
 }
 
 TEST_F(FileImplTest, OpenInAppendMode) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -235,7 +250,7 @@ TEST_F(FileImplTest, OpenInAppendMode) {
     EXPECT_EQ(base::File::Error::FILE_OK, error);
 
     // Read from it.
-    base::Optional<std::vector<uint8_t>> bytes_read;
+    absl::optional<std::vector<uint8_t>> bytes_read;
     error = base::File::Error::FILE_ERROR_FAILED;
     handled = file->Read(12, 0, mojom::Whence::FROM_BEGIN, &error, &bytes_read);
     ASSERT_TRUE(handled);
@@ -250,8 +265,7 @@ TEST_F(FileImplTest, OpenInAppendMode) {
 }
 
 TEST_F(FileImplTest, OpenInTruncateMode) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -331,7 +345,7 @@ TEST_F(FileImplTest, OpenInTruncateMode) {
     EXPECT_EQ(base::File::Error::FILE_OK, error);
 
     // Read from it.
-    base::Optional<std::vector<uint8_t>> bytes_read;
+    absl::optional<std::vector<uint8_t>> bytes_read;
     error = base::File::Error::FILE_ERROR_FAILED;
     handled = file->Read(7, 0, mojom::Whence::FROM_BEGIN, &error, &bytes_read);
     ASSERT_TRUE(handled);
@@ -347,9 +361,14 @@ TEST_F(FileImplTest, OpenInTruncateMode) {
 
 // Note: Ignore nanoseconds, since it may not always be supported. We expect at
 // least second-resolution support though.
+// TODO(https://crbug.com/702990): Remove this test once last_access_time has
+// been removed after PPAPI has been deprecated. Fuchsia does not support touch,
+// which breaks this test that relies on it. Since PPAPI is being deprecated,
+// this test is excluded from the Fuchsia build.
+// See https://crbug.com/1077456 for details.
+#if !BUILDFLAG(IS_FUCHSIA)
 TEST_F(FileImplTest, StatTouch) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -417,10 +436,10 @@ TEST_F(FileImplTest, StatTouch) {
   // TODO(vtl): Also test Touch() "now" options.
   // TODO(vtl): Also test touching both atime and mtime.
 }
+#endif  // !BUILDFLAG(IS_FUCHSIA)
 
 TEST_F(FileImplTest, TellSeek) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -505,8 +524,7 @@ TEST_F(FileImplTest, TellSeek) {
 }
 
 TEST_F(FileImplTest, Dup) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -580,7 +598,7 @@ TEST_F(FileImplTest, Dup) {
   EXPECT_EQ(base::File::Error::FILE_OK, error);
 
   // Read everything using |file2|.
-  base::Optional<std::vector<uint8_t>> bytes_read;
+  absl::optional<std::vector<uint8_t>> bytes_read;
   error = base::File::Error::FILE_ERROR_FAILED;
   handled =
       file2->Read(1000, 0, mojom::Whence::FROM_BEGIN, &error, &bytes_read);
@@ -599,8 +617,7 @@ TEST_F(FileImplTest, Truncate) {
   const uint32_t kInitialSize = 1000;
   const uint32_t kTruncatedSize = 654;
 
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -648,8 +665,7 @@ TEST_F(FileImplTest, Truncate) {
 }
 
 TEST_F(FileImplTest, AsHandle) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {
@@ -684,7 +700,7 @@ TEST_F(FileImplTest, AsHandle) {
     EXPECT_EQ(base::File::Error::FILE_OK, error);
 
     // Verify that we wrote data raw on the file descriptor.
-    base::Optional<std::vector<uint8_t>> bytes_read;
+    absl::optional<std::vector<uint8_t>> bytes_read;
     error = base::File::Error::FILE_ERROR_FAILED;
     handled = file2->Read(5, 0, mojom::Whence::FROM_BEGIN, &error, &bytes_read);
     ASSERT_TRUE(handled);
@@ -700,8 +716,7 @@ TEST_F(FileImplTest, AsHandle) {
 }
 
 TEST_F(FileImplTest, SimpleLockUnlock) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -727,8 +742,7 @@ TEST_F(FileImplTest, SimpleLockUnlock) {
 }
 
 TEST_F(FileImplTest, CantDoubleLock) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   // Create my_file.
@@ -754,8 +768,7 @@ TEST_F(FileImplTest, CantDoubleLock) {
 }
 
 TEST_F(FileImplTest, ClosingFileClearsLock) {
-  mojo::Remote<mojom::Directory> directory;
-  GetTemporaryRoot(&directory);
+  mojo::Remote<mojom::Directory> directory = CreateTempDir();
   base::File::Error error;
 
   {

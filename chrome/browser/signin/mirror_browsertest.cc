@@ -9,111 +9,134 @@
 
 #include "base/base_switches.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/logging.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/task/post_task.h"
-#include "base/test/bind_test_util.h"
+#include "base/test/bind.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/scoped_account_consistency.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/google/core/common/google_util.h"
+#include "components/google/core/common/google_switches.h"
 #include "components/network_session_configurator/common/network_switches.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/dice_header_helper.h"
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/public/base/signin_pref_names.h"
-#include "content/public/common/url_loader_throttle.h"
+#include "content/public/common/content_client.h"
+#include "content/public/test/browser_test.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/request_handler_util.h"
+#include "third_party/blink/public/common/loader/url_loader_throttle.h"
 
 namespace {
 
 // A delegate to insert a user generated X-Chrome-Connected header
 // to a specifict URL.
-class HeaderModifyingThrottle : public content::URLLoaderThrottle {
+class HeaderModifyingThrottle : public blink::URLLoaderThrottle {
  public:
   HeaderModifyingThrottle() = default;
+
+  HeaderModifyingThrottle(const HeaderModifyingThrottle&) = delete;
+  HeaderModifyingThrottle& operator=(const HeaderModifyingThrottle&) = delete;
+
   ~HeaderModifyingThrottle() override = default;
 
   void WillStartRequest(network::ResourceRequest* request,
                         bool* defer) override {
     request->headers.SetHeader(signin::kChromeConnectedHeader, "User Data");
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(HeaderModifyingThrottle);
 };
 
 class ThrottleContentBrowserClient : public ChromeContentBrowserClient {
  public:
   explicit ThrottleContentBrowserClient(const GURL& watch_url)
       : watch_url_(watch_url) {}
+
+  ThrottleContentBrowserClient(const ThrottleContentBrowserClient&) = delete;
+  ThrottleContentBrowserClient& operator=(const ThrottleContentBrowserClient&) =
+      delete;
+
   ~ThrottleContentBrowserClient() override = default;
 
   // ContentBrowserClient overrides:
-  std::vector<std::unique_ptr<content::URLLoaderThrottle>>
-  CreateURLLoaderThrottlesOnIO(
-      const network::ResourceRequest& request,
-      content::ResourceContext* resource_context,
-      const base::RepeatingCallback<content::WebContents*()>& wc_getter,
-      content::NavigationUIData* navigation_ui_data,
-      int frame_tree_node_id) override {
-    std::vector<std::unique_ptr<content::URLLoaderThrottle>> throttles;
-    if (request.url == watch_url_)
-      throttles.push_back(std::make_unique<HeaderModifyingThrottle>());
-    return throttles;
-  }
-  std::vector<std::unique_ptr<content::URLLoaderThrottle>>
+  std::vector<std::unique_ptr<blink::URLLoaderThrottle>>
   CreateURLLoaderThrottles(
       const network::ResourceRequest& request,
       content::BrowserContext* browser_context,
       const base::RepeatingCallback<content::WebContents*()>& wc_getter,
       content::NavigationUIData* navigation_ui_data,
       int frame_tree_node_id) override {
-    return CreateURLLoaderThrottlesOnIO(request, nullptr, wc_getter,
-                                        navigation_ui_data, frame_tree_node_id);
+    std::vector<std::unique_ptr<blink::URLLoaderThrottle>> throttles;
+    if (request.url == watch_url_)
+      throttles.push_back(std::make_unique<HeaderModifyingThrottle>());
+    return throttles;
   }
 
  private:
   const GURL watch_url_;
-
-  DISALLOW_COPY_AND_ASSIGN(ThrottleContentBrowserClient);
 };
 
 // Subclass of DiceManageAccountBrowserTest with Mirror enabled.
 class MirrorBrowserTest : public InProcessBrowserTest {
+ protected:
+  void RunExtensionConsentTest(extensions::WebAuthFlow::Partition partition,
+                               bool expects_header) {
+    net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
+    https_server.AddDefaultHandlers(GetChromeTestDataDir());
+    const std::string kAuthPath = "/auth";
+    net::test_server::HttpRequest::HeaderMap headers;
+    base::RunLoop run_loop;
+    https_server.RegisterRequestMonitor(base::BindLambdaForTesting(
+        [&](const net::test_server::HttpRequest& request) {
+          if (request.GetURL().path() != kAuthPath)
+            return;
+
+          headers = request.headers;
+          run_loop.Quit();
+        }));
+    ASSERT_TRUE(https_server.Start());
+
+    auto web_auth_flow = std::make_unique<extensions::WebAuthFlow>(
+        nullptr, browser()->profile(),
+        https_server.GetURL("google.com", kAuthPath),
+        extensions::WebAuthFlow::INTERACTIVE, partition);
+
+    web_auth_flow->Start();
+    run_loop.Run();
+    EXPECT_EQ(!!headers.count(signin::kChromeConnectedHeader), expects_header);
+
+    web_auth_flow.release()->DetachDelegateAndDelete();
+    base::RunLoop().RunUntilIdle();
+  }
+
  private:
   void SetUpOnMainThread() override {
     // The test makes requests to google.com and other domains which we want to
     // redirect to the test server.
     host_resolver()->AddRule("*", "127.0.0.1");
-
-    // The production code only allows known ports (80 for http and 443 for
-    // https), but the test server runs on a random port.
-    google_util::IgnorePortNumbersForGoogleURLChecksForTesting();
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     // HTTPS server only serves a valid cert for localhost, so this is needed to
     // load pages from "www.google.com" without an interstitial.
     command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
-  }
 
-  ScopedAccountConsistencyMirror scoped_mirror_;
+    // The production code only allows known ports (80 for http and 443 for
+    // https), but the test server runs on a random port.
+    command_line->AppendSwitch(switches::kIgnoreGooglePortNumbers);
+  }
 };
 
 // Verify the following items:
@@ -125,10 +148,8 @@ class MirrorBrowserTest : public InProcessBrowserTest {
 //    and not because it was on a secure Google domain.
 // This is a regression test for crbug.com/588492.
 IN_PROC_BROWSER_TEST_F(MirrorBrowserTest, MirrorRequestHeader) {
-  browser()->profile()->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
-                                              "user@gmail.com");
-  browser()->profile()->GetPrefs()->SetString(
-      prefs::kGoogleServicesUserAccountId, "account_id");
+  browser()->profile()->GetPrefs()->SetString(prefs::kGoogleServicesAccountId,
+                                              "account_id");
 
   base::Lock lock;
   // Map from the path of the URLs that test server sees to the request header.
@@ -207,7 +228,8 @@ IN_PROC_BROWSER_TEST_F(MirrorBrowserTest, MirrorRequestHeader) {
       old_browser_client = content::SetBrowserClientForTesting(&browser_client);
 
     // Navigate to first url.
-    ui_test_utils::NavigateToURL(browser(), test_case.original_url);
+    ASSERT_TRUE(
+        ui_test_utils::NavigateToURL(browser(), test_case.original_url));
 
     if (test_case.inject_header)
       content::SetBrowserClientForTesting(old_browser_client);
@@ -217,24 +239,38 @@ IN_PROC_BROWSER_TEST_F(MirrorBrowserTest, MirrorRequestHeader) {
     // Check if header exists and X-Chrome-Connected is correctly provided.
     ASSERT_EQ(1u, header_map.count(test_case.original_url.path()));
     if (test_case.original_url_expects_header) {
-      ASSERT_TRUE(!!header_map[test_case.original_url.path()].count(
+      ASSERT_TRUE(header_map[test_case.original_url.path()].count(
           signin::kChromeConnectedHeader));
     } else {
-      ASSERT_FALSE(!!header_map[test_case.original_url.path()].count(
+      ASSERT_FALSE(header_map[test_case.original_url.path()].count(
           signin::kChromeConnectedHeader));
     }
 
     ASSERT_EQ(1u, header_map.count(test_case.redirected_to_path));
     if (test_case.redirected_to_url_expects_header) {
-      ASSERT_TRUE(!!header_map[test_case.redirected_to_path].count(
+      ASSERT_TRUE(header_map[test_case.redirected_to_path].count(
           signin::kChromeConnectedHeader));
     } else {
-      ASSERT_FALSE(!!header_map[test_case.redirected_to_path].count(
+      ASSERT_FALSE(header_map[test_case.redirected_to_path].count(
           signin::kChromeConnectedHeader));
     }
 
     header_map.clear();
   }
+}
+
+// Verifies that requests originated from chrome.identity.launchWebAuthFlow()
+// API don't have Mirror headers attached.
+// This is a regression test for crbug.com/1077504.
+IN_PROC_BROWSER_TEST_F(MirrorBrowserTest,
+                       NoMirrorExtensionConsent_LaunchWebAuthFlow) {
+  RunExtensionConsentTest(extensions::WebAuthFlow::LAUNCH_WEB_AUTH_FLOW, false);
+}
+
+// Verifies that requests originated from chrome.identity.getAuthToken()
+// API have Mirror headers attached.
+IN_PROC_BROWSER_TEST_F(MirrorBrowserTest, MirrorExtensionConsent_GetAuthToken) {
+  RunExtensionConsentTest(extensions::WebAuthFlow::GET_AUTH_TOKEN, true);
 }
 
 }  // namespace

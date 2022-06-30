@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/component_export.h"
-#include "base/macros.h"
 
 namespace chromeos {
 
@@ -23,7 +22,7 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkTypePattern {
   // Matches wireless (WiFi, Cellular, etc.) networks
   static NetworkTypePattern Wireless();
 
-  // Matches Cellular, WiMAX, or Tether networks.
+  // Matches Cellular or Tether networks.
   static NetworkTypePattern Mobile();
 
   // Matches Physical networks (i.e. excludes Tether and VPN).
@@ -41,7 +40,6 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkTypePattern {
   static NetworkTypePattern WiFi();
   static NetworkTypePattern Cellular();
   static NetworkTypePattern VPN();
-  static NetworkTypePattern Wimax();
 
   static NetworkTypePattern Tether();
 
@@ -51,6 +49,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkTypePattern {
   // Note: Shill distinguishes Ethernet without EAP from Ethernet with EAP. If
   // unsure, better use one of the matchers above.
   static NetworkTypePattern Primitive(const std::string& shill_network_type);
+
+  NetworkTypePattern(const NetworkTypePattern&) = default;
+  NetworkTypePattern& operator=(const NetworkTypePattern&) = default;
 
   bool Equals(const NetworkTypePattern& other) const;
   bool MatchesType(const std::string& shill_network_type) const;
@@ -70,10 +71,13 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkTypePattern {
 
   // The bit array of the matching network types.
   int pattern_;
-
-  DISALLOW_ASSIGN(NetworkTypePattern);
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove when moved to ash/components/.
+namespace ash {
+using ::chromeos::NetworkTypePattern;
+}
 
 #endif  // CHROMEOS_NETWORK_NETWORK_TYPE_PATTERN_H_

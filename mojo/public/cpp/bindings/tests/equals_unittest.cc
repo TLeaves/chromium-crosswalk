@@ -4,7 +4,6 @@
 
 #include <utility>
 
-#include "base/message_loop/message_loop.h"
 #include "mojo/public/interfaces/bindings/tests/test_structs.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -59,7 +58,7 @@ TEST_F(EqualsTest, Array) {
   NamedRegionPtr n2(n1.Clone());
   EXPECT_TRUE(n1.Equals(n2));
 
-  n2->rects = base::nullopt;
+  n2->rects = absl::nullopt;
   EXPECT_FALSE(n1.Equals(n2));
   n2->rects.emplace();
   EXPECT_FALSE(n1.Equals(n2));

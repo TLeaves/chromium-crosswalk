@@ -6,7 +6,7 @@
 
 #include <utility>
 
-#include "base/task/post_task.h"
+#include "base/callback_helpers.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/win/conflicts/module_database.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -25,8 +25,7 @@ ModuleListComponentUpdater::UniquePtr ModuleListComponentUpdater::Create(
       new ModuleListComponentUpdater(
           module_list_component_id,
           on_module_list_component_not_updated_callback),
-      base::OnTaskRunnerDeleter(base::CreateSequencedTaskRunnerWithTraits(
-          {content::BrowserThread::UI})));
+      base::OnTaskRunnerDeleter(content::GetUIThreadTaskRunner({})));
 }
 
 ModuleListComponentUpdater::ModuleListComponentUpdater(
@@ -34,10 +33,9 @@ ModuleListComponentUpdater::ModuleListComponentUpdater(
     const base::RepeatingClosure& on_module_list_component_not_updated_callback)
     : module_list_component_id_(module_list_component_id),
       on_module_list_component_not_updated_callback_(
-          on_module_list_component_not_updated_callback),
-      observer_(this) {
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::UI},
+          on_module_list_component_not_updated_callback) {
+  content::GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&ModuleListComponentUpdater::InitializeOnUIThread,
                      base::Unretained(this)));
 }
@@ -48,7 +46,7 @@ void ModuleListComponentUpdater::InitializeOnUIThread() {
   auto* component_update_service = g_browser_process->component_updater();
 
   // Observe the component updater service to know the result of the update.
-  observer_.Add(component_update_service);
+  observation_.Observe(component_update_service);
 
   component_update_service->MaybeThrottle(module_list_component_id_,
                                           base::DoNothing());

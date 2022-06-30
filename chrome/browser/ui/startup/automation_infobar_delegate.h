@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_UI_STARTUP_AUTOMATION_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_UI_STARTUP_AUTOMATION_INFOBAR_DELEGATE_H_
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
-#include "base/strings/string16.h"
+#include <string>
+
+#include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "url/gurl.h"
 
@@ -16,17 +16,22 @@
 class AutomationInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   static void Create();
+  static infobars::InfoBar* Create(
+      infobars::ContentInfoBarManager* infobar_manager);
+
+  AutomationInfoBarDelegate(const AutomationInfoBarDelegate&) = delete;
+  AutomationInfoBarDelegate& operator=(const AutomationInfoBarDelegate&) =
+      delete;
 
  private:
-  AutomationInfoBarDelegate();
-  ~AutomationInfoBarDelegate() override;
+  AutomationInfoBarDelegate() = default;
+  ~AutomationInfoBarDelegate() override = default;
 
   infobars::InfoBarDelegate::InfoBarIdentifier GetIdentifier() const override;
   bool ShouldExpire(const NavigationDetails& details) const override;
-  base::string16 GetMessageText() const override;
+  bool ShouldAnimate() const override;
+  std::u16string GetMessageText() const override;
   int GetButtons() const override;
-
-  DISALLOW_COPY_AND_ASSIGN(AutomationInfoBarDelegate);
 };
 
 #endif  // CHROME_BROWSER_UI_STARTUP_AUTOMATION_INFOBAR_DELEGATE_H_

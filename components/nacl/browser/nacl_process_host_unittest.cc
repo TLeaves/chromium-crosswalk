@@ -8,7 +8,9 @@
 #include "components/nacl/browser/nacl_process_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
+#include <windows.h>
+
 TEST(NaClProcessHostTest, AddressSpaceAllocation) {
   size_t size = 1 << 20;  // 1 MB
   void* addr = nacl::AllocateAddressSpaceASLR(GetCurrentProcess(), size);

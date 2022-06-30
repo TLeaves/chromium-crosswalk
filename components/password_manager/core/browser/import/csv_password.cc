@@ -6,94 +6,97 @@
 
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
+#include "components/password_manager/core/browser/form_parsing/form_parser.h"
 #include "components/password_manager/core/browser/import/csv_field_parser.h"
+
 #include "url/gurl.h"
 
 namespace password_manager {
 
-using ::autofill::PasswordForm;
+namespace {
 
-CSVPassword::CSVPassword() = default;
+// Convert() unescapes a CSV field |str| and converts the result to a 16-bit
+// string. |str| is assumed to exclude the outer pair of quotation marks, if
+// originally present.
+std::u16string Convert(base::StringPiece str) {
+  std::string str_copy(str);
+  base::ReplaceSubstringsAfterOffset(&str_copy, 0, "\"\"", "\"");
+  return base::UTF8ToUTF16(str_copy);
+}
 
-CSVPassword::CSVPassword(ColumnMap map, base::StringPiece csv_row)
-    : map_(std::move(map)), row_(csv_row) {}
+}  // namespace
 
-CSVPassword::CSVPassword(const CSVPassword&) = default;
-
-CSVPassword::CSVPassword(CSVPassword&&) = default;
-
-CSVPassword& CSVPassword::operator=(const CSVPassword&) = default;
-
-CSVPassword& CSVPassword::operator=(CSVPassword&&) = default;
-
-CSVPassword::~CSVPassword() = default;
-
-bool CSVPassword::Parse(PasswordForm* form) const {
-  // |map_| must be an (1) injective and (2) surjective (3) partial map. (3) is
-  // enforced by its type, (2) is checked later in the code and (1) follows from
-  // (2) and the following size() check.
-  if (map_.size() != kLabelCount)
-    return false;
+CSVPassword::CSVPassword(const ColumnMap& map, base::StringPiece row) {
+  if (map.size() != kLabelCount) {
+    status_ = Status::kSemanticError;
+    return;
+  }
 
   size_t field_idx = 0;
-  CSVFieldParser parser(row_);
-  GURL origin;
-  base::StringPiece username;
-  base::StringPiece password;
+  CSVFieldParser parser(row);
   bool username_set = false;
+  status_ = Status::kOK;
+
   while (parser.HasMoreFields()) {
     base::StringPiece field;
-    if (!parser.NextField(&field))
-      return false;
-    auto meaning_it = map_.find(field_idx++);
-    if (meaning_it == map_.end())
+    if (!parser.NextField(&field)) {
+      status_ = Status::kSyntaxError;
+      return;
+    }
+    auto meaning_it = map.find(field_idx++);
+    if (meaning_it == map.end())
       continue;
     switch (meaning_it->second) {
       case Label::kOrigin:
-        if (!base::IsStringASCII(field))
-          return false;
-        origin = GURL(field);
+        if (!base::IsStringASCII(field)) {
+          status_ = Status::kSyntaxError;
+          return;
+        }
+        url_ = GURL(field);
         break;
       case Label::kUsername:
-        username = field;
+        username_ = field;
         username_set = true;
         break;
       case Label::kPassword:
-        password = field;
+        password_ = field;
         break;
     }
   }
-  // While all of origin, username and password must be set in the CSV data row,
-  // username is permitted to be an empty string, while password and origin are
-  // not.
-  if (!origin.is_valid() || !username_set || password.empty())
-    return false;
-  if (!form)
-    return true;
-  // There is currently no way to import non-HTML credentials.
-  form->scheme = PasswordForm::Scheme::kHtml;
-  // GURL::GetOrigin() returns an empty GURL for Android credentials due
-  // to the non-standard scheme ("android://"). Hence the following
-  // explicit check is necessary to set |signon_realm| correctly for both
-  // regular and Android credentials.
-  form->signon_realm = IsValidAndroidFacetURI(origin.spec())
-                           ? origin.spec()
-                           : origin.GetOrigin().spec();
-  form->origin = std::move(origin);
-  form->username_value = base::UTF8ToUTF16(username);
-  form->password_value = base::UTF8ToUTF16(password);
-  return true;
+  // While all of origin, username and password must be set in the CSV data
+  // row, username is permitted to be an empty string, while password and
+  // origin are not.
+  if (!url_.is_valid() || !username_set || password_.empty()) {
+    status_ = Status::kSemanticError;
+  }
 }
 
-PasswordForm CSVPassword::ParseValid() const {
-  PasswordForm result;
-  bool success = Parse(&result);
-  DCHECK(success);
-  return result;
+CSVPassword::Status CSVPassword::GetParseStatus() const {
+  return status_;
+}
+
+PasswordForm CSVPassword::ToPasswordForm() const {
+  // Only valid PasswordForms are allowed to be created.
+  DCHECK_EQ(this->GetParseStatus(), Status::kOK);
+  // There is currently no way to import non-HTML credentials.
+  PasswordForm form;
+  form.scheme = PasswordForm::Scheme::kHtml;
+  // Android credentials have a non-standard scheme ("android://"). Hence the
+  // following explicit check is necessary to set |signon_realm| correctly for
+  // both regular and Android credentials.
+  form.signon_realm =
+      IsValidAndroidFacetURI(url_.spec()) ? url_.spec() : GetSignonRealm(url_);
+  form.url = url_;
+  form.username_value = Convert(username_);
+  form.password_value = Convert(password_);
+  form.date_created = base::Time::Now();
+  form.date_password_modified = form.date_created;
+  return form;
 }
 
 }  // namespace password_manager

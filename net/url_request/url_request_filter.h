@@ -9,7 +9,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "base/macros.h"
 #include "net/base/net_export.h"
 #include "net/url_request/url_request_interceptor.h"
 
@@ -43,6 +42,9 @@ class NET_EXPORT URLRequestFilter : public URLRequestInterceptor {
   // Singleton instance for use.
   static URLRequestFilter* GetInstance();
 
+  URLRequestFilter(const URLRequestFilter&) = delete;
+  URLRequestFilter& operator=(const URLRequestFilter&) = delete;
+
   void AddHostnameInterceptor(
       const std::string& scheme,
       const std::string& hostname,
@@ -65,9 +67,8 @@ class NET_EXPORT URLRequestFilter : public URLRequestInterceptor {
   int hit_count() const { return hit_count_; }
 
   // URLRequestInterceptor implementation:
-  URLRequestJob* MaybeInterceptRequest(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const override;
+  std::unique_ptr<URLRequestJob> MaybeInterceptRequest(
+      URLRequest* request) const override;
 
  private:
   // scheme,hostname -> URLRequestInterceptor
@@ -87,12 +88,10 @@ class NET_EXPORT URLRequestFilter : public URLRequestInterceptor {
   // Maps URLs to interceptors.
   URLInterceptorMap url_interceptor_map_;
 
-  mutable int hit_count_;
+  mutable int hit_count_ = 0;
 
   // Singleton instance.
   static URLRequestFilter* shared_instance_;
-
-  DISALLOW_COPY_AND_ASSIGN(URLRequestFilter);
 };
 
 }  // namespace net

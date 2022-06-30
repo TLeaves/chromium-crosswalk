@@ -4,12 +4,15 @@
 
 #include "components/password_manager/core/browser/stub_password_manager_driver.h"
 
+#include "url/gurl.h"
+
 namespace password_manager {
 
-StubPasswordManagerDriver::StubPasswordManagerDriver() {
-}
+StubPasswordManagerDriver::StubPasswordManagerDriver() = default;
+StubPasswordManagerDriver::~StubPasswordManagerDriver() = default;
 
-StubPasswordManagerDriver::~StubPasswordManagerDriver() {
+int StubPasswordManagerDriver::GetId() const {
+  return 0;
 }
 
 void StubPasswordManagerDriver::FillPasswordForm(
@@ -17,20 +20,19 @@ void StubPasswordManagerDriver::FillPasswordForm(
 }
 
 void StubPasswordManagerDriver::GeneratedPasswordAccepted(
-    const base::string16& password) {
+    const std::u16string& password) {}
+
+void StubPasswordManagerDriver::FillSuggestion(const std::u16string& username,
+                                               const std::u16string& password) {
 }
 
-void StubPasswordManagerDriver::FillSuggestion(const base::string16& username,
-                                               const base::string16& password) {
-}
+#if BUILDFLAG(IS_ANDROID)
+void StubPasswordManagerDriver::TriggerFormSubmission() {}
+#endif
 
 void StubPasswordManagerDriver::PreviewSuggestion(
-    const base::string16& username,
-    const base::string16& password) {
-}
-
-void StubPasswordManagerDriver::ShowInitialPasswordAccountSuggestions(
-    const autofill::PasswordFormFillData& form_data) {}
+    const std::u16string& username,
+    const std::u16string& password) {}
 
 void StubPasswordManagerDriver::ClearPreviewedForm() {
 }
@@ -49,12 +51,16 @@ StubPasswordManagerDriver::GetPasswordAutofillManager() {
   return nullptr;
 }
 
-autofill::AutofillDriver* StubPasswordManagerDriver::GetAutofillDriver() {
-  return nullptr;
+bool StubPasswordManagerDriver::IsInPrimaryMainFrame() const {
+  return true;
 }
 
-bool StubPasswordManagerDriver::IsMainFrame() const {
+bool StubPasswordManagerDriver::CanShowAutofillUi() const {
   return true;
+}
+
+::ui::AXTreeID StubPasswordManagerDriver::GetAxTreeId() const {
+  return {};
 }
 
 const GURL& StubPasswordManagerDriver::GetLastCommittedURL() const {

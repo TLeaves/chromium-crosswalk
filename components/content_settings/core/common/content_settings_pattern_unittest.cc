@@ -88,6 +88,15 @@ TEST(ContentSettingsPatternTest, FromURL) {
   pattern = ContentSettingsPattern::FromURL(GURL("file:///foo/bar.html"));
   EXPECT_TRUE(pattern.IsValid());
   EXPECT_EQ("file:///foo/bar.html", pattern.ToString());
+
+  // WebUI schemes can't be created by FromURL, because they have no port and
+  // can't have domain wildcard.
+  pattern = ContentSettingsPattern::FromURL(GURL("chrome://test"));
+  EXPECT_FALSE(pattern.IsValid());
+  pattern = ContentSettingsPattern::FromURL(GURL("chrome-untrusted://test"));
+  EXPECT_FALSE(pattern.IsValid());
+  pattern = ContentSettingsPattern::FromURL(GURL("devtools://devtools"));
+  EXPECT_FALSE(pattern.IsValid());
 }
 
 TEST(ContentSettingsPatternTest, FilesystemUrls) {
@@ -179,6 +188,20 @@ TEST(ContentSettingsPatternTest, FromURLNoWildcard) {
       GURL("filesystem:https://www.google.com:81/temporary/")));
   EXPECT_FALSE(pattern.Matches(
       GURL("filesystem:https://foo.www.google.com/temporary/")));
+
+  pattern = ContentSettingsPattern::FromURLNoWildcard(GURL("chrome://test"));
+  EXPECT_TRUE(pattern.IsValid());
+  EXPECT_TRUE(pattern.Matches(GURL("chrome://test")));
+
+  pattern = ContentSettingsPattern::FromURLNoWildcard(
+      GURL("chrome-untrusted://test"));
+  EXPECT_TRUE(pattern.IsValid());
+  EXPECT_TRUE(pattern.Matches(GURL("chrome-untrusted://test")));
+
+  pattern =
+      ContentSettingsPattern::FromURLNoWildcard(GURL("devtools://devtools"));
+  EXPECT_TRUE(pattern.IsValid());
+  EXPECT_TRUE(pattern.Matches(GURL("devtools://devtools")));
 }
 
 // The static Wildcard() method goes through a fast path and avoids the Builder
@@ -480,6 +503,18 @@ TEST(ContentSettingsPatternTest, FromString_Canonicalized) {
                Pattern("file:///tmp/bar/../test.html").ToString().c_str());
 }
 
+TEST(ContentSettingsPatternTest, FromString_WebUISchemes) {
+  const char* patterns[] = {"chrome://test/", "chrome-untrusted://test/",
+                            "devtools://devtools/"};
+
+  for (const char* pattern_str : patterns) {
+    ContentSettingsPattern pattern = Pattern(pattern_str);
+    EXPECT_TRUE(pattern.IsValid());
+    EXPECT_EQ(pattern_str, pattern.ToString());
+    EXPECT_TRUE(pattern.Matches(GURL(pattern_str)));
+  }
+}
+
 TEST(ContentSettingsPatternTest, InvalidPatterns) {
   // StubObserver expects an empty pattern top be returned as empty string.
   EXPECT_FALSE(ContentSettingsPattern().IsValid());
@@ -510,8 +545,6 @@ TEST(ContentSettingsPatternTest, InvalidPatterns) {
   // Invalid file pattern strings.
   EXPECT_FALSE(Pattern("file://").IsValid());
   EXPECT_STREQ("", Pattern("file://").ToString().c_str());
-  EXPECT_FALSE(Pattern("file:///foo/bar.html:8080").IsValid());
-  EXPECT_STREQ("", Pattern("file:///foo/bar.html:8080").ToString().c_str());
 
   // Host having multiple ending dots.
   EXPECT_FALSE(Pattern("www.example.com..").IsValid());
@@ -796,6 +829,12 @@ TEST(ContentSettingsPatternTest, Schemes) {
             Pattern("www.example.com").GetScheme());
   EXPECT_EQ(ContentSettingsPattern::SCHEME_OTHER,
             Pattern("filesystem:http://www.google.com/temporary/").GetScheme());
+  EXPECT_EQ(ContentSettingsPattern::SCHEME_CHROME,
+            Pattern("chrome://sample/").GetScheme());
+  EXPECT_EQ(ContentSettingsPattern::SCHEME_CHROMEUNTRUSTED,
+            Pattern("chrome-untrusted://sample/").GetScheme());
+  EXPECT_EQ(ContentSettingsPattern::SCHEME_DEVTOOLS,
+            Pattern("devtools://devtools/").GetScheme());
 }
 
 TEST(ContentSettingsPatternTest, FileSchemeHasPath) {

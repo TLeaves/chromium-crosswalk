@@ -29,8 +29,9 @@ WallpaperUtil.deleteWallpaperFromLocalFS = function(wallpaperFilename) {
         // a faster synchronization. So each file is expected to be
         // deleted twice and the second attempt is a noop.
         function(e) {
-          if (e.name != 'NotFoundError')
+          if (e.name != 'NotFoundError') {
             WallpaperUtil.onFileSystemError(e);
+          }
         });
     fs.root.getFile(
         thumbnailPath, {create: false},
@@ -38,8 +39,9 @@ WallpaperUtil.deleteWallpaperFromLocalFS = function(wallpaperFilename) {
           fe.remove(function() {}, null);
         },
         function(e) {
-          if (e.name != 'NotFoundError')
+          if (e.name != 'NotFoundError') {
             WallpaperUtil.onFileSystemError(e);
+          }
         });
   });
 };
@@ -52,8 +54,9 @@ WallpaperUtil.deleteWallpaperFromLocalFS = function(wallpaperFilename) {
 WallpaperUtil.storeWallpaperFromSyncFSToLocalFS = function(wallpaperFileEntry) {
   var filenName = wallpaperFileEntry.name;
   var storeDir = Constants.WallpaperDirNameEnum.ORIGINAL;
-  if (filenName.indexOf(Constants.CustomWallpaperThumbnailSuffix) != -1)
+  if (filenName.indexOf(Constants.CustomWallpaperThumbnailSuffix) != -1) {
     storeDir = Constants.WallpaperDirNameEnum.THUMBNAIL;
+  }
   filenName = filenName.replace(Constants.CustomWallpaperThumbnailSuffix, '');
   wallpaperFileEntry.file(function(file) {
     var reader = new FileReader();
@@ -86,8 +89,9 @@ WallpaperUtil.deleteWallpaperFromSyncFS = function(wallpaperFilename) {
           // will then both be fired on device B, which makes the
           // third party wallpaper be deleted twice from the sync
           // file system. We should ignore this error.
-          if (e.name != 'NotFoundError')
+          if (e.name != 'NotFoundError') {
             WallpaperUtil.onFileSystemError(e);
+          }
         });
     fs.root.getFile(
         thumbnailFilename, {create: false},
@@ -96,8 +100,9 @@ WallpaperUtil.deleteWallpaperFromSyncFS = function(wallpaperFilename) {
         },
         function(e) {
           // Same as above.
-          if (e.name != 'NotFoundError')
+          if (e.name != 'NotFoundError') {
             WallpaperUtil.onFileSystemError(e);
+          }
         });
   };
   WallpaperUtil.requestSyncFS(success);
@@ -120,8 +125,9 @@ WallpaperUtil.enabledSyncThemesCallback = function(callback) {
  */
 WallpaperUtil.requestSyncFS = function(callback) {
   WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
-    if (!syncEnabled)
+    if (!syncEnabled) {
       return;
+    }
     if (WallpaperUtil.syncFs) {
       callback(WallpaperUtil.syncFs);
     } else {
@@ -170,8 +176,9 @@ WallpaperUtil.writeFile = function(fileEntry, wallpaperData, writeCallback) {
   fileEntry.createWriter(function(fileWriter) {
     var blob = new Blob([new Int8Array(wallpaperData)]);
     fileWriter.write(blob);
-    if (writeCallback)
+    if (writeCallback) {
       writeCallback();
+    }
   }, WallpaperUtil.onFileSystemError);
 };
 
@@ -235,8 +242,9 @@ WallpaperUtil.setCustomWallpaperFromSyncFS = function(
       console.error('wallpaperFilename is not provided.');
       return;
     }
-    if (!wallpaperLayout)
+    if (!wallpaperLayout) {
       wallpaperLayout = 'CENTER_CROPPED';
+    }
     fs.root.getFile(
         wallpaperFilename, {create: false},
         function(fileEntry) {
@@ -252,8 +260,9 @@ WallpaperUtil.setCustomWallpaperFromSyncFS = function(
                       console.error(chrome.runtime.lastError.message);
                       return;
                     }
-                    if (onSuccess)
+                    if (onSuccess) {
                       onSuccess();
+                    }
                   });
             };
             reader.readAsArrayBuffer(file);
@@ -288,8 +297,9 @@ WallpaperUtil.saveToSyncStorage = function(key, value, opt_callback) {
   var items = {};
   items[key] = value;
   WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
-    if (syncEnabled)
+    if (syncEnabled) {
       Constants.WallpaperSyncStorage.set(items, opt_callback);
+    }
   });
 };
 
@@ -339,10 +349,11 @@ WallpaperUtil.saveWallpaperInfo = function(url, layout, source, appName) {
  */
 WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
   var xhr;
-  if (opt_xhr)
+  if (opt_xhr) {
     xhr = opt_xhr;
-  else
+  } else {
     xhr = new XMLHttpRequest();
+  }
 
   try {
     // Do not use loadend here to handle both success and failure case. It gets
@@ -373,8 +384,11 @@ WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
  */
 WallpaperUtil.setOnlineWallpaperWithoutPreview = function(
     url, layout, onSuccess, onFailure) {
+  // Skip setting the |asset_id| and |collection_id| to avoid logging another
+  // impression when the wallpaper is automatically refreshed.
   chrome.wallpaperPrivate.setWallpaperIfExists(
-      url, layout, false /*previewMode=*/, exists => {
+      /*asset_id=*/ '', url, /*collection_id=*/ '', layout,
+      /*previewMode=*/ false, exists => {
         if (exists) {
           onSuccess();
           return;
@@ -383,7 +397,7 @@ WallpaperUtil.setOnlineWallpaperWithoutPreview = function(
         this.fetchURL(url, 'arraybuffer', xhr => {
           if (xhr.response != null) {
             chrome.wallpaperPrivate.setWallpaper(
-                xhr.response, layout, url, false /*previewMode=*/, onSuccess);
+                xhr.response, layout, url, /*previewMode=*/ false, onSuccess);
           } else {
             onFailure();
           }
@@ -410,8 +424,9 @@ WallpaperUtil.displayImage = function(imageElement, data, opt_callback) {
   imageElement.src =
       window.URL.createObjectURL(WallpaperUtil.createPngBlob(data));
   imageElement.addEventListener('load', function(e) {
-    if (opt_callback)
+    if (opt_callback) {
       opt_callback();
+    }
     // Revoke the url since it won't be used anymore after the image is loaded.
     window.URL.revokeObjectURL(imageElement.src);
   });
@@ -474,8 +489,9 @@ WallpaperUtil.displayThumbnail = function(imageElement, url, source) {
  */
 WallpaperUtil.testSendMessage = function(message) {
   var test = chrome.test || window.top.chrome.test;
-  if (test)
+  if (test) {
     test.sendMessage(message);
+  }
 };
 
 /**

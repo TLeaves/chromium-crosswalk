@@ -10,9 +10,9 @@
 #ifndef REMOTING_PROTOCOL_CLIENT_STUB_H_
 #define REMOTING_PROTOCOL_CLIENT_STUB_H_
 
-#include "base/macros.h"
 #include "remoting/protocol/clipboard_stub.h"
 #include "remoting/protocol/cursor_shape_stub.h"
+#include "remoting/protocol/keyboard_layout_stub.h"
 
 namespace remoting {
 namespace protocol {
@@ -20,12 +20,18 @@ namespace protocol {
 class Capabilities;
 class ExtensionMessage;
 class PairingResponse;
+class TransportInfo;
 class VideoLayout;
 
 class ClientStub : public ClipboardStub,
-                   public CursorShapeStub {
+                   public CursorShapeStub,
+                   public KeyboardLayoutStub {
  public:
   ClientStub() {}
+
+  ClientStub(const ClientStub&) = delete;
+  ClientStub& operator=(const ClientStub&) = delete;
+
   ~ClientStub() override {}
 
   // Passes the set of capabilities supported by the host to the client.
@@ -40,8 +46,8 @@ class ClientStub : public ClipboardStub,
   // Sets video layout.
   virtual void SetVideoLayout(const VideoLayout& video_layout) = 0;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(ClientStub);
+  // Passes the host's transport info to the client.
+  virtual void SetTransportInfo(const TransportInfo& transport_info) = 0;
 };
 
 }  // namespace protocol

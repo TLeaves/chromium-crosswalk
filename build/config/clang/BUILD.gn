@@ -15,9 +15,17 @@ config("find_bad_constructs") {
       "-add-plugin",
       "-Xclang",
       "find-bad-constructs",
+      "-Xclang",
+      "-plugin-arg-find-bad-constructs",
+      "-Xclang",
+      "raw-ptr-template-as-trivial-member",
+      "-Xclang",
+      "-plugin-arg-find-bad-constructs",
+      "-Xclang",
+      "use-classify-type",
     ]
 
-    if (is_linux || is_android || is_fuchsia) {
+    if (is_linux || is_chromeos || is_android || is_fuchsia) {
       cflags += [
         "-Xclang",
         "-plugin-arg-find-bad-constructs",
@@ -39,4 +47,12 @@ config("extra_warnings") {
 
     "-Wtautological-overlap-compare",
   ]
+}
+
+group("llvm-symbolizer_data") {
+  if (is_win) {
+    data = [ "$clang_base_path/bin/llvm-symbolizer.exe" ]
+  } else {
+    data = [ "$clang_base_path/bin/llvm-symbolizer" ]
+  }
 }

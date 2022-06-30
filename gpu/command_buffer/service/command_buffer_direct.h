@@ -6,7 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_COMMAND_BUFFER_DIRECT_H_
 
 #include "base/callback.h"
-#include "gpu/command_buffer/common/command_buffer_id.h"
+#include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/decoder_client.h"
@@ -35,9 +35,13 @@ class GPU_EXPORT CommandBufferDirect : public CommandBuffer,
                                                int32_t start,
                                                int32_t end) override;
   void SetGetBuffer(int32_t transfer_buffer_id) override;
-  scoped_refptr<Buffer> CreateTransferBuffer(uint32_t size,
-                                             int32_t* id) override;
+  scoped_refptr<Buffer> CreateTransferBuffer(
+      uint32_t size,
+      int32_t* id,
+      TransferBufferAllocationOption option =
+          TransferBufferAllocationOption::kLoseContextOnOOM) override;
   void DestroyTransferBuffer(int32_t id) override;
+  void ForceLostContext(error::ContextLostReason reason) override;
 
   // CommandBufferServiceClient implementation:
   CommandBatchProcessedResult OnCommandBatchProcessed() override;
@@ -61,10 +65,9 @@ class GPU_EXPORT CommandBufferDirect : public CommandBuffer,
 
  private:
   CommandBufferService service_;
-  AsyncAPIInterface* handler_ = nullptr;
-  const CommandBufferId command_buffer_id_;
+  raw_ptr<AsyncAPIInterface> handler_ = nullptr;
 };
 
 }  // namespace gpu
 
-#endif  // GPU_COMMAND_BUFFER_SERVICE_COMMAND_BUFFER_DIRECT_H
+#endif  // GPU_COMMAND_BUFFER_SERVICE_COMMAND_BUFFER_DIRECT_H_

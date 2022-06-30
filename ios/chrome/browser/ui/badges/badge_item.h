@@ -7,6 +7,7 @@
 
 #import <UIKit/UIKit.h>
 
+#import "ios/chrome/browser/infobars/badge_state.h"
 #import "ios/chrome/browser/ui/badges/badge_type.h"
 
 // Holds properties and values the UI needs to configure a badge button.
@@ -14,10 +15,13 @@
 
 // The type of the badge.
 - (BadgeType)badgeType;
+// Whether the badge should be displayed in the fullScreenBadge position. If
+// YES, it will be displayed in both FullScreen and non FullScreen.
+@property(nonatomic, assign, readonly) BOOL fullScreen;
 // Some badges may not be tappable if there is no action associated with it.
 @property(nonatomic, assign, readonly, getter=isTappable) BOOL tappable;
-// Whether this badge is in an accepted state.
-@property(nonatomic, assign, readonly, getter=isAccepted) BOOL accepted;
+// The BadgeState of the badge.
+@property(nonatomic, assign) BadgeState badgeState;
 
 @end
 

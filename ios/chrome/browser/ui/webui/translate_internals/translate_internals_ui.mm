@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "components/translate/core/common/translate_util.h"
 #import "components/translate/translate_internals/translate_internals_handler.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
@@ -28,30 +29,37 @@ web::WebUIIOSDataSource* CreateTranslateInternalsHTMLSource() {
       web::WebUIIOSDataSource::Create(kChromeUITranslateInternalsHost);
 
   source->SetDefaultResource(IDR_IOS_TRANSLATE_INTERNALS_HTML);
-  source->SetJsonPath("strings.js");
+  source->UseStringsJs();
+  source->AddResourcePath("translate_internals.css",
+                          IDR_IOS_TRANSLATE_INTERNALS_CSS);
   source->AddResourcePath("translate_internals.js",
                           IDR_IOS_TRANSLATE_INTERNALS_JS);
 
-  base::DictionaryValue langs;
-  translate::TranslateInternalsHandler::GetLanguages(&langs);
-  for (base::DictionaryValue::Iterator it(langs); !it.IsAtEnd(); it.Advance()) {
-    std::string key = "language-" + it.key();
-    std::string value;
-    it.value().GetAsString(&value);
+  base::Value langs = translate::TranslateInternalsHandler::GetLanguages();
+  for (const auto key_value_pair : langs.DictItems()) {
+    DCHECK(key_value_pair.second.is_string());
+    std::string key = "language-" + key_value_pair.first;
+    const std::string& value = key_value_pair.second.GetString();
     source->AddString(key, value);
   }
 
-  source->AddString("cld-version", "3");
+  if (translate::IsTFLiteLanguageDetectionEnabled()) {
+    source->AddString("model-version", "TFLite_v1");
+  } else {
+    // The default language detection model is "CLD3".
+    source->AddString("model-version", "CLD3");
+  }
 
   return source;
 }
 
 }  // namespace
 
-TranslateInternalsUI::TranslateInternalsUI(web::WebUIIOS* web_ui)
-    : web::WebUIIOSController(web_ui) {
+TranslateInternalsUI::TranslateInternalsUI(web::WebUIIOS* web_ui,
+                                           const std::string& host)
+    : web::WebUIIOSController(web_ui, host) {
   web_ui->AddMessageHandler(std::make_unique<IOSTranslateInternalsHandler>());
-  web::WebUIIOSDataSource::Add(ios::ChromeBrowserState::FromWebUIIOS(web_ui),
+  web::WebUIIOSDataSource::Add(ChromeBrowserState::FromWebUIIOS(web_ui),
                                CreateTranslateInternalsHTMLSource());
 }
 

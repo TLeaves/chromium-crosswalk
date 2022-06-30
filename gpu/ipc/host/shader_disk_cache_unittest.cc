@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #include "gpu/ipc/host/shader_disk_cache.h"
+
 #include "base/files/scoped_temp_dir.h"
-#include "base/macros.h"
-#include "base/test/bind_test_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/bind.h"
+#include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -25,6 +26,9 @@ class ShaderDiskCacheTest : public testing::Test {
  public:
   ShaderDiskCacheTest() = default;
 
+  ShaderDiskCacheTest(const ShaderDiskCacheTest&) = delete;
+  ShaderDiskCacheTest& operator=(const ShaderDiskCacheTest&) = delete;
+
   ~ShaderDiskCacheTest() override = default;
 
   const base::FilePath& cache_path() { return temp_dir_.GetPath(); }
@@ -40,17 +44,15 @@ class ShaderDiskCacheTest : public testing::Test {
   void TearDown() override {
     factory_.RemoveCacheInfo(kDefaultClientId);
 
-    // Run all pending tasks before destroying ScopedTaskEnvironment. Otherwise,
+    // Run all pending tasks before destroying TaskEnvironment. Otherwise,
     // SimpleEntryImpl instances bound to pending tasks are destroyed in an
     // incorrect state (see |state_| DCHECK in ~SimpleEntryImpl).
-    scoped_task_environment_.RunUntilIdle();
+    task_environment_.RunUntilIdle();
   }
 
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::TaskEnvironment task_environment_;
   base::ScopedTempDir temp_dir_;
   ShaderCacheFactory factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShaderDiskCacheTest);
 };
 
 TEST_F(ShaderDiskCacheTest, ClearsCache) {
@@ -76,6 +78,23 @@ TEST_F(ShaderDiskCacheTest, ClearsCache) {
   rv = cache->Clear(time, time, clear_cb.callback());
   ASSERT_EQ(net::OK, clear_cb.GetResult(rv));
   EXPECT_EQ(0, cache->Size());
+}
+
+TEST_F(ShaderDiskCacheTest, ClearByPathTriggersCallback) {
+  InitCache();
+  factory()->Get(kDefaultClientId)->Cache(kCacheKey, kCacheValue);
+  net::TestCompletionCallback test_callback;
+  factory()->ClearByPath(cache_path(), base::Time(), base::Time::Max(),
+      base::BindLambdaForTesting([&]() { test_callback.callback().Run(1); } ));
+  ASSERT_TRUE(test_callback.WaitForResult());
+}
+
+// Important for clearing in-memory profiles.
+TEST_F(ShaderDiskCacheTest, ClearByPathWithEmptyPathTriggersCallback) {
+  net::TestCompletionCallback test_callback;
+  factory()->ClearByPath(base::FilePath(), base::Time(), base::Time::Max(),
+      base::BindLambdaForTesting([&]() { test_callback.callback().Run(1); } ));
+  ASSERT_TRUE(test_callback.WaitForResult());
 }
 
 // For https://crbug.com/663589.

@@ -2,11 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {util} from '../../../common/js/util.js';
+import {VolumeManager} from '../../../externs/volume_manager.js';
+
+import {ContentMetadataProvider} from './content_metadata_provider.js';
+import {DlpMetadataProvider} from './dlp_metadata_provider.js';
+import {ExternalMetadataProvider} from './external_metadata_provider.js';
+import {FileSystemMetadataProvider} from './file_system_metadata_provider.js';
+import {MetadataCacheSet, MetadataCacheSetStorageForObject} from './metadata_cache_set.js';
+import {MetadataItem} from './metadata_item.js';
+import {MetadataProvider} from './metadata_provider.js';
+import {MultiMetadataProvider} from './multi_metadata_provider.js';
+
 /**
  * Stats collected about Metadata handling for tests.
  * @final
  */
-class MetadataStats {
+export class MetadataStats {
   constructor() {
     /** @public {number} Total of entries fulfilled from cache. */
     this.fromCache = 0;
@@ -25,7 +37,7 @@ class MetadataStats {
   }
 }
 
-class MetadataModel {
+export class MetadataModel {
   /**
    * @param {!MetadataProvider} rawProvider
    */
@@ -36,7 +48,7 @@ class MetadataModel {
     /** @private @const {!MetadataProviderCache} */
     this.cache_ = new MetadataProviderCache();
 
-    /** @private @const {!Array<!MetadataProviderCallbackRequest<T>>} */
+    /** @private @const {!Array<!MetadataProviderCallbackRequest>} */
     this.callbackRequests_ = [];
 
     /**
@@ -53,7 +65,8 @@ class MetadataModel {
   static create(volumeManager) {
     return new MetadataModel(new MultiMetadataProvider(
         new FileSystemMetadataProvider(), new ExternalMetadataProvider(),
-        new ContentMetadataProvider(), volumeManager));
+        new ContentMetadataProvider(), new DlpMetadataProvider(),
+        volumeManager));
   }
 
   /**

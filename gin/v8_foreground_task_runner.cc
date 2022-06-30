@@ -5,9 +5,10 @@
 #include "gin/v8_foreground_task_runner.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/single_thread_task_runner.h"
+#include "base/callback_helpers.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 
 namespace gin {
 
@@ -32,9 +33,17 @@ void V8ForegroundTaskRunner::PostNonNestableTask(
 
 void V8ForegroundTaskRunner::PostDelayedTask(std::unique_ptr<v8::Task> task,
                                              double delay_in_seconds) {
-  task_runner_->PostDelayedTask(
+  task_runner_->PostDelayedTask(FROM_HERE,
+                                base::BindOnce(&v8::Task::Run, std::move(task)),
+                                base::Seconds(delay_in_seconds));
+}
+
+void V8ForegroundTaskRunner::PostNonNestableDelayedTask(
+    std::unique_ptr<v8::Task> task,
+    double delay_in_seconds) {
+  task_runner_->PostNonNestableDelayedTask(
       FROM_HERE, base::BindOnce(&v8::Task::Run, std::move(task)),
-      base::TimeDelta::FromSecondsD(delay_in_seconds));
+      base::Seconds(delay_in_seconds));
 }
 
 void V8ForegroundTaskRunner::PostIdleTask(std::unique_ptr<v8::IdleTask> task) {
@@ -43,6 +52,10 @@ void V8ForegroundTaskRunner::PostIdleTask(std::unique_ptr<v8::IdleTask> task) {
 }
 
 bool V8ForegroundTaskRunner::NonNestableTasksEnabled() const {
+  return true;
+}
+
+bool V8ForegroundTaskRunner::NonNestableDelayedTasksEnabled() const {
   return true;
 }
 

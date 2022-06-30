@@ -4,7 +4,6 @@
 
 #import "ios/chrome/test/fakes/fake_ar_quick_look_tab_helper_delegate.h"
 
-#include "base/logging.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -26,9 +25,11 @@
   return self;
 }
 
-- (void)ARQuickLookTabHelper:(ARQuickLookTabHelper*)tabHelper
-    didFinishDowloadingFileWithURL:(NSURL*)fileURL {
+- (void)presentUSDZFileWithURL:(NSURL*)fileURL
+                      webState:(web::WebState*)webState
+           allowContentScaling:(BOOL)allowContentScaling {
   [_fileURLs addObject:fileURL];
+  _allowsContentScaling = allowContentScaling;
 }
 
 @end

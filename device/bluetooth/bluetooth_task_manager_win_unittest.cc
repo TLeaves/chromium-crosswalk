@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/test/test_pending_task.h"
 #include "base/test/test_simple_task_runner.h"
@@ -112,8 +113,8 @@ TEST_F(BluetoothTaskManagerWinTest, SetPowered) {
     return;
 
   bluetooth_task_runner_->ClearPendingTasks();
-  base::Closure closure;
-  task_manager_->PostSetPoweredBluetoothTask(true, closure, closure);
+  task_manager_->PostSetPoweredBluetoothTask(true, base::OnceClosure(),
+                                             base::OnceClosure());
 
   EXPECT_EQ(1u, bluetooth_task_runner_->NumPendingTasks());
   bluetooth_task_runner_->RunPendingTasks();

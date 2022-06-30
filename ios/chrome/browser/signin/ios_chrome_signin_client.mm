@@ -7,12 +7,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "components/metrics/metrics_service.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
-#include "components/signin/ios/browser/account_consistency_service.h"
 #include "ios/chrome/browser/application_context.h"
 #include "ios/chrome/browser/browser_state/browser_state_info_cache.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state_manager.h"
-#include "ios/chrome/browser/signin/account_consistency_service_factory.h"
 #include "ios/chrome/browser/signin/gaia_auth_fetcher_ios.h"
 #include "ios/chrome/browser/webdata_services/web_data_service_factory.h"
 #include "ios/chrome/common/channel_info.h"
@@ -23,28 +21,20 @@
 #endif
 
 IOSChromeSigninClient::IOSChromeSigninClient(
-    ios::ChromeBrowserState* browser_state,
+    ChromeBrowserState* browser_state,
     scoped_refptr<content_settings::CookieSettings> cookie_settings,
     scoped_refptr<HostContentSettingsMap> host_content_settings_map)
     : network_callback_helper_(
           std::make_unique<WaitForNetworkCallbackHelper>()),
       browser_state_(browser_state),
       cookie_settings_(cookie_settings),
-      host_content_settings_map_(host_content_settings_map) {
-}
+      host_content_settings_map_(host_content_settings_map) {}
 
 IOSChromeSigninClient::~IOSChromeSigninClient() {
 }
 
 void IOSChromeSigninClient::Shutdown() {
   network_callback_helper_.reset();
-}
-
-// Returns a string describing the chrome version environment. Version format:
-// <Build Info> <OS> <Version number> (<Last change>)<channel or "-devel">
-// If version information is unavailable, returns "invalid."
-std::string IOSChromeSigninClient::GetProductVersion() {
-  return GetVersionString();
 }
 
 PrefService* IOSChromeSigninClient::GetPrefs() {
@@ -89,10 +79,4 @@ std::unique_ptr<GaiaAuthFetcher> IOSChromeSigninClient::CreateGaiaAuthFetcher(
     gaia::GaiaSource source) {
   return std::make_unique<GaiaAuthFetcherIOS>(
       consumer, source, GetURLLoaderFactory(), browser_state_);
-}
-
-void IOSChromeSigninClient::PreGaiaLogout(base::OnceClosure callback) {
-  AccountConsistencyService* accountConsistencyService =
-      ios::AccountConsistencyServiceFactory::GetForBrowserState(browser_state_);
-  accountConsistencyService->RemoveChromeConnectedCookies(std::move(callback));
 }

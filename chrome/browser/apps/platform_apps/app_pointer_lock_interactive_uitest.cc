@@ -5,13 +5,15 @@
 #include "chrome/browser/apps/platform_apps/app_browsertest_util.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "content/public/test/browser_test.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
 
 class ExtensionPointerLockTest : public extensions::PlatformAppBrowserTest {
  public:
   bool RunExtensionPointerLockTest(const char* app_path) {
-    ExtensionTestMessageListener launched_listener("Launched", true);
+    ExtensionTestMessageListener launched_listener("Launched",
+                                                   ReplyBehavior::kWillReply);
     LoadAndLaunchPlatformApp(app_path, &launched_listener);
 
     extensions::ResultCatcher catcher;

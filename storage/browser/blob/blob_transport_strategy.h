@@ -7,6 +7,8 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
+#include "base/memory/raw_ptr.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "storage/browser/blob/blob_memory_controller.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom.h"
 
@@ -35,8 +37,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobTransportStrategy {
   // outlive the BlobTransportStrategy instance. If |data| is bound, this call
   // may use it to acquire the bytes asynchronously rather than reading from
   // |bytes|.
-  virtual void AddBytesElement(blink::mojom::DataElementBytes* bytes,
-                               const blink::mojom::BytesProviderPtr& data) = 0;
+  virtual void AddBytesElement(
+      blink::mojom::DataElementBytes* bytes,
+      const mojo::Remote<blink::mojom::BytesProvider>& data) = 0;
 
   // Called when quota has been allocated and transportation should begin.
   // Implementations will call the |result_callback_| when transportation has
@@ -48,7 +51,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) BlobTransportStrategy {
   BlobTransportStrategy(BlobDataBuilder* builder,
                         ResultCallback result_callback);
 
-  BlobDataBuilder* builder_;
+  raw_ptr<BlobDataBuilder, DanglingUntriaged> builder_;
   ResultCallback result_callback_;
 };
 

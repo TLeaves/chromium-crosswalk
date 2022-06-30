@@ -4,14 +4,16 @@
 
 #import "ios/chrome/browser/ui/collection_view/collection_view_controller.h"
 
-#include "base/logging.h"
+#import <MaterialComponents/MaterialCollectionCells.h>
+
+#include "base/check.h"
 #include "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/collection_view/cells/MDCCollectionViewCell+Chrome.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_item.h"
 #import "ios/chrome/browser/ui/collection_view/collection_view_model.h"
 #import "ios/chrome/browser/ui/material_components/chrome_app_bar_view_controller.h"
 #import "ios/chrome/browser/ui/material_components/utils.h"
-#import "ios/third_party/material_components_ios/src/components/CollectionCells/src/MaterialCollectionCells.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -61,6 +63,12 @@
                name:UIContentSizeCategoryDidChangeNotification
              object:nil];
   }
+
+  // Suport dark mode.
+  self.collectionView.backgroundColor =
+      [UIColor colorNamed:kGroupedPrimaryBackgroundColor];
+  self.styler.cellBackgroundColor =
+      [UIColor colorNamed:kGroupedSecondaryBackgroundColor];
 }
 
 - (void)contentSizeCategoryDidChange:(id)sender {
@@ -110,7 +118,7 @@
       [indexPaths sortedArrayUsingSelector:@selector(compare:)];
   for (NSIndexPath* indexPath in [sortedIndexPaths reverseObjectEnumerator]) {
     NSInteger sectionIdentifier = [self.collectionViewModel
-        sectionIdentifierForSection:indexPath.section];
+        sectionIdentifierForSectionIndex:indexPath.section];
     NSInteger itemType =
         [self.collectionViewModel itemTypeForIndexPath:indexPath];
     NSUInteger index =
@@ -134,8 +142,8 @@
       [self.collectionViewModel itemAtIndexPath:indexPath];
 
   // Item coordinates.
-  NSInteger sectionIdentifier =
-      [self.collectionViewModel sectionIdentifierForSection:indexPath.section];
+  NSInteger sectionIdentifier = [self.collectionViewModel
+      sectionIdentifierForSectionIndex:indexPath.section];
   NSInteger itemType =
       [self.collectionViewModel itemTypeForIndexPath:indexPath];
   NSUInteger indexInItemType =
@@ -146,7 +154,7 @@
                      fromSectionWithIdentifier:sectionIdentifier
                                        atIndex:indexInItemType];
   NSInteger section = [self.collectionViewModel
-      sectionIdentifierForSection:newIndexPath.section];
+      sectionIdentifierForSectionIndex:newIndexPath.section];
   [self.collectionViewModel insertItem:item
                inSectionWithIdentifier:section
                                atIndex:newIndexPath.item];
@@ -185,10 +193,10 @@
   CollectionViewItem* item = nil;
   UIAccessibilityTraits traits = UIAccessibilityTraitNone;
   if ([kind isEqualToString:UICollectionElementKindSectionHeader]) {
-    item = [self.collectionViewModel headerForSection:indexPath.section];
+    item = [self.collectionViewModel headerForSectionIndex:indexPath.section];
     traits = UIAccessibilityTraitHeader;
   } else if ([kind isEqualToString:UICollectionElementKindSectionFooter]) {
-    item = [self.collectionViewModel footerForSection:indexPath.section];
+    item = [self.collectionViewModel footerForSectionIndex:indexPath.section];
   } else {
     return [super collectionView:collectionView
         viewForSupplementaryElementOfKind:kind
@@ -216,7 +224,7 @@
                                  (UICollectionViewLayout*)collectionViewLayout
     referenceSizeForHeaderInSection:(NSInteger)section {
   CollectionViewItem* item =
-      [self.collectionViewModel headerForSection:section];
+      [self.collectionViewModel headerForSectionIndex:section];
 
   if (item) {
     // TODO(crbug.com/635604): Support arbitrary sized headers.
@@ -230,7 +238,7 @@
                                  (UICollectionViewLayout*)collectionViewLayout
     referenceSizeForFooterInSection:(NSInteger)section {
   CollectionViewItem* item =
-      [self.collectionViewModel footerForSection:section];
+      [self.collectionViewModel footerForSectionIndex:section];
 
   if (item) {
     // TODO(crbug.com/635604): Support arbitrary sized footers.
@@ -282,14 +290,14 @@
 
 #pragma mark - Private
 
-// Reconfigures the cell at |indexPath| by calling |configureCell:| with |item|.
+// Reconfigures the cell at `indexPath` by calling `configureCell:` with `item`.
 - (void)reconfigureCellAtIndexPath:(NSIndexPath*)indexPath
                           withItem:(CollectionViewItem*)item {
   MDCCollectionViewCell* cell =
       base::mac::ObjCCastStrict<MDCCollectionViewCell>(
           [self.collectionView cellForItemAtIndexPath:indexPath]);
 
-  // |cell| may be nil if the row is not currently on screen.
+  // `cell` may be nil if the row is not currently on screen.
   if (cell) {
     [item configureCell:cell];
   }

@@ -3,8 +3,10 @@
 # found in the LICENSE file.
 
 import("//third_party/closure_compiler/compile_js.gni")
+import("//tools/polymer/html_to_js.gni")
 
 js_type_check("closure_compile") {
+  is_polymer3 = true
   deps = [
     ":set_time_browser_proxy",
     ":set_time_dialog",
@@ -14,17 +16,19 @@ js_type_check("closure_compile") {
 js_library("set_time_dialog") {
   deps = [
     ":set_time_browser_proxy",
-    "//ui/webui/resources/cr_elements/cr_dialog:cr_dialog",
-    "//ui/webui/resources/js:assert",
-    "//ui/webui/resources/js:cr",
-    "//ui/webui/resources/js:load_time_data",
-    "//ui/webui/resources/js:web_ui_listener_behavior",
+    "//ui/webui/resources/cr_elements/cr_dialog:cr_dialog.m",
+    "//ui/webui/resources/js:assert.m",
+    "//ui/webui/resources/js:cr.m",
+    "//ui/webui/resources/js:load_time_data.m",
+    "//ui/webui/resources/js:web_ui_listener_behavior.m",
   ]
 }
 
 js_library("set_time_browser_proxy") {
-  deps = [
-    "//ui/webui/resources/js:cr",
-  ]
+  deps = [ "//ui/webui/resources/js:cr.m" ]
   externs_list = [ "$externs_path/chrome_send.js" ]
+}
+
+html_to_js("web_components") {
+  js_files = [ "set_time_dialog.js" ]
 }

@@ -4,7 +4,7 @@
 
 #include "net/cert/internal/general_names.h"
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/strings/string_util.h"
 #include "net/cert/internal/cert_error_params.h"
 #include "net/cert/internal/cert_errors.h"
@@ -111,7 +111,7 @@ std::unique_ptr<GeneralNames> GeneralNames::CreateFromValue(
   return general_names;
 }
 
-WARN_UNUSED_RESULT bool ParseGeneralName(
+[[nodiscard]] bool ParseGeneralName(
     const der::Input& input,
     GeneralNames::ParseGeneralNameIPAddressType ip_address_type,
     GeneralNames* subtrees,

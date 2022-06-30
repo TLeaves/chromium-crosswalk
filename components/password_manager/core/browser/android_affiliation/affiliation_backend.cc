@@ -6,21 +6,21 @@
 
 #include <stdint.h>
 #include <algorithm>
-#include <memory>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/clock.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_database.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_fetch_throttler.h"
-#include "components/password_manager/core/browser/android_affiliation/affiliation_fetcher.h"
+#include "components/password_manager/core/browser/android_affiliation/affiliation_fetcher_interface.h"
 #include "components/password_manager/core/browser/android_affiliation/facet_manager.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "components/password_manager/core/browser/site_affiliation/affiliation_fetcher_factory_impl.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace password_manager {
@@ -32,34 +32,34 @@ AffiliationBackend::AffiliationBackend(
     : task_runner_(task_runner),
       clock_(time_source),
       tick_clock_(time_tick_source),
+      fetcher_factory_(std::make_unique<AffiliationFetcherFactoryImpl>()),
       construction_time_(clock_->Now()) {
   DCHECK_LT(base::Time(), clock_->Now());
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
 
-AffiliationBackend::~AffiliationBackend() {
-}
+AffiliationBackend::~AffiliationBackend() = default;
 
 void AffiliationBackend::Initialize(
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info,
+    std::unique_ptr<network::PendingSharedURLLoaderFactory>
+        pending_url_loader_factory,
     network::NetworkConnectionTracker* network_connection_tracker,
     const base::FilePath& db_path) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!throttler_);
-  throttler_.reset(new AffiliationFetchThrottler(
-      this, task_runner_, network_connection_tracker, tick_clock_));
+  throttler_ = std::make_unique<AffiliationFetchThrottler>(
+      this, task_runner_, network_connection_tracker, tick_clock_);
 
   // TODO(engedy): Currently, when Init() returns false, it always poisons the
   // DB, so subsequent operations will silently fail. Consider either fully
   // committing to this approach and making Init() a void, or handling the
   // return value here. See: https://crbug.com/478831.
-  cache_.reset(new AffiliationDatabase());
+  cache_ = std::make_unique<AffiliationDatabase>();
   cache_->Init(db_path);
-  DCHECK(url_loader_factory_info);
+  DCHECK(pending_url_loader_factory);
   DCHECK(!url_loader_factory_);
   url_loader_factory_ = network::SharedURLLoaderFactory::Create(
-      std::move(url_loader_factory_info));
+      std::move(pending_url_loader_factory));
 }
 
 void AffiliationBackend::GetAffiliationsAndBranding(
@@ -103,6 +103,41 @@ void AffiliationBackend::CancelPrefetch(const FacetURI& facet_uri,
     facet_managers_.erase(facet_uri);
 }
 
+void AffiliationBackend::KeepPrefetchForFacets(
+    std::vector<FacetURI> facet_uris) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Firstly, check which facets are missing from the |facet_managers_| and
+  // schedule Prefetch() for them.
+  for (const auto& facet : facet_uris) {
+    if (facet_managers_.find(facet) == facet_managers_.end()) {
+      Prefetch(facet, base::Time::Max());
+    }
+  }
+
+  // Now remove facets which which aren't retained anymore.
+  auto retained_facets = base::MakeFlatSet<std::string>(
+      facet_uris, {}, &FacetURI::potentially_invalid_spec);
+
+  std::vector<FacetURI> facets_to_remove;
+  for (const auto& facet_manager_pair : facet_managers_) {
+    if (retained_facets.contains(
+            facet_manager_pair.first.potentially_invalid_spec())) {
+      continue;
+    }
+
+    facet_manager_pair.second->CancelPrefetch(base::Time::Max());
+
+    if (facet_manager_pair.second->CanBeDiscarded())
+      facets_to_remove.push_back(facet_manager_pair.first);
+  }
+
+  for (const auto& facet : facets_to_remove) {
+    facet_managers_.erase(facet);
+    TrimCacheForFacetURI(facet);
+  }
+}
+
 void AffiliationBackend::TrimCacheForFacetURI(const FacetURI& facet_uri) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -111,9 +146,20 @@ void AffiliationBackend::TrimCacheForFacetURI(const FacetURI& facet_uri) {
     DiscardCachedDataIfNoLongerNeeded(affiliation.facets);
 }
 
+void AffiliationBackend::TrimUnusedCache(std::vector<FacetURI> facet_uris) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  cache_->RemoveMissingFacetURI(facet_uris);
+}
+
 // static
 void AffiliationBackend::DeleteCache(const base::FilePath& db_path) {
   AffiliationDatabase::Delete(db_path);
+}
+
+void AffiliationBackend::SetFetcherFactoryForTesting(
+    std::unique_ptr<AffiliationFetcherFactory> fetcher_factory) {
+  fetcher_factory_ = std::move(fetcher_factory);
 }
 
 FacetManager* AffiliationBackend::GetOrCreateFacetManager(
@@ -177,13 +223,14 @@ void AffiliationBackend::RequestNotificationAtTime(const FacetURI& facet_uri,
 }
 
 void AffiliationBackend::OnFetchSucceeded(
+    AffiliationFetcherInterface* fetcher,
     std::unique_ptr<AffiliationFetcherDelegate::Result> result) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   fetcher_.reset();
   throttler_->InformOfNetworkRequestComplete(true);
 
-  for (const AffiliatedFacets& affiliated_facets : *result) {
+  for (const AffiliatedFacets& affiliated_facets : result->affiliations) {
     AffiliatedFacetsWithUpdateTime affiliation;
     affiliation.facets = affiliated_facets;
     affiliation.last_update_time = clock_->Now();
@@ -224,7 +271,7 @@ void AffiliationBackend::OnFetchSucceeded(
   }
 }
 
-void AffiliationBackend::OnFetchFailed() {
+void AffiliationBackend::OnFetchFailed(AffiliationFetcherInterface* fetcher) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   fetcher_.reset();
@@ -239,11 +286,12 @@ void AffiliationBackend::OnFetchFailed() {
   }
 }
 
-void AffiliationBackend::OnMalformedResponse() {
+void AffiliationBackend::OnMalformedResponse(
+    AffiliationFetcherInterface* fetcher) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // TODO(engedy): Potentially handle this case differently. crbug.com/437865.
-  OnFetchFailed();
+  OnFetchFailed(fetcher);
 }
 
 bool AffiliationBackend::OnCanSendNetworkRequest() {
@@ -258,9 +306,8 @@ bool AffiliationBackend::OnCanSendNetworkRequest() {
   if (requested_facet_uris.empty())
     return false;
 
-  fetcher_.reset(AffiliationFetcher::Create(url_loader_factory_,
-                                            requested_facet_uris, this));
-  fetcher_->StartRequest();
+  fetcher_ = fetcher_factory_->CreateInstance(url_loader_factory_, this);
+  fetcher_->StartRequest(requested_facet_uris, {.branding_info = true});
   ReportStatistics(requested_facet_uris.size());
   return true;
 }
@@ -273,12 +320,12 @@ void AffiliationBackend::ReportStatistics(size_t requested_facet_uri_count) {
     base::TimeDelta delay = clock_->Now() - construction_time_;
     UMA_HISTOGRAM_CUSTOM_TIMES(
         "PasswordManager.AffiliationBackend.FirstFetchDelay", delay,
-        base::TimeDelta::FromSeconds(1), base::TimeDelta::FromDays(3), 50);
+        base::Seconds(1), base::Days(3), 50);
   } else {
     base::TimeDelta delay = clock_->Now() - last_request_time_;
     UMA_HISTOGRAM_CUSTOM_TIMES(
         "PasswordManager.AffiliationBackend.SubsequentFetchDelay", delay,
-        base::TimeDelta::FromSeconds(1), base::TimeDelta::FromDays(3), 50);
+        base::Seconds(1), base::Days(3), 50);
   }
   last_request_time_ = clock_->Now();
 }

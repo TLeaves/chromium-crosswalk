@@ -5,6 +5,8 @@
 from optparse import OptionParser
 import unittest
 
+import six
+
 from telemetry.page import shared_page_state
 
 from contrib.cluster_telemetry import rasterize_and_record_micro_ct
@@ -69,30 +71,50 @@ class CTBenchmarks(unittest.TestCase):
       try:
         benchmark.CreateStorySet(parser)
         self.fail('Expected ValueError')
-      except ValueError, e:
-        self.assertEquals('user_agent mobileeeeee is unrecognized', e.message)
+      except ValueError as e:
+        self.assertEquals('user_agent mobileeeeee is unrecognized', str(e))
 
   def testCTBenchmarks_missingDataFile(self):
     for benchmark in self.ct_benchmarks:
       parser = OptionParser()
       parser.user_agent = 'mobile'
       parser.urls_list = self.urls_list
+      parser.use_live_sites = False
       benchmark.AddBenchmarkCommandLineArgs(parser)
 
       # Should fail due to missing archive_data_file.
       try:
         benchmark.ProcessCommandLineArgs(None, parser)
         self.fail('Expected AttributeError')
-      except AttributeError, e:
-        self.assertEquals(
-            'OptionParser instance has no attribute \'archive_data_file\'',
-            e.message)
+      except AttributeError as e:
+        if six.PY2:
+          expected_error = (
+              "OptionParser instance has no attribute 'archive_data_file'")
+          actual_error = e.message
+        else:
+          expected_error = (
+              "'OptionParser' object has no attribute 'archive_data_file'")
+          actual_error = str(e)
+        self.assertEquals(actual_error, expected_error)
 
       # Now add an empty archive_data_file.
       parser.archive_data_file = ''
       benchmark.ProcessCommandLineArgs(self.mock_parser, parser)
       self.assertEquals(
           'Please specify --archive-data-file.', self.mock_parser.err_msg)
+
+  def testCTBenchmarks_missingDataFileUseLiveSites(self):
+    for benchmark in self.ct_benchmarks:
+      parser = OptionParser()
+      parser.user_agent = 'mobile'
+      parser.urls_list = self.urls_list
+      parser.use_live_sites = True
+      parser.archive_data_file = None
+      benchmark.AddBenchmarkCommandLineArgs(parser)
+
+      # Should pass.
+      benchmark.ProcessCommandLineArgs(self.mock_parser, parser)
+      self.assertIsNone(self.mock_parser.err_msg)
 
   def testCTBenchmarks_missingUrlsList(self):
     for benchmark in self.ct_benchmarks:
@@ -105,10 +127,13 @@ class CTBenchmarks(unittest.TestCase):
       try:
         benchmark.ProcessCommandLineArgs(None, parser)
         self.fail('Expected AttributeError')
-      except AttributeError, e:
-        self.assertEquals(
-            'OptionParser instance has no attribute \'urls_list\'',
-            e.message)
+      except AttributeError as e:
+        if six.PY2:
+          self.assertEquals(
+              "OptionParser instance has no attribute 'urls_list'", str(e))
+        else:
+          self.assertEquals(
+              "'OptionParser' object has no attribute 'urls_list'", str(e))
 
       # Now add an empty urls_list.
       parser.urls_list = ''

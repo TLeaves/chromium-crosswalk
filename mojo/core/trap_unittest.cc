@@ -10,11 +10,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/rand_util.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/test/bind_test_util.h"
+#include "base/test/bind.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/simple_thread.h"
 #include "base/time/time.h"
@@ -34,8 +33,12 @@ class TriggerHelper {
  public:
   using ContextCallback = base::RepeatingCallback<void(const MojoTrapEvent&)>;
 
-  TriggerHelper() {}
-  ~TriggerHelper() {}
+  TriggerHelper() = default;
+
+  TriggerHelper(const TriggerHelper&) = delete;
+  TriggerHelper& operator=(const TriggerHelper&) = delete;
+
+  ~TriggerHelper() = default;
 
   MojoResult CreateTrap(MojoHandle* handle) {
     return MojoCreateTrap(&Notify, nullptr, handle);
@@ -65,7 +68,10 @@ class TriggerHelper {
     explicit NotificationContext(const ContextCallback& callback)
         : callback_(callback) {}
 
-    ~NotificationContext() {}
+    NotificationContext(const NotificationContext&) = delete;
+    NotificationContext& operator=(const NotificationContext&) = delete;
+
+    ~NotificationContext() = default;
 
     void SetCancelCallback(base::OnceClosure cancel_callback) {
       cancel_callback_ = std::move(cancel_callback);
@@ -81,30 +87,28 @@ class TriggerHelper {
    private:
     const ContextCallback callback_;
     base::OnceClosure cancel_callback_;
-
-    DISALLOW_COPY_AND_ASSIGN(NotificationContext);
   };
 
   static void Notify(const MojoTrapEvent* event) {
     reinterpret_cast<NotificationContext*>(event->trigger_context)
         ->Notify(*event);
   }
-
-  DISALLOW_COPY_AND_ASSIGN(TriggerHelper);
 };
 
 class ThreadedRunner : public base::SimpleThread {
  public:
   explicit ThreadedRunner(base::OnceClosure callback)
       : SimpleThread("ThreadedRunner"), callback_(std::move(callback)) {}
-  ~ThreadedRunner() override {}
+
+  ThreadedRunner(const ThreadedRunner&) = delete;
+  ThreadedRunner& operator=(const ThreadedRunner&) = delete;
+
+  ~ThreadedRunner() override = default;
 
   void Run() override { std::move(callback_).Run(); }
 
  private:
   base::OnceClosure callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(ThreadedRunner);
 };
 
 void ExpectNoNotification(const MojoTrapEvent* event) {
@@ -1370,7 +1374,7 @@ TEST_F(TrapTest, OtherThreadRemovesTriggerDuringEventHandler) {
         // Give the other thread sufficient time to race with the completion
         // of this callback. There should be no race, since the cancellation
         // notification must be mutually exclusive to this notification.
-        base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
+        base::PlatformThread::Sleep(base::Seconds(1));
 
         callback_done = true;
       },
@@ -1650,7 +1654,7 @@ TEST_F(TrapTest, TriggerOnUnsatisfiedSignals) {
   EXPECT_EQ(MOJO_RESULT_OK, MojoClose(a));
 }
 
-base::Closure g_do_random_thing_callback;
+base::RepeatingClosure g_do_random_thing_callback;
 
 void ReadAllMessages(const MojoTrapEvent* event) {
   if (event->result == MOJO_RESULT_OK) {

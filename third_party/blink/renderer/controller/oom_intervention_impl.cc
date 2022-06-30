@@ -4,16 +4,20 @@
 
 #include "third_party/blink/renderer/controller/oom_intervention_impl.h"
 
+#include <algorithm>
+#include <memory>
+#include <utility>
+
 #include "base/bind.h"
 #include "base/debug/crash_logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
 #include "third_party/blink/renderer/controller/crash_memory_metrics_reporter_impl.h"
-#include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 
@@ -57,12 +61,35 @@ void UpdateStateCrashKey(OomInterventionState next_state) {
       break;
   }
 }
+
+void NavigateLocalAdsFrames(LocalFrame* frame) {
+  // This navigates all the frames detected as an advertisement to about:blank.
+  DCHECK(frame);
+  for (Frame* child = frame->Tree().FirstChild(); child;
+       child = child->Tree().TraverseNext(frame)) {
+    if (auto* child_local_frame = DynamicTo<LocalFrame>(child)) {
+      if (child_local_frame->IsAdSubframe()) {
+        FrameLoadRequest request(frame->DomWindow(),
+                                 ResourceRequest(BlankURL()));
+        child_local_frame->Navigate(request, WebFrameLoadType::kStandard);
+      }
+    }
+    // TODO(yuzus): Once AdsTracker for remote frames is implemented and OOPIF
+    // is enabled on low-end devices, navigate remote ads as well.
+  }
+}
+
+OomInterventionImpl& GetOomIntervention() {
+  DEFINE_STATIC_LOCAL(OomInterventionImpl, oom_intervention, ());
+  return oom_intervention;
+}
+
 }  // namespace
 
 // static
-void OomInterventionImpl::Create(mojom::blink::OomInterventionRequest request) {
-  mojo::MakeStrongBinding(std::make_unique<OomInterventionImpl>(),
-                          std::move(request));
+void OomInterventionImpl::BindReceiver(
+    mojo::PendingReceiver<mojom::blink::OomIntervention> receiver) {
+  GetOomIntervention().Bind(std::move(receiver));
 }
 
 OomInterventionImpl::OomInterventionImpl()
@@ -77,13 +104,33 @@ OomInterventionImpl::~OomInterventionImpl() {
   MemoryUsageMonitorInstance().RemoveObserver(this);
 }
 
+void OomInterventionImpl::Bind(
+    mojo::PendingReceiver<mojom::blink::OomIntervention> receiver) {
+  // This interface can be bound multiple time, however, there should never be
+  // multiple callers bound at a time.
+  Reset();
+  receiver_.Bind(std::move(receiver));
+
+  // Disconnection means the user closed the dialog without activating the OOM
+  // intervention.
+  receiver_.set_disconnect_handler(
+      base::BindOnce(&OomInterventionImpl::Reset, base::Unretained(this)));
+}
+
+void OomInterventionImpl::Reset() {
+  receiver_.reset();
+  host_.reset();
+  pauser_.reset();
+  MemoryUsageMonitorInstance().RemoveObserver(this);
+}
+
 void OomInterventionImpl::StartDetection(
-    mojom::blink::OomInterventionHostPtr host,
+    mojo::PendingRemote<mojom::blink::OomInterventionHost> host,
     mojom::blink::DetectionArgsPtr detection_args,
     bool renderer_pause_enabled,
     bool navigate_ads_enabled,
     bool purge_v8_memory_enabled) {
-  host_ = std::move(host);
+  host_.Bind(std::move(host));
 
   detection_args_ = std::move(detection_args);
   renderer_pause_enabled_ = renderer_pause_enabled;
@@ -144,7 +191,7 @@ void OomInterventionImpl::Check(MemoryUsage usage) {
           if (!local_frame)
             continue;
           if (navigate_ads_enabled_)
-            local_frame->GetDocument()->NavigateLocalAdsFrames();
+            NavigateLocalAdsFrames(local_frame);
           if (purge_v8_memory_enabled_)
             local_frame->ForciblyPurgeV8Memory();
         }
@@ -154,7 +201,7 @@ void OomInterventionImpl::Check(MemoryUsage usage) {
     if (renderer_pause_enabled_) {
       // The ScopedPagePauser is destroyed when the intervention is declined and
       // mojo strong binding is disconnected.
-      pauser_.reset(new ScopedPagePauser);
+      pauser_ = std::make_unique<ScopedPagePauser>();
     }
 
     host_->OnHighMemoryUsage();
@@ -169,8 +216,7 @@ void OomInterventionImpl::Check(MemoryUsage usage) {
     // Report the memory impact of intervention after 10, 20, 30 seconds.
     metrics_at_intervention_ = current_memory;
     number_of_report_needed_ = 3;
-    delayed_report_timer_.StartRepeating(base::TimeDelta::FromSeconds(10),
-                                         FROM_HERE);
+    delayed_report_timer_.StartRepeating(base::Seconds(10), FROM_HERE);
   }
 }
 

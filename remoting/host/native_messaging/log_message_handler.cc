@@ -6,10 +6,12 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "base/single_thread_task_runner.h"
+#include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/values.h"
 
 namespace remoting {
 
@@ -25,12 +27,10 @@ base::LazyInstance<base::Lock>::Leaky g_log_message_handler_lock =
 LogMessageHandler* g_log_message_handler = nullptr;
 }  // namespace
 
-LogMessageHandler::LogMessageHandler(
-    const Delegate& delegate)
+LogMessageHandler::LogMessageHandler(const Delegate& delegate)
     : delegate_(delegate),
       suppress_logging_(false),
-      caller_task_runner_(base::ThreadTaskRunnerHandle::Get()),
-      weak_ptr_factory_(this) {
+      caller_task_runner_(base::ThreadTaskRunnerHandle::Get()) {
   base::AutoLock lock(g_log_message_handler_lock.Get());
   if (g_log_message_handler) {
     LOG(FATAL) << "LogMessageHandler is already registered. Only one instance "
@@ -40,6 +40,13 @@ LogMessageHandler::LogMessageHandler(
   logging::SetLogMessageHandler(&LogMessageHandler::OnLogMessage);
   g_log_message_handler = this;
 }
+
+LogMessageHandler::LogMessageHandler(const DelegateDeprecated& delegate)
+    : LogMessageHandler(base::BindRepeating(
+          [](const DelegateDeprecated& delegate, base::Value value) {
+            delegate.Run(base::Value::ToUniquePtrValue(std::move(value)));
+          },
+          delegate)) {}
 
 LogMessageHandler::~LogMessageHandler() {
   base::AutoLock lock(g_log_message_handler_lock.Get());
@@ -84,7 +91,7 @@ void LogMessageHandler::PostLogMessageToCorrectThread(
 
   // This method is always called under the global lock, so post a task to
   // handle the log message, even if we're already on the correct thread.
-  // This alows the lock to be released quickly.
+  // This allows the lock to be released quickly.
   //
   // Note that this means that LOG(FATAL) messages will be lost because the
   // process will exit before the message is sent to the client.
@@ -116,12 +123,12 @@ void LogMessageHandler::SendLogMessageToClient(
   std::string message = str.substr(message_start);
   base::TrimWhitespaceASCII(message, base::TRIM_ALL, &message);
 
-  std::unique_ptr<base::DictionaryValue> dictionary(new base::DictionaryValue);
-  dictionary->SetString("type", kDebugMessageTypeName);
-  dictionary->SetString("severity", severity_string);
-  dictionary->SetString("message", message);
-  dictionary->SetString("file", file);
-  dictionary->SetInteger("line", line);
+  base::Value dictionary(base::Value::Type::DICTIONARY);
+  dictionary.SetStringKey("type", kDebugMessageTypeName);
+  dictionary.SetStringKey("severity", severity_string);
+  dictionary.SetStringKey("message", message);
+  dictionary.SetStringKey("file", file);
+  dictionary.SetIntKey("line", line);
 
   // Protect against this instance being torn down after the delegate is run.
   base::WeakPtr<LogMessageHandler> self = weak_ptr_factory_.GetWeakPtr();

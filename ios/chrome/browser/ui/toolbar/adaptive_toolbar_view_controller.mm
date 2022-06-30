@@ -4,25 +4,26 @@
 
 #import "ios/chrome/browser/ui/toolbar/adaptive_toolbar_view_controller.h"
 
-#include "base/logging.h"
+#import <MaterialComponents/MaterialProgressView.h>
+
 #include "base/metrics/user_metrics.h"
+#include "base/notreached.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
+#import "ios/chrome/browser/ui/commands/omnibox_commands.h"
+#import "ios/chrome/browser/ui/icons/chrome_symbol.h"
 #import "ios/chrome/browser/ui/popup_menu/public/popup_menu_long_press_delegate.h"
+#import "ios/chrome/browser/ui/toolbar/adaptive_toolbar_menus_provider.h"
 #import "ios/chrome/browser/ui/toolbar/adaptive_toolbar_view.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_factory.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_configuration.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tab_grid_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_tools_menu_button.h"
-#import "ios/chrome/browser/ui/toolbar/public/features.h"
-#import "ios/chrome/browser/ui/toolbar/public/omnibox_focuser.h"
 #import "ios/chrome/browser/ui/toolbar/public/toolbar_constants.h"
 #include "ios/chrome/browser/ui/util/animation_util.h"
 #import "ios/chrome/browser/ui/util/force_touch_long_press_gesture_recognizer.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/material_timing.h"
-#import "ios/third_party/material_components_ios/src/components/ProgressView/src/MaterialProgressView.h"
-#import "ios/third_party/material_components_ios/src/components/Typography/src/MaterialTypography.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -33,6 +34,8 @@ const CGFloat kRotationInRadians = 5.0 / 180 * M_PI;
 // Scale factor for the animation, must be < 1.
 const CGFloat kScaleFactorDiff = 0.50;
 const CGFloat kTabGridAnimationsTotalDuration = 0.5;
+// The identifier for the context menu action trigger.
+NSString* const kContextMenuActionIdentifier = @"kContextMenuActionIdentifier";
 }  // namespace
 
 @interface AdaptiveToolbarViewController ()
@@ -86,16 +89,27 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
   // Adds the layout guide to the buttons.
   self.view.toolsMenuButton.guideName = kToolsMenuGuide;
   self.view.tabGridButton.guideName = kTabSwitcherGuide;
-  self.view.searchButton.guideName = kSearchButtonGuide;
+  self.view.openNewTabButton.guideName = kNewTabButtonGuide;
   self.view.forwardButton.guideName = kForwardButtonGuide;
   self.view.backButton.guideName = kBackButtonGuide;
 
   // Add navigation popup menu triggers.
-  [self addLongPressGestureToView:self.view.backButton];
-  [self addLongPressGestureToView:self.view.forwardButton];
-  [self addLongPressGestureToView:self.view.searchButton];
-  [self addLongPressGestureToView:self.view.tabGridButton];
-  [self addLongPressGestureToView:self.view.toolsMenuButton];
+  if (UseSymbols()) {
+    [self configureMenuProviderForButton:self.view.backButton
+                              buttonType:AdaptiveToolbarButtonTypeBack];
+    [self configureMenuProviderForButton:self.view.forwardButton
+                              buttonType:AdaptiveToolbarButtonTypeForward];
+    [self configureMenuProviderForButton:self.view.openNewTabButton
+                              buttonType:AdaptiveToolbarButtonTypeNewTab];
+    [self configureMenuProviderForButton:self.view.tabGridButton
+                              buttonType:AdaptiveToolbarButtonTypeTabGrid];
+  } else {
+    [self addLongPressGestureToView:self.view.backButton];
+    [self addLongPressGestureToView:self.view.forwardButton];
+    [self addLongPressGestureToView:self.view.openNewTabButton];
+    [self addLongPressGestureToView:self.view.tabGridButton];
+    [self addLongPressGestureToView:self.view.toolsMenuButton];
+  }
 
   [self updateLayoutBasedOnTraitCollection];
 }
@@ -148,8 +162,8 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
              !IsRegularXRegularSizeClass(self) && !self.isNTP) {
     [self.view.progressBar setProgress:0];
     [self updateProgressBarVisibility];
-    // Layout if needed the progress bar to avoid having the progress bar going
-    // backward when opening a page from the NTP.
+    // Layout if needed the progress bar to avoid having the progress bar
+    // going backward when opening a page from the NTP.
     [self.view.progressBar layoutIfNeeded];
   }
 }
@@ -164,6 +178,10 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
 
   CGFloat scaleSign = tabCount > self.view.tabGridButton.tabCount ? 1 : -1;
   self.view.tabGridButton.tabCount = tabCount;
+
+  if (IsRegularXRegularSizeClass(self))
+    // No animation on Regular x Regular.
+    return;
 
   CGFloat scaleFactor = 1 + scaleSign * kScaleFactorDiff;
 
@@ -195,10 +213,6 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
                             completion:nil];
 }
 
-- (void)setPageBookmarked:(BOOL)bookmarked {
-  self.view.bookmarkButton.spotlighted = bookmarked;
-}
-
 - (void)setVoiceSearchEnabled:(BOOL)enabled {
   // No-op, should be handled by the location bar.
 }
@@ -209,12 +223,6 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
 
 - (void)setIsNTP:(BOOL)isNTP {
   _isNTP = isNTP;
-}
-
-- (void)setSearchIcon:(UIImage*)searchIcon {
-  if (base::FeatureList::IsEnabled(kToolbarNewTabButton))
-    return;
-  [self.view.searchButton setImage:searchIcon forState:UIControlStateNormal];
 }
 
 #pragma mark - NewTabPageControllerDelegate
@@ -245,8 +253,8 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
     case PopupMenuTypeNavigationBackward:
       selectedButton = self.view.backButton;
       break;
-    case PopupMenuTypeSearch:
-      selectedButton = self.view.searchButton;
+    case PopupMenuTypeNewTab:
+      selectedButton = self.view.openNewTabButton;
       break;
     case PopupMenuTypeTabGrid:
       selectedButton = self.view.tabGridButton;
@@ -269,7 +277,7 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
 - (void)updateUIForMenuDismissed {
   self.view.backButton.spotlighted = NO;
   self.view.forwardButton.spotlighted = NO;
-  self.view.searchButton.spotlighted = NO;
+  self.view.openNewTabButton.spotlighted = NO;
   self.view.tabGridButton.spotlighted = NO;
   self.view.toolsMenuButton.spotlighted = NO;
 
@@ -341,7 +349,7 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
 - (void)addStandardActionsForAllButtons {
   for (ToolbarButton* button in self.view.allButtons) {
     if (button != self.view.toolsMenuButton &&
-        button != self.view.searchButton) {
+        button != self.view.openNewTabButton) {
       [button addTarget:self.dispatcher
                     action:@selector(cancelOmniboxEdit)
           forControlEvents:UIControlEventTouchUpInside];
@@ -365,16 +373,14 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
     base::RecordAction(base::UserMetricsAction("MobileToolbarReload"));
   } else if (sender == self.view.stopButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarStop"));
-  } else if (sender == self.view.bookmarkButton) {
-    base::RecordAction(base::UserMetricsAction("MobileToolbarToggleBookmark"));
   } else if (sender == self.view.toolsMenuButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarShowMenu"));
   } else if (sender == self.view.tabGridButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarShowStackView"));
   } else if (sender == self.view.shareButton) {
     base::RecordAction(base::UserMetricsAction("MobileToolbarShareMenu"));
-  } else if (sender == self.view.searchButton) {
-    base::RecordAction(base::UserMetricsAction("MobileToolbarOmniboxShortcut"));
+  } else if (sender == self.view.openNewTabButton) {
+    base::RecordAction(base::UserMetricsAction("MobileToolbarNewTabShortcut"));
   } else {
     NOTREACHED();
   }
@@ -393,12 +399,14 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
 // Handles the gseture recognizer on the views.
 - (void)handleGestureRecognizer:(UILongPressGestureRecognizer*)gesture {
   if (gesture.state == UIGestureRecognizerStateBegan) {
+    // TODO(crbug.com/1323764): All of these calls on |self.dispatcher| need to
+    // go to a dedicated PopupMenyCommands handler.
     if (gesture.view == self.view.backButton) {
       [self.dispatcher showNavigationHistoryBackPopupMenu];
     } else if (gesture.view == self.view.forwardButton) {
       [self.dispatcher showNavigationHistoryForwardPopupMenu];
-    } else if (gesture.view == self.view.searchButton) {
-      [self.dispatcher showSearchButtonPopup];
+    } else if (gesture.view == self.view.openNewTabButton) {
+      [self.dispatcher showNewTabButtonPopup];
     } else if (gesture.view == self.view.tabGridButton) {
       [self.dispatcher showTabGridButtonPopup];
     } else if (gesture.view == self.view.toolsMenuButton) {
@@ -422,6 +430,33 @@ const CGFloat kTabGridAnimationsTotalDuration = 0.5;
   } else if (self.loading) {
     [self.view.progressBar setHidden:NO animated:NO completion:nil];
   }
+}
+
+// Configures |button| with the menu provider, making sure that the items are
+// updated when the menu is presented. The |buttonType| is passed to the menu
+// provider.
+- (void)configureMenuProviderForButton:(UIButton*)button
+                            buttonType:(AdaptiveToolbarButtonType)buttonType {
+  // Adds an empty menu so the event triggers the first time.
+  UIMenu* emptyMenu = [UIMenu menuWithChildren:@[]];
+  button.menu = emptyMenu;
+
+  [button removeActionForIdentifier:kContextMenuActionIdentifier
+                   forControlEvents:UIControlEventMenuActionTriggered];
+
+  __weak UIButton* weakButton = button;
+  __weak __typeof(self) weakSelf = self;
+  UIAction* action = [UIAction
+      actionWithTitle:@""
+                image:nil
+           identifier:kContextMenuActionIdentifier
+              handler:^(UIAction* action) {
+                base::RecordAction(
+                    base::UserMetricsAction("MobileMenuToolbarMenuTriggered"));
+                weakButton.menu =
+                    [weakSelf.menuProvider menuForButtonOfType:buttonType];
+              }];
+  [button addAction:action forControlEvents:UIControlEventMenuActionTriggered];
 }
 
 @end

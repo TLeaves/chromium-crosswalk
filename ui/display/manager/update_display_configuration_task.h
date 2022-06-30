@@ -10,8 +10,9 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/display/manager/configure_displays_task.h"
 #include "ui/display/manager/display_configurator.h"
 #include "ui/display/types/native_display_observer.h"
@@ -24,7 +25,7 @@ class NativeDisplayDelegate;
 class DISPLAY_MANAGER_EXPORT UpdateDisplayConfigurationTask
     : public NativeDisplayObserver {
  public:
-  using ResponseCallback = base::RepeatingCallback<void(
+  using ResponseCallback = base::OnceCallback<void(
       /*success=*/bool,
       /*displays=*/const std::vector<DisplaySnapshot*>&,
       /*unassociated_displays=*/const std::vector<DisplaySnapshot*>&,
@@ -37,7 +38,13 @@ class DISPLAY_MANAGER_EXPORT UpdateDisplayConfigurationTask
                                  chromeos::DisplayPowerState new_power_state,
                                  int power_flags,
                                  bool force_configure,
-                                 const ResponseCallback& callback);
+                                 ResponseCallback callback);
+
+  UpdateDisplayConfigurationTask(const UpdateDisplayConfigurationTask&) =
+      delete;
+  UpdateDisplayConfigurationTask& operator=(
+      const UpdateDisplayConfigurationTask&) = delete;
+
   ~UpdateDisplayConfigurationTask() override;
 
   void Run();
@@ -62,7 +69,7 @@ class DISPLAY_MANAGER_EXPORT UpdateDisplayConfigurationTask
 
   // Starts the configuration process. |callback| is used to continue the task
   // after |configure_taks_| finishes executing.
-  void EnterState(const ConfigureDisplaysTask::ResponseCallback& callback);
+  void EnterState(ConfigureDisplaysTask::ResponseCallback callback);
 
   // Finishes display configuration and runs |callback_|.
   void FinishConfiguration(bool success);
@@ -106,9 +113,10 @@ class DISPLAY_MANAGER_EXPORT UpdateDisplayConfigurationTask
 
   std::unique_ptr<ConfigureDisplaysTask> configure_task_;
 
-  base::WeakPtrFactory<UpdateDisplayConfigurationTask> weak_ptr_factory_;
+  // The timestamp when Run() was called. Null if the task is not running.
+  absl::optional<base::TimeTicks> start_timestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(UpdateDisplayConfigurationTask);
+  base::WeakPtrFactory<UpdateDisplayConfigurationTask> weak_ptr_factory_{this};
 };
 
 }  // namespace display

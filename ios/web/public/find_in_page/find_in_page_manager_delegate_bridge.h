@@ -7,7 +7,6 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/macros.h"
 #import "ios/web/public/find_in_page/find_in_page_manager_delegate.h"
 
 namespace web {
@@ -27,13 +26,17 @@ class FindInPageManager;
     didHighlightMatchesOfQuery:(NSString*)query
                 withMatchCount:(NSInteger)matchCount
                    forWebState:(web::WebState*)webState;
-// Called when a match number |index| is selected. A selected match refers to
-// a match that is highlighted in a unique manner different from the other
-// matches. This is triggered by calling FindInPageManager::Find() with any
-// FindInPageOptions to indicate the new match number that was selected. This
-// method is not called if |FindInPageManager::Find| did not find any matches.
+// Called when a match number |index| is selected with |contextString|
+// representing the textual context of the match. |contextString| can be used
+// in VoiceOver to notify the user of the context of the match in the sentence.
+// A selected match refers to a match that is highlighted in a unique manner
+// different from the other matches. This is triggered by calling
+// FindInPageManager::Find() with any FindInPageOptions to indicate the new
+// match number that was selected. This method is not called if
+// |FindInPageManager::Find| did not find any matches.
 - (void)findInPageManager:(web::FindInPageManager*)manager
     didSelectMatchAtIndex:(NSInteger)index
+        withContextString:(NSString*)contextString
               forWebState:(web::WebState*)webState;
 @end
 
@@ -47,17 +50,24 @@ class FindInPageManagerDelegateBridge : public web::FindInPageManagerDelegate {
  public:
   explicit FindInPageManagerDelegateBridge(
       id<CRWFindInPageManagerDelegate> delegate);
+
+  FindInPageManagerDelegateBridge(const FindInPageManagerDelegateBridge&) =
+      delete;
+  FindInPageManagerDelegateBridge& operator=(
+      const FindInPageManagerDelegateBridge&) = delete;
+
   ~FindInPageManagerDelegateBridge() override;
 
   // FindInPageManagerDelegate overrides.
   void DidHighlightMatches(WebState* web_state,
                            int match_count,
                            NSString* query) override;
-  void DidSelectMatch(WebState* web_state, int index) override;
+  void DidSelectMatch(WebState* web_state,
+                      int index,
+                      NSString* context_string) override;
 
  private:
   __weak id<CRWFindInPageManagerDelegate> delegate_ = nil;
-  DISALLOW_COPY_AND_ASSIGN(FindInPageManagerDelegateBridge);
 };
 
 }  // namespace web

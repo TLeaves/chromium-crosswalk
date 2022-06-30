@@ -4,18 +4,17 @@
 
 package org.chromium.components.gcm_driver;
 
-import android.annotation.TargetApi;
-import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.IntDef;
-import android.support.annotation.Nullable;
+
+import androidx.annotation.IntDef;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import org.chromium.base.Log;
-import org.chromium.base.VisibleForTesting;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -128,7 +127,6 @@ public class GCMMessage {
      * been created through {@link #toBundle}.
      */
     @Nullable
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public static GCMMessage createFromBundle(Bundle bundle) {
         return create(bundle, new BundleReader());
     }
@@ -262,7 +260,6 @@ public class GCMMessage {
      * for purposes of scheduling a job. Only methods available in BaseBundle may be used here,
      * as it may have to be converted to a PersistableBundle.
      */
-    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public Bundle toBundle() {
         return serialize(new BundleWriter());
     }

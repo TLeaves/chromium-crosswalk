@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/media_router/media_cast_mode.h"
 
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -22,8 +22,6 @@ std::string MediaCastModeToDescription(MediaCastMode mode,
     case MediaCastMode::DESKTOP_MIRROR:
       return l10n_util::GetStringUTF8(
           IDS_MEDIA_ROUTER_DESKTOP_MIRROR_CAST_MODE);
-    case MediaCastMode::LOCAL_FILE:
-      return l10n_util::GetStringUTF8(IDS_MEDIA_ROUTER_LOCAL_FILE_CAST_MODE);
     default:
       NOTREACHED();
       return "";
@@ -35,7 +33,6 @@ bool IsValidCastModeNum(int cast_mode_num) {
     case MediaCastMode::PRESENTATION:
     case MediaCastMode::TAB_MIRROR:
     case MediaCastMode::DESKTOP_MIRROR:
-    case MediaCastMode::LOCAL_FILE:
       return true;
     default:
       return false;

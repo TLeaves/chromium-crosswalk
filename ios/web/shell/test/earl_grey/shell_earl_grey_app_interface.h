@@ -19,22 +19,16 @@
 + (void)startLoadingURL:(NSString*)spec;
 
 // Returns YES if the current WebState is loading.
-+ (BOOL)isCurrentWebStateLoading WARN_UNUSED_RESULT;
++ (BOOL)isCurrentWebStateLoading [[nodiscard]];
 
 // Waits until the windowID is injected into the current web state. Returns nil
 // on success, or else an NSError indicating why the operation failed.
 // Immediately returns if the WebState contains content that does not require
 // windowID injection.
-+ (NSError*)waitForWindowIDInjectedInCurrentWebState WARN_UNUSED_RESULT;
++ (NSError*)waitForWindowIDInjectedInCurrentWebState [[nodiscard]];
 
 // Returns YES if the current WebState contains the given |text|.
-+ (BOOL)currentWebStateContainsText:(NSString*)text WARN_UNUSED_RESULT;
-
-// Returns YES if the current WebState's WebUsage is enabled.
-+ (BOOL)webUsageEnabledForCurrentWebState WARN_UNUSED_RESULT;
-
-// Returns Mojo instance group name for current WebState.
-+ (NSString*)instanceGroupForCurrentBrowserState WARN_UNUSED_RESULT;
++ (BOOL)currentWebStateContainsText:(NSString*)text [[nodiscard]];
 
 @end
 

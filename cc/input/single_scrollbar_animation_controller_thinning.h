@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "cc/cc_export.h"
 #include "cc/input/scrollbar.h"
@@ -70,11 +71,10 @@ class CC_EXPORT SingleScrollbarAnimationControllerThinning {
   ScrollbarLayerImplBase* GetScrollbar() const;
   float AnimationProgressAtTime(base::TimeTicks now);
   void RunAnimationFrame(float progress);
-  const base::TimeDelta& Duration();
 
   // Describes whether the current animation should INCREASE (thicken)
   // a bar or DECREASE it (thin).
-  enum AnimationChange { NONE, INCREASE, DECREASE };
+  enum class AnimationChange { NONE, INCREASE, DECREASE };
   float ThumbThicknessScaleAt(float progress);
 
   float AdjustScale(float new_value,
@@ -84,7 +84,7 @@ class CC_EXPORT SingleScrollbarAnimationControllerThinning {
                     float max_value);
   void ApplyThumbThicknessScale(float thumb_thickness_scale);
 
-  ScrollbarAnimationControllerClient* client_;
+  raw_ptr<ScrollbarAnimationControllerClient> client_;
 
   base::TimeTicks last_awaken_time_;
   bool is_animating_;

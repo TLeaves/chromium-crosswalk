@@ -6,7 +6,7 @@
 #define SERVICES_DEVICE_HID_HID_CONNECTION_IMPL_H_
 
 #include "base/memory/ref_counted.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "services/device/hid/hid_connection.h"
 #include "services/device/public/mojom/hid.mojom.h"
 
@@ -15,12 +15,22 @@ namespace device {
 // HidConnectionImpl is reponsible for handling mojo communications from
 // clients. It delegates to HidConnection the real work of creating
 // connections in different platforms.
-class HidConnectionImpl : public mojom::HidConnection,
-                          public HidConnection::Client {
+class HidConnectionImpl final : public mojom::HidConnection,
+                                public HidConnection::Client {
  public:
-  HidConnectionImpl(scoped_refptr<device::HidConnection> connection,
-                    mojom::HidConnectionClientPtr connection_client);
-  ~HidConnectionImpl() final;
+  // Creates a strongly-bound HidConnectionImpl owned by |receiver| and
+  // |watcher|. |connection| provides access to the HID device. If
+  // |connection_client| is bound, it will be notified when input reports are
+  // received. |watcher|, if bound, will be disconnected when the connection is
+  // closed.
+  static void Create(
+      scoped_refptr<device::HidConnection> connection,
+      mojo::PendingReceiver<mojom::HidConnection> receiver,
+      mojo::PendingRemote<mojom::HidConnectionClient> connection_client,
+      mojo::PendingRemote<mojom::HidConnectionWatcher> watcher);
+
+  HidConnectionImpl(const HidConnectionImpl&) = delete;
+  HidConnectionImpl& operator=(const HidConnectionImpl&) = delete;
 
   // HidConnection::Client implementation:
   void OnInputReport(scoped_refptr<base::RefCountedBytes> buffer,
@@ -38,6 +48,14 @@ class HidConnectionImpl : public mojom::HidConnection,
                          SendFeatureReportCallback callback) override;
 
  private:
+  friend class HidConnectionImplTest;
+
+  HidConnectionImpl(
+      scoped_refptr<device::HidConnection> connection,
+      mojo::PendingReceiver<mojom::HidConnection> receiver,
+      mojo::PendingRemote<mojom::HidConnectionClient> connection_client,
+      mojo::PendingRemote<mojom::HidConnectionWatcher> watcher);
+  ~HidConnectionImpl() final;
   void OnRead(ReadCallback callback,
               bool success,
               scoped_refptr<base::RefCountedBytes> buffer,
@@ -49,12 +67,15 @@ class HidConnectionImpl : public mojom::HidConnection,
                           size_t size);
   void OnSendFeatureReport(SendFeatureReportCallback callback, bool success);
 
+  mojo::Receiver<mojom::HidConnection> receiver_;
+
   scoped_refptr<device::HidConnection> hid_connection_;
-  mojo::InterfacePtr<mojom::HidConnectionClient> client_;
+
+  // Client interfaces.
+  mojo::Remote<mojom::HidConnectionClient> client_;
+  mojo::Remote<mojom::HidConnectionWatcher> watcher_;
 
   base::WeakPtrFactory<HidConnectionImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(HidConnectionImpl);
 };
 
 }  // namespace device

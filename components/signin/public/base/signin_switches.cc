@@ -6,6 +6,20 @@
 
 namespace switches {
 
+// All switches in alphabetical order.
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+const base::Feature kAccountIdMigration{"AccountIdMigration",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+// If enabled, child accounts (i.e. Unicorn accounts) on Android do not have the
+// Sync feature forced on.
+const base::Feature kAllowSyncOffForChildAccounts{
+    "AllowSyncOffForChildAccounts", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
+
 // Clears the token service before using it. This allows simulating the
 // expiration of credentials during testing.
 const char kClearTokenService[] = "clear-token-service";
@@ -13,17 +27,36 @@ const char kClearTokenService[] = "clear-token-service";
 // Disables sending signin scoped device id to LSO with refresh token request.
 const char kDisableSigninScopedDeviceId[] = "disable-signin-scoped-device-id";
 
-#if !BUILDFLAG(ENABLE_MIRROR)
-// Command line flag for enabling account consistency. Default mode is disabled.
-// Mirror is a legacy mode in which Google accounts are always addded to Chrome,
-// and Chrome then adds them to the Google authentication cookies.
-// Dice is a new experiment in which Chrome is aware of the accounts in the
-// Google authentication cookies.
-const char kAccountConsistency[] = "account-consistency";
+// Enables fetching account capabilities and populating AccountInfo with the
+// fetch result.
+// Disabled on iOS because this platform doesn't have a compatible
+// `AccountCapabilitiesFetcher` implementation yet.
+// TODO(https://crbug.com/1305191): implement feature on iOS.
+#if BUILDFLAG(IS_IOS)
+const base::Feature kEnableFetchingAccountCapabilities{
+    "EnableFetchingAccountCapabilities", base::FEATURE_DISABLED_BY_DEFAULT};
+#else
+const base::Feature kEnableFetchingAccountCapabilities{
+    "EnableFetchingAccountCapabilities", base::FEATURE_ENABLED_BY_DEFAULT};
+#endif  // BUILDFLAG(IS_IOS)
 
-// Values for the kAccountConsistency flag.
-const char kAccountConsistencyMirror[] = "mirror";
-const char kAccountConsistencyDice[] = "dice";
+// This feature disables all extended sync promos.
+const base::Feature kForceDisableExtendedSyncPromos{
+    "ForceDisableExtendedSyncPromos", base::FEATURE_DISABLED_BY_DEFAULT};
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+// Decouples signing out from clearing browsing data on Android. Users are
+// no longer signed-out when they clear browsing data. Instead they may
+// choose to sign out separately by pressing another button.
+const base::Feature kEnableCbdSignOut{"EnableCbdSignOut",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Features to trigger the startup sign-in promo at boot.
+const base::Feature kForceStartupSigninPromo{"ForceStartupSigninPromo",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kTangibleSync{"TangibleSync",
+                                  base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
 }  // namespace switches

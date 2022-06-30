@@ -5,18 +5,20 @@
 #ifndef IOS_CHROME_BROWSER_UI_WEBUI_INSPECT_INSPECT_UI_H_
 #define IOS_CHROME_BROWSER_UI_WEBUI_INSPECT_INSPECT_UI_H_
 
-#include "base/macros.h"
+#include <string>
+
 #include "ios/web/public/webui/web_ui_ios_controller.h"
 
 // The WebUI handler for chrome://inspect which displays JavaScript console
 // messages.
 class InspectUI : public web::WebUIIOSController {
  public:
-  explicit InspectUI(web::WebUIIOS* web_ui);
-  ~InspectUI() override;
+  explicit InspectUI(web::WebUIIOS* web_ui, const std::string& host);
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(InspectUI);
+  InspectUI(const InspectUI&) = delete;
+  InspectUI& operator=(const InspectUI&) = delete;
+
+  ~InspectUI() override;
 };
 
 #endif  // IOS_CHROME_BROWSER_UI_WEBUI_INSPECT_INSPECT_UI_H_

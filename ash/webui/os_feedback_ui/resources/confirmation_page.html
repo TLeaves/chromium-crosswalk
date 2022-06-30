@@ -1,0 +1,58 @@
+<style include="os-feedback-shared">
+  cr-link-row {
+    border: 1px solid;
+    border-radius: 4px;
+    height: 64px;
+    margin: 12px 0 0 0;
+  }
+
+  #help-resources {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #message {
+    color: var(--cros-text-color-secondary);
+    font-family: 'Roboto';
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+</style>
+<!--TODO(xiangdongkong): use localized strings -->
+<div id="container">
+  <div id="header">
+    <h1 class="page-title">[[getTitle_(sendReportStatus)]]</h1>
+  </div>
+  <div id="content">
+    <div id="message">[[getMessage_(sendReportStatus)]]</div>
+    <div id="helpResources">
+      <p id="helpResourcesLabel">Here are some other helpful resources:</p>
+      <cr-link-row id="explore" start-icon="help-resources:explore"
+          label="[[i18n('exploreAppLabel')]]" external
+          sub-label="[[i18n('exploreAppDescription')]]"
+          on-click="handleLinkClicked_">
+      </cr-link-row>
+      <cr-link-row id="diagnostics" start-icon="help-resources:diagnostics"
+          label="[[i18n('diagnosticsAppLabel')]]" external
+          sub-label="[[i18n('diagnosticsAppDescription')]]"
+          on-click="handleLinkClicked_">
+      </cr-link-row>
+      <cr-link-row id="chromebookCommunity"
+          start-icon="help-resources2:chromebook-community"
+          label="[[i18n('askCommunityLabel')]]"
+          sub-label="[[i18n('askCommunityDescription')]]"
+          hidden="[[isOffline_(sendReportStatus)]]" external
+          on-click="handleLinkClicked_">
+      </cr-link-row>
+    </div>
+  </div>
+  <div id="navButtons">
+    <cr-button id="buttonNewReport" class="action-button"
+        on-click="handleBackButtonClicked_">
+      <span>Send new report</span>
+    </cr-button>
+    <cr-button id="buttonDone" class="cancel-button"
+      on-click="handleDoneButtonClicked_">Done</cr-button>
+  </div>
+</div>

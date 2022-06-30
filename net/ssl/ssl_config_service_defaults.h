@@ -5,7 +5,6 @@
 #ifndef NET_SSL_SSL_CONFIG_SERVICE_DEFAULTS_H_
 #define NET_SSL_SSL_CONFIG_SERVICE_DEFAULTS_H_
 
-#include "base/macros.h"
 #include "net/base/net_export.h"
 #include "net/ssl/ssl_config_service.h"
 
@@ -17,19 +16,21 @@ namespace net {
 class NET_EXPORT SSLConfigServiceDefaults : public SSLConfigService {
  public:
   SSLConfigServiceDefaults();
+
+  SSLConfigServiceDefaults(const SSLConfigServiceDefaults&) = delete;
+  SSLConfigServiceDefaults& operator=(const SSLConfigServiceDefaults&) = delete;
+
   ~SSLConfigServiceDefaults() override;
 
-  // Store default SSL config settings in |config|.
-  void GetSSLConfig(SSLConfig* config) override;
+  // Returns the default SSL config settings.
+  SSLContextConfig GetSSLContextConfig() override;
 
   bool CanShareConnectionWithClientCerts(
       const std::string& hostname) const override;
 
  private:
   // Default value of prefs.
-  const SSLConfig default_config_;
-
-  DISALLOW_COPY_AND_ASSIGN(SSLConfigServiceDefaults);
+  const SSLContextConfig default_config_;
 };
 
 }  // namespace net

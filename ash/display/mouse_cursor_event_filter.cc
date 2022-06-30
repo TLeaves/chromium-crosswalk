@@ -25,7 +25,7 @@ MouseCursorEventFilter::~MouseCursorEventFilter() {
 
 void MouseCursorEventFilter::ShowSharedEdgeIndicator(aura::Window* from) {
   mouse_warp_controller_ =
-      ash::CreateMouseWarpController(Shell::Get()->display_manager(), from);
+      CreateMouseWarpController(Shell::Get()->display_manager(), from);
 }
 
 void MouseCursorEventFilter::HideSharedEdgeIndicator() {
@@ -38,12 +38,16 @@ void MouseCursorEventFilter::OnDisplaysInitialized() {
 
 void MouseCursorEventFilter::OnDisplayConfigurationChanged() {
   mouse_warp_controller_ =
-      ash::CreateMouseWarpController(Shell::Get()->display_manager(), nullptr);
+      CreateMouseWarpController(Shell::Get()->display_manager(), nullptr);
 }
 
 void MouseCursorEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   // Don't warp due to synthesized event.
   if (event->flags() & ui::EF_IS_SYNTHESIZED)
+    return;
+
+  // Don't warp if the event specifically requests us not to.
+  if (event->flags() & ui::EF_NOT_SUITABLE_FOR_MOUSE_WARPING)
     return;
 
   // Handle both MOVED and DRAGGED events here because when the mouse pointer

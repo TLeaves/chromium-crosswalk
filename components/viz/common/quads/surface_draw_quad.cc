@@ -4,10 +4,10 @@
 
 #include "components/viz/common/quads/surface_draw_quad.h"
 
-#include "base/logging.h"
-#include "base/optional.h"
+#include "base/check_op.h"
 #include "base/trace_event/traced_value.h"
 #include "base/values.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace viz {
 
@@ -23,35 +23,35 @@ SurfaceDrawQuad& SurfaceDrawQuad::operator=(const SurfaceDrawQuad& other) =
 void SurfaceDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
                              const gfx::Rect& rect,
                              const gfx::Rect& visible_rect,
-                             const SurfaceRange& surface_range,
-                             SkColor default_background_color,
-                             bool stretch_content_to_fill_bounds,
-                             bool ignores_input_event) {
+                             const SurfaceRange& range,
+                             SkColor background_color,
+                             bool stretch_content) {
   bool needs_blending = true;
   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kSurfaceContent, rect,
                    visible_rect, needs_blending);
-  this->surface_range = surface_range;
-  this->default_background_color = default_background_color;
-  this->stretch_content_to_fill_bounds = stretch_content_to_fill_bounds;
-  this->ignores_input_event = ignores_input_event;
+  surface_range = range;
+  // TODO(crbug/1308932) remove FromColor and make all SkColor4f
+  default_background_color = SkColor4f::FromColor(background_color);
+  stretch_content_to_fill_bounds = stretch_content;
 }
 
 void SurfaceDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                              const gfx::Rect& rect,
                              const gfx::Rect& visible_rect,
                              bool needs_blending,
-                             const SurfaceRange& surface_range,
-                             SkColor default_background_color,
-                             bool stretch_content_to_fill_bounds,
-                             bool ignores_input_event,
-                             bool is_reflection) {
+                             const SurfaceRange& range,
+                             SkColor background_color,
+                             bool stretch_content,
+                             bool reflection,
+                             bool merge) {
   DrawQuad::SetAll(shared_quad_state, DrawQuad::Material::kSurfaceContent, rect,
                    visible_rect, needs_blending);
-  this->surface_range = surface_range;
-  this->default_background_color = default_background_color;
-  this->stretch_content_to_fill_bounds = stretch_content_to_fill_bounds;
-  this->ignores_input_event = ignores_input_event;
-  this->is_reflection = is_reflection;
+  surface_range = range;
+  // TODO(crbug/1308932) remove FromColor and make all SkColor4f
+  default_background_color = SkColor4f::FromColor(background_color);
+  stretch_content_to_fill_bounds = stretch_content;
+  is_reflection = reflection;
+  allow_merge = merge;
 }
 
 const SurfaceDrawQuad* SurfaceDrawQuad::MaterialCast(const DrawQuad* quad) {

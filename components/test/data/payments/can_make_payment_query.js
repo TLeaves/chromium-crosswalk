@@ -42,18 +42,55 @@ function run(testFunction) {
 /**
  * Checks for existence of Bob Pay or a complete credit card.
  */
-function buy() {  // eslint-disable-line no-unused-vars
-  var request = new PaymentRequest([bobPayMethod, visaMethod], defaultDetails);
+function buy() { // eslint-disable-line no-unused-vars
+  buyWithMethods([bobPayMethod, visaMethod]);
+}
+
+/**
+ * Checks for existence of the given methods.
+ * @param {sequence<PaymentMethodData>} methodData An array of payment method
+ *        objects.
+ */
+function buyWithMethods(methodData) {
+  var request = new PaymentRequest(methodData, defaultDetails);
   run(() => {
     return request.canMakePayment();
   });
 }
 
 /**
+ * Show payment UI for Bob Pay or a complete credit card.
+ */
+function show() { // eslint-disable-line no-unused-vars
+  showWithMethods([bobPayMethod, visaMethod]);
+}
+
+/**
+ * Show payment UI for the given methods.
+ * @param {sequence<PaymentMethodData>} methodData An array of payment method
+ *        objects.
+ */
+function showWithMethods(methodData) {
+  var request = new PaymentRequest(methodData, defaultDetails);
+  run(() => {
+    return request.show();
+  });
+}
+
+/**
  * Checks for enrolled instrument of Bob Pay or a complete credit card.
  */
-function hasEnrolledInstrument() {  // eslint-disable-line no-unused-vars
-  var request = new PaymentRequest([bobPayMethod, visaMethod], defaultDetails);
+function hasEnrolledInstrument() { // eslint-disable-line no-unused-vars
+  hasEnrolledInstrumentWithMethods([bobPayMethod, visaMethod]);
+}
+
+/**
+ * Checks for enrolled instrument of the given methods.
+ * @param {sequence<PaymentMethodData>} methodData An array of payment method
+ *        objects.
+ */
+ function hasEnrolledInstrumentWithMethods(methodData) {
+  var request = new PaymentRequest(methodData, defaultDetails);
   run(() => {
     return request.hasEnrolledInstrument();
   });

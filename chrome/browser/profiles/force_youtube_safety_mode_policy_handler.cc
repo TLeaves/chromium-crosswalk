@@ -27,16 +27,17 @@ void ForceYouTubeSafetyModePolicyHandler::ApplyPolicySettings(
     PrefValueMap* prefs) {
   // If only the deprecated ForceYouTubeSafetyMode policy is set,
   // but not ForceYouTubeRestrict, set ForceYouTubeRestrict to Moderate.
-  if (policies.GetValue(key::kForceYouTubeRestrict))
+  if (policies.GetValue(key::kForceYouTubeRestrict, base::Value::Type::INTEGER))
     return;
 
-  const base::Value* value = policies.GetValue(policy_name());
-  bool enabled;
-  if (value && value->GetAsBoolean(&enabled)) {
+  const base::Value* value =
+      policies.GetValue(policy_name(), base::Value::Type::BOOLEAN);
+  if (value) {
     prefs->SetValue(
         prefs::kForceYouTubeRestrict,
-        base::Value(enabled ? safe_search_util::YOUTUBE_RESTRICT_MODERATE
-                            : safe_search_util::YOUTUBE_RESTRICT_OFF));
+        base::Value(value->GetBool()
+                        ? safe_search_util::YOUTUBE_RESTRICT_MODERATE
+                        : safe_search_util::YOUTUBE_RESTRICT_OFF));
   }
 }
 

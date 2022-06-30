@@ -22,3 +22,27 @@ enum HDCPState {
   HDCP_STATE_DESIRED,
   HDCP_STATE_ENABLED,
 };
+
+// Corresponding to display::ContentProtectionMethod.
+enum ContentProtectionMethod {
+  CONTENT_PROTECTION_METHOD_NONE = 0,
+  CONTENT_PROTECTION_METHOD_HDCP_TYPE_0 = 1,
+  CONTENT_PROTECTION_METHOD_HDCP_TYPE_1 = 2,
+};
+
+// Corresponds to display::PanelOrientation.
+enum PanelOrientation {
+  NORMAL = 0,
+  BOTTOM_UP = 1,
+  LEFT_UP = 2,
+  RIGHT_UP = 3
+};
+
+// Corresponds to display::PrivacyScreenState
+enum PrivacyScreenState {
+  DISABLED = 0,
+  ENABLED = 1,
+  DISABLED_LOCKED = 2,
+  ENABLED_LOCKED = 3,
+  NOT_SUPPORTED = 4
+};

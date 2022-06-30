@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -7,8 +7,6 @@
 Replaces GN files in tree with files from here that
 make the build use system libraries.
 """
-
-from __future__ import print_function
 
 import argparse
 import os
@@ -24,7 +22,7 @@ REPLACEMENTS = {
   'harfbuzz-ng': 'third_party/harfbuzz-ng/harfbuzz.gni',
   'icu': 'third_party/icu/BUILD.gn',
   'libdrm': 'third_party/libdrm/BUILD.gn',
-  'libevent': 'base/third_party/libevent/BUILD.gn',
+  'libevent': 'third_party/libevent/BUILD.gn',
   'libjpeg': 'third_party/libjpeg.gni',
   'libpng': 'third_party/libpng/BUILD.gn',
   'libvpx': 'third_party/libvpx/BUILD.gn',
@@ -35,7 +33,6 @@ REPLACEMENTS = {
   'opus': 'third_party/opus/BUILD.gn',
   're2': 'third_party/re2/BUILD.gn',
   'snappy': 'third_party/snappy/BUILD.gn',
-  'yasm': 'third_party/yasm/yasm_assemble.gni',
   'zlib': 'third_party/zlib/BUILD.gn',
 }
 

@@ -11,9 +11,13 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
+#include "content/common/content_export.h"
+#include "services/network/public/mojom/cross_origin_embedder_policy.mojom-forward.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 
 class GURL;
@@ -73,6 +77,7 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   blink::ServiceWorkerStatusCode AllocateWorkerProcess(
       int embedded_worker_id,
       const GURL& script_url,
+      network::mojom::CrossOriginEmbedderPolicyValue coep_value,
       bool can_use_existing_process,
       AllocatedProcessInfo* out_info);
 
@@ -96,6 +101,12 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
     new_process_id_for_test_ = process_id;
   }
 
+  // Forces AllocateWorkerProcess to create a new process instead of reusing an
+  // existing one.
+  void ForceNewProcessForTest(bool force_new_process) {
+    force_new_process_for_test_ = force_new_process;
+  }
+
   // AsWeakPtr() can be called from any thread, but the WeakPtr must be
   // dereferenced on the UI thread only.
   base::WeakPtr<ServiceWorkerProcessManager> AsWeakPtr() { return weak_this_; }
@@ -112,7 +123,7 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   // Guarded by |browser_context_lock_|.
   // Written only on the UI thread, so the UI thread doesn't need to acquire the
   // lock when reading. Can be read from other threads with the lock.
-  BrowserContext* browser_context_;
+  raw_ptr<BrowserContext> browser_context_;
 
   // Protects |browser_context_|.
   base::Lock browser_context_lock_;
@@ -121,7 +132,7 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   // All fields below are only accessed on the UI thread.
 
   // May be null during initialization and in unit tests.
-  StoragePartitionImpl* storage_partition_;
+  raw_ptr<StoragePartitionImpl, DanglingUntriaged> storage_partition_;
 
   // Maps the ID of a running EmbeddedWorkerInstance to the SiteInstance whose
   // renderer process it's running inside. Since the embedded workers themselves
@@ -134,6 +145,8 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   // EmbeddedWorkerInstances.
   int process_id_for_test_;
   int new_process_id_for_test_;
+
+  bool force_new_process_for_test_;
 
   // Used to double-check that we don't access *this after it's destroyed.
   base::WeakPtr<ServiceWorkerProcessManager> weak_this_;

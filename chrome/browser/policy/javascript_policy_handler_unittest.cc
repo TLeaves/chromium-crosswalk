@@ -30,38 +30,36 @@ TEST_F(JavascriptPolicyHandlerTest, JavascriptEnabled) {
   EXPECT_FALSE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting, NULL));
   PolicyMap policy;
   policy.Set(key::kJavascriptEnabled, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-             POLICY_SOURCE_CLOUD, std::make_unique<base::Value>(true), nullptr);
+             POLICY_SOURCE_CLOUD, base::Value(true), nullptr);
   UpdateProviderPolicy(policy);
   EXPECT_FALSE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting, NULL));
   policy.Set(key::kJavascriptEnabled, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-             POLICY_SOURCE_CLOUD, std::make_unique<base::Value>(false),
-             nullptr);
+             POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   UpdateProviderPolicy(policy);
   const base::Value* value = NULL;
   EXPECT_TRUE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting,
                                &value));
-  EXPECT_TRUE(base::Value(CONTENT_SETTING_BLOCK).Equals(value));
+  EXPECT_EQ(base::Value(CONTENT_SETTING_BLOCK), *value);
 }
 
 TEST_F(JavascriptPolicyHandlerTest, JavascriptEnabledOverridden) {
   EXPECT_FALSE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting, NULL));
   PolicyMap policy;
   policy.Set(key::kJavascriptEnabled, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-             POLICY_SOURCE_CLOUD, std::make_unique<base::Value>(false),
-             nullptr);
+             POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   UpdateProviderPolicy(policy);
   const base::Value* value = NULL;
   EXPECT_TRUE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting,
                                &value));
-  EXPECT_TRUE(base::Value(CONTENT_SETTING_BLOCK).Equals(value));
+  EXPECT_EQ(base::Value(CONTENT_SETTING_BLOCK), *value);
   // DefaultJavaScriptSetting overrides JavascriptEnabled.
   policy.Set(key::kDefaultJavaScriptSetting, POLICY_LEVEL_MANDATORY,
              POLICY_SCOPE_USER, POLICY_SOURCE_CLOUD,
-             std::make_unique<base::Value>(CONTENT_SETTING_ALLOW), nullptr);
+             base::Value(CONTENT_SETTING_ALLOW), nullptr);
   UpdateProviderPolicy(policy);
   EXPECT_TRUE(store_->GetValue(prefs::kManagedDefaultJavaScriptSetting,
                                &value));
-  EXPECT_TRUE(base::Value(CONTENT_SETTING_ALLOW).Equals(value));
+  EXPECT_EQ(base::Value(CONTENT_SETTING_ALLOW), *value);
 }
 
 }  // namespace policy

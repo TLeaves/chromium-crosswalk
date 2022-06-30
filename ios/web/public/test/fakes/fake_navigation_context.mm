@@ -4,6 +4,7 @@
 
 #import "ios/web/public/test/fakes/fake_navigation_context.h"
 
+#import "ios/web/public/web_state.h"
 #include "net/http/http_response_headers.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -75,6 +76,10 @@ net::HttpResponseHeaders* FakeNavigationContext::GetResponseHeaders() const {
 
 bool FakeNavigationContext::IsRendererInitiated() const {
   return renderer_initiated_;
+}
+
+web::HttpsUpgradeType FakeNavigationContext::GetFailedHttpsUpgradeType() const {
+  return web::HttpsUpgradeType::kNone;
 }
 
 void FakeNavigationContext::SetWebState(std::unique_ptr<WebState> web_state) {

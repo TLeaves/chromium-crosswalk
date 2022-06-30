@@ -4,7 +4,7 @@
 
 package org.chromium.mojo.bindings;
 
-import android.support.test.filters.SmallTest;
+import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
 import org.junit.Rule;
@@ -119,7 +119,7 @@ public class BindingsVersioningTest {
         }
 
         {
-            int expectedHandle = 42;
+            long expectedHandle = 42;
             MultiVersionStructV7 v7 = new MultiVersionStructV7();
             v7.fInt32 = 123;
             v7.fRect = newRect(5);
@@ -198,7 +198,7 @@ public class BindingsVersioningTest {
         }
 
         {
-            int expectedHandle = 42;
+            long expectedHandle = 42;
             MultiVersionStructV7 expected = new MultiVersionStructV7();
             expected.fInt32 = 123;
             expected.fRect = newRect(5);

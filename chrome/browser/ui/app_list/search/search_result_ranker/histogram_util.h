@@ -6,6 +6,9 @@
 #define CHROME_BROWSER_UI_APP_LIST_SEARCH_SEARCH_RESULT_RANKER_HISTOGRAM_UTIL_H_
 
 #include <string>
+#include <vector>
+
+#include "chrome/browser/ui/app_list/search/search_result_ranker/ranking_item_util.h"
 
 namespace app_list {
 
@@ -41,7 +44,8 @@ enum class SerializationStatus {
   kHourBinPredictorLoadingError = 12,
   kMarkovPredictorLoadingError = 13,
   kExponentialWeightsEnsembleLoadingError = 14,
-  kMaxValue = kExponentialWeightsEnsembleLoadingError,
+  kFrequencyPredictorLoadingError = 15,
+  kMaxValue = kFrequencyPredictorLoadingError,
 };
 
 // Represents various uses of a RecurrenceRanker. These values persist to logs.
@@ -66,6 +70,18 @@ enum class JsonConfigConversionStatus {
   kMaxValue = kSuccess,
 };
 
+// Represents the type of a zero state search result. These values persist to
+// logs. Entries should not be renumbered and numeric values should never be
+// reused.
+enum class ZeroStateResultType {
+  kUnknown = 0,
+  kUnanticipated = 1,
+  kOmniboxSearch = 2,
+  kZeroStateFile = 3,
+  kDriveQuickAccess = 4,
+  kMaxValue = kDriveQuickAccess,
+};
+
 void LogInitializationStatus(const std::string& suffix,
                              InitializationStatus status);
 
@@ -76,6 +92,8 @@ void LogUsage(const std::string& suffix, Usage usage);
 
 void LogJsonConfigConversionStatus(const std::string& suffix,
                                    JsonConfigConversionStatus status);
+
+void LogZeroStateLaunchType(RankingItemType type);
 
 }  // namespace app_list
 

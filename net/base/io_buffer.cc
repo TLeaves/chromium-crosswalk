@@ -4,34 +4,25 @@
 
 #include "net/base/io_buffer.h"
 
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "base/numerics/safe_math.h"
 
 namespace net {
-
-namespace {
 
 // TODO(eroman): IOBuffer is being converted to require buffer sizes and offsets
 // be specified as "size_t" rather than "int" (crbug.com/488553). To facilitate
 // this move (since LOTS of code needs to be updated), both "size_t" and "int
 // are being accepted. When using "size_t" this function ensures that it can be
 // safely converted to an "int" without truncation.
-void AssertValidBufferSize(size_t size) {
+void IOBuffer::AssertValidBufferSize(size_t size) {
   base::CheckedNumeric<int>(size).ValueOrDie();
 }
 
-void AssertValidBufferSize(int size) {
+void IOBuffer::AssertValidBufferSize(int size) {
   CHECK_GE(size, 0);
 }
 
-}  // namespace
-
 IOBuffer::IOBuffer() : data_(nullptr) {}
-
-IOBuffer::IOBuffer(int buffer_size) {
-  AssertValidBufferSize(buffer_size);
-  data_ = new char[buffer_size];
-}
 
 IOBuffer::IOBuffer(size_t buffer_size) {
   AssertValidBufferSize(buffer_size);
@@ -43,24 +34,11 @@ IOBuffer::IOBuffer(char* data)
 }
 
 IOBuffer::~IOBuffer() {
-  delete[] data_;
-  data_ = nullptr;
-}
-
-IOBufferWithSize::IOBufferWithSize(int size)
-    : IOBuffer(size),
-      size_(size) {
-  AssertValidBufferSize(size);
+  data_.ClearAndDeleteArray();
 }
 
 IOBufferWithSize::IOBufferWithSize(size_t size) : IOBuffer(size), size_(size) {
   // Note: Size check is done in superclass' constructor.
-}
-
-IOBufferWithSize::IOBufferWithSize(char* data, int size)
-    : IOBuffer(data),
-      size_(size) {
-  AssertValidBufferSize(size);
 }
 
 IOBufferWithSize::IOBufferWithSize(char* data, size_t size)
@@ -90,12 +68,12 @@ StringIOBuffer::~StringIOBuffer() {
 }
 
 DrainableIOBuffer::DrainableIOBuffer(scoped_refptr<IOBuffer> base, int size)
-    : IOBuffer(base->data()), base_(std::move(base)), size_(size), used_(0) {
+    : IOBuffer(base->data()), base_(std::move(base)), size_(size) {
   AssertValidBufferSize(size);
 }
 
 DrainableIOBuffer::DrainableIOBuffer(scoped_refptr<IOBuffer> base, size_t size)
-    : IOBuffer(base->data()), base_(std::move(base)), size_(size), used_(0) {
+    : IOBuffer(base->data()), base_(std::move(base)), size_(size) {
   AssertValidBufferSize(size);
 }
 
@@ -124,11 +102,7 @@ DrainableIOBuffer::~DrainableIOBuffer() {
   data_ = nullptr;
 }
 
-GrowableIOBuffer::GrowableIOBuffer()
-    : IOBuffer(),
-      capacity_(0),
-      offset_(0) {
-}
+GrowableIOBuffer::GrowableIOBuffer() = default;
 
 void GrowableIOBuffer::SetCapacity(int capacity) {
   DCHECK_GE(capacity, 0);

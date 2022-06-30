@@ -9,8 +9,7 @@
 
 #include "base/containers/flat_set.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
-#include "base/strings/string16.h"
+#include "base/memory/raw_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "components/favicon/core/favicon_service.h"
 #include "ui/base/models/menu_model.h"
@@ -27,10 +26,6 @@ class NavigationEntry;
 class WebContents;
 }
 
-namespace gfx {
-class Image;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 //
 // BackForwardMenuModel
@@ -45,6 +40,10 @@ class BackForwardMenuModel : public ui::MenuModel {
   enum class ModelType { kForward = 1, kBackward = 2 };
 
   BackForwardMenuModel(Browser* browser, ModelType model_type);
+
+  BackForwardMenuModel(const BackForwardMenuModel&) = delete;
+  BackForwardMenuModel& operator=(const BackForwardMenuModel&) = delete;
+
   ~BackForwardMenuModel() override;
 
   // MenuModel implementation.
@@ -57,12 +56,12 @@ class BackForwardMenuModel : public ui::MenuModel {
   ItemType GetTypeAt(int index) const override;
   ui::MenuSeparatorType GetSeparatorTypeAt(int index) const override;
   int GetCommandIdAt(int index) const override;
-  base::string16 GetLabelAt(int index) const override;
+  std::u16string GetLabelAt(int index) const override;
   bool IsItemDynamicAt(int index) const override;
   bool GetAcceleratorAt(int index, ui::Accelerator* accelerator) const override;
   bool IsItemCheckedAt(int index) const override;
   int GetGroupIdAt(int index) const override;
-  bool GetIconAt(int index, gfx::Image* icon) override;
+  ui::ImageModel GetIconAt(int index) const override;
   ui::ButtonMenuItemModel* GetButtonMenuItemAt(int index) const override;
   bool IsEnabledAt(int index) const override;
   MenuModel* GetSubmenuModelAt(int index) const override;
@@ -80,6 +79,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   FRIEND_TEST_ALL_PREFIXES(BackFwdMenuModelTest, ChapterStops);
   FRIEND_TEST_ALL_PREFIXES(BackFwdMenuModelTest, EscapeLabel);
   FRIEND_TEST_ALL_PREFIXES(BackFwdMenuModelTest, FaviconLoadTest);
+  FRIEND_TEST_ALL_PREFIXES(BackFwdMenuModelIncognitoTest, IncognitoCaseTest);
   FRIEND_TEST_ALL_PREFIXES(ChromeNavigationBrowserTest,
                            NoUserActivationSetSkipOnBackForward);
 
@@ -161,7 +161,7 @@ class BackForwardMenuModel : public ui::MenuModel {
   bool ItemHasIcon(int index) const;
 
   // Allow the unit test to use the "Show Full History" label.
-  base::string16 GetShowFullHistoryLabel() const;
+  std::u16string GetShowFullHistoryLabel() const;
 
   // Looks up a NavigationEntry by menu id.
   content::NavigationEntry* GetNavigationEntry(int index) const;
@@ -177,10 +177,14 @@ class BackForwardMenuModel : public ui::MenuModel {
   // An index of -1 means no index.
   std::string BuildActionName(const std::string& name, int index) const;
 
-  Browser* const browser_;
+  // Returns true if "Show Full History" item should be visible. It is visible
+  // only in outside incognito mode.
+  bool ShouldShowFullHistoryBeVisible() const;
+
+  const raw_ptr<Browser> browser_;
 
   // The unit tests will provide their own WebContents to use.
-  content::WebContents* test_web_contents_ = nullptr;
+  raw_ptr<content::WebContents> test_web_contents_ = nullptr;
 
   // Represents whether this is the delegate for the forward button or the
   // back button.
@@ -193,8 +197,6 @@ class BackForwardMenuModel : public ui::MenuModel {
 
   // Used for loading favicons.
   base::CancelableTaskTracker cancelable_task_tracker_;
-
-  DISALLOW_COPY_AND_ASSIGN(BackForwardMenuModel);
 };
 
 #endif  // CHROME_BROWSER_UI_TOOLBAR_BACK_FORWARD_MENU_MODEL_H_

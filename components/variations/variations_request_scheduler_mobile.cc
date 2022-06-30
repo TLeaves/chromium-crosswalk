@@ -17,10 +17,9 @@ const int kScheduleFetchDelaySeconds = 5;
 }  // namespace
 
 VariationsRequestSchedulerMobile::VariationsRequestSchedulerMobile(
-    const base::Closure& task,
-    PrefService* local_state) :
-  VariationsRequestScheduler(task), local_state_(local_state) {
-}
+    const base::RepeatingClosure& task,
+    PrefService* local_state)
+    : VariationsRequestScheduler(task), local_state_(local_state) {}
 
 VariationsRequestSchedulerMobile::~VariationsRequestSchedulerMobile() {
 }
@@ -51,16 +50,14 @@ void VariationsRequestSchedulerMobile::OnAppEnterForeground() {
   // Since Start() launches a one-off execution, we can reuse it here. Also
   // note that since Start() verifies that the seed needs to be refreshed, we
   // do not verify here.
-  schedule_fetch_timer_.Start(
-      FROM_HERE,
-      base::TimeDelta::FromSeconds(kScheduleFetchDelaySeconds),
-      this,
-      &VariationsRequestSchedulerMobile::Start);
+  schedule_fetch_timer_.Start(FROM_HERE,
+                              base::Seconds(kScheduleFetchDelaySeconds), this,
+                              &VariationsRequestSchedulerMobile::Start);
 }
 
 // static
 VariationsRequestScheduler* VariationsRequestScheduler::Create(
-    const base::Closure& task,
+    const base::RepeatingClosure& task,
     PrefService* local_state) {
   return new VariationsRequestSchedulerMobile(task, local_state);
 }

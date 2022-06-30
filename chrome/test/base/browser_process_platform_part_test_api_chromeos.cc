@@ -6,7 +6,7 @@
 
 #include <utility>
 
-#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/browser_process_platform_part_ash.h"
 #include "chrome/browser/component_updater/cros_component_manager.h"
 
 BrowserProcessPlatformPartTestApi::BrowserProcessPlatformPartTestApi(
@@ -18,7 +18,7 @@ BrowserProcessPlatformPartTestApi::~BrowserProcessPlatformPartTestApi() {
 }
 
 void BrowserProcessPlatformPartTestApi::InitializeCrosComponentManager(
-    std::unique_ptr<component_updater::CrOSComponentManager>
+    scoped_refptr<component_updater::CrOSComponentManager>
         cros_component_manager) {
   DCHECK(!platform_part_->using_testing_cros_component_manager_);
   DCHECK(!platform_part_->cros_component_manager_);

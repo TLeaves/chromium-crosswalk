@@ -5,19 +5,21 @@
 #include "base/debug/activity_tracker.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/pending_task.h"
 #include "base/rand_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
-#include "base/synchronization/spin_wait.h"
+#include "base/test/spin_wait.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/simple_thread.h"
 #include "base/time/time.h"
@@ -82,6 +84,7 @@ class ActivityTrackerTest : public testing::Test {
   }
 
   size_t GetGlobalUserDataMemoryCacheUsed() {
+    AutoLock autolock(GlobalActivityTracker::Get()->user_data_allocator_lock_);
     return GlobalActivityTracker::Get()->user_data_allocator_.cache_used();
   }
 
@@ -217,8 +220,8 @@ TEST_F(ActivityTrackerTest, ScopedTaskTest) {
   {
     PendingTask task1(FROM_HERE, DoNothing());
     ScopedTaskRunActivity activity1(task1);
-    ActivityUserData& user_data1 = activity1.user_data();
-    (void)user_data1;  // Tell compiler it's been used.
+    [[maybe_unused]] ActivityUserData& user_data1 = activity1.user_data();
+    EXPECT_TRUE(activity1.IsRecorded());
 
     ASSERT_TRUE(tracker->CreateSnapshot(&snapshot));
     ASSERT_EQ(1U, snapshot.activity_stack_depth);
@@ -228,8 +231,7 @@ TEST_F(ActivityTrackerTest, ScopedTaskTest) {
     {
       PendingTask task2(FROM_HERE, DoNothing());
       ScopedTaskRunActivity activity2(task2);
-      ActivityUserData& user_data2 = activity2.user_data();
-      (void)user_data2;  // Tell compiler it's been used.
+      [[maybe_unused]] ActivityUserData& user_data2 = activity2.user_data();
 
       ASSERT_TRUE(tracker->CreateSnapshot(&snapshot));
       ASSERT_EQ(2U, snapshot.activity_stack_depth);
@@ -259,6 +261,9 @@ class SimpleLockThread : public SimpleThread {
         data_changed_(false),
         is_running_(false) {}
 
+  SimpleLockThread(const SimpleLockThread&) = delete;
+  SimpleLockThread& operator=(const SimpleLockThread&) = delete;
+
   ~SimpleLockThread() override = default;
 
   void Run() override {
@@ -278,11 +283,9 @@ class SimpleLockThread : public SimpleThread {
   bool WasDataChanged() { return data_changed_; }
 
  private:
-  Lock* lock_;
+  raw_ptr<Lock> lock_;
   bool data_changed_;
   std::atomic<bool> is_running_;
-
-  DISALLOW_COPY_AND_ASSIGN(SimpleLockThread);
 };
 
 }  // namespace
@@ -301,6 +304,7 @@ TEST_F(ActivityTrackerTest, LockTest) {
   // Check no activity when only "trying" a lock.
   EXPECT_TRUE(lock.Try());
   EXPECT_EQ(pre_version, tracker->GetDataVersionForTesting());
+  lock.AssertAcquired();
   lock.Release();
   EXPECT_EQ(pre_version, tracker->GetDataVersionForTesting());
 
@@ -315,11 +319,11 @@ TEST_F(ActivityTrackerTest, LockTest) {
   lock.Acquire();
   t2.Start();
   while (!t2.IsRunning())
-    PlatformThread::Sleep(TimeDelta::FromMilliseconds(10));
+    PlatformThread::Sleep(Milliseconds(10));
   // t2 can't join until the lock is released but have to give time for t2 to
   // actually block on the lock before releasing it or the results will not
   // be correct.
-  PlatformThread::Sleep(TimeDelta::FromMilliseconds(200));
+  PlatformThread::Sleep(Milliseconds(200));
   lock.Release();
   // Now the results will be valid.
   t2.Join();
@@ -400,6 +404,9 @@ class SimpleActivityThread : public SimpleThread {
         exit_(false),
         exit_condition_(&lock_) {}
 
+  SimpleActivityThread(const SimpleActivityThread&) = delete;
+  SimpleActivityThread& operator=(const SimpleActivityThread&) = delete;
+
   ~SimpleActivityThread() override = default;
 
   void Run() override {
@@ -429,7 +436,7 @@ class SimpleActivityThread : public SimpleThread {
   }
 
  private:
-  const void* origin_;
+  raw_ptr<const void> origin_;
   Activity::Type activity_;
   ActivityData data_;
 
@@ -437,8 +444,6 @@ class SimpleActivityThread : public SimpleThread {
   std::atomic<bool> exit_;
   Lock lock_;
   ConditionVariable exit_condition_;
-
-  DISALLOW_COPY_AND_ASSIGN(SimpleActivityThread);
 };
 
 }  // namespace

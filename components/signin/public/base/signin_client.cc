@@ -10,7 +10,3 @@ void SigninClient::PreSignOut(
   // Allow sign out to continue.
   std::move(on_signout_decision_reached).Run(SignoutDecision::ALLOW_SIGNOUT);
 }
-
-void SigninClient::PreGaiaLogout(base::OnceClosure callback) {
-  std::move(callback).Run();
-}

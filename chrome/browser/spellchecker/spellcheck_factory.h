@@ -6,15 +6,11 @@
 #define CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_FACTORY_H_
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/singleton.h"
+#include "build/build_config.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class SpellcheckService;
-
-namespace service_manager {
-class Identity;
-}
 
 // Entry into the SpellCheck system.
 //
@@ -25,10 +21,10 @@ class SpellcheckServiceFactory : public BrowserContextKeyedServiceFactory {
   // if it does not already exist. This can return NULL.
   static SpellcheckService* GetForContext(content::BrowserContext* context);
 
-  static SpellcheckService* GetForRenderer(
-      const service_manager::Identity& renderer_identity);
-
   static SpellcheckServiceFactory* GetInstance();
+
+  SpellcheckServiceFactory(const SpellcheckServiceFactory&) = delete;
+  SpellcheckServiceFactory& operator=(const SpellcheckServiceFactory&) = delete;
 
  private:
   friend struct base::DefaultSingletonTraits<SpellcheckServiceFactory>;
@@ -46,8 +42,12 @@ class SpellcheckServiceFactory : public BrowserContextKeyedServiceFactory {
   bool ServiceIsNULLWhileTesting() const override;
 
   FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT);
-
-  DISALLOW_COPY_AND_ASSIGN(SpellcheckServiceFactory);
+#if BUILDFLAG(IS_WIN)
+  FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceWindowsHybridBrowserTest,
+                           WindowsHybridSpellcheck);
+  FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceWindowsHybridBrowserTestDelayInit,
+                           WindowsHybridSpellcheckDelayInit);
+#endif  // BUILDFLAG(IS_WIN)
 };
 
 #endif  // CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_FACTORY_H_

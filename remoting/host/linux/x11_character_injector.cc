@@ -7,12 +7,12 @@
 #include <algorithm>
 
 #include "base/bind.h"
+#include "base/time/time.h"
 #include "remoting/host/linux/x11_keyboard.h"
 
 namespace {
 
-constexpr base::TimeDelta kMappingExpireDuration =
-    base::TimeDelta::FromMilliseconds(200);
+constexpr base::TimeDelta kMappingExpireDuration = base::Milliseconds(200);
 
 }  // namespace
 
@@ -38,7 +38,7 @@ X11CharacterInjector::X11CharacterInjector(
     std::unique_ptr<X11Keyboard> keyboard)
     : keyboard_(std::move(keyboard)) {
   std::vector<uint32_t> keycodes = keyboard_->GetUnusedKeycodes();
-  for (int keycode : keycodes) {
+  for (uint32_t keycode : keycodes) {
     available_keycodes_.push_back({keycode, base::TimeTicks()});
   }
 }

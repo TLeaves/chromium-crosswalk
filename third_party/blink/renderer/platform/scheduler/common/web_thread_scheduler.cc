@@ -7,8 +7,11 @@
 #include <utility>
 
 #include "base/feature_list.h"
+#include "base/message_loop/message_pump_type.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "third_party/blink/public/common/input/web_input_event_attribution.h"
+#include "third_party/blink/public/platform/scheduler/web_widget_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/common/features.h"
 #include "third_party/blink/renderer/platform/scheduler/common/tracing_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
@@ -21,16 +24,12 @@ WebThreadScheduler::~WebThreadScheduler() = default;
 // static
 std::unique_ptr<WebThreadScheduler>
 WebThreadScheduler::CreateMainThreadScheduler(
-    std::unique_ptr<base::MessagePump> message_pump,
-    base::Optional<base::Time> initial_virtual_time) {
+    std::unique_ptr<base::MessagePump> message_pump) {
   auto settings =
       base::sequence_manager::SequenceManager::Settings::Builder()
-          .SetMessagePumpType(base::MessagePump::Type::DEFAULT)
+          .SetMessagePumpType(base::MessagePumpType::DEFAULT)
           .SetRandomisedSamplingEnabled(true)
           .SetAddQueueTimeToTasks(true)
-          .SetAntiStarvationLogicForPrioritiesDisabled(
-              base::FeatureList::IsEnabled(
-                  kBlinkSchedulerDisableAntiStarvationForPriorities))
           .Build();
   auto sequence_manager =
       message_pump
@@ -39,10 +38,7 @@ WebThreadScheduler::CreateMainThreadScheduler(
                     std::move(message_pump), std::move(settings))
           : base::sequence_manager::CreateSequenceManagerOnCurrentThread(
                 std::move(settings));
-  std::unique_ptr<MainThreadSchedulerImpl> scheduler(
-      new MainThreadSchedulerImpl(std::move(sequence_manager),
-                                  initial_virtual_time));
-  return std::move(scheduler);
+  return std::make_unique<MainThreadSchedulerImpl>(std::move(sequence_manager));
 }
 
 // static
@@ -73,30 +69,18 @@ WebThreadScheduler::CompositorTaskRunner() {
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
-WebThreadScheduler::InputTaskRunner() {
-  NOTREACHED();
-  return nullptr;
-}
-
-scoped_refptr<base::SingleThreadTaskRunner>
-WebThreadScheduler::IPCTaskRunner() {
-  NOTREACHED();
-  return nullptr;
-}
-
-scoped_refptr<base::SingleThreadTaskRunner>
-WebThreadScheduler::CleanupTaskRunner() {
-  NOTREACHED();
-  return nullptr;
-}
-
-scoped_refptr<base::SingleThreadTaskRunner>
 WebThreadScheduler::DeprecatedDefaultTaskRunner() {
   NOTREACHED();
   return nullptr;
 }
 
 std::unique_ptr<Thread> WebThreadScheduler::CreateMainThread() {
+  NOTREACHED();
+  return nullptr;
+}
+
+std::unique_ptr<WebWidgetScheduler>
+WebThreadScheduler::CreateWidgetScheduler() {
   NOTREACHED();
   return nullptr;
 }
@@ -130,12 +114,14 @@ void WebThreadScheduler::DidHandleInputEventOnCompositorThread(
 }
 
 void WebThreadScheduler::WillPostInputEventToMainThread(
-    WebInputEvent::Type web_input_event_type) {
+    WebInputEvent::Type web_input_event_type,
+    const WebInputEventAttribution& attribution) {
   NOTREACHED();
 }
 
 void WebThreadScheduler::WillHandleInputEventOnMainThread(
-    WebInputEvent::Type web_input_event_type) {
+    WebInputEvent::Type web_input_event_type,
+    const WebInputEventAttribution& attribution) {
   NOTREACHED();
 }
 
@@ -149,6 +135,10 @@ void WebThreadScheduler::DidAnimateForInputOnCompositorThread() {
   NOTREACHED();
 }
 
+void WebThreadScheduler::DidRunBeginMainFrame() {
+  NOTREACHED();
+}
+
 void WebThreadScheduler::SetRendererHidden(bool hidden) {
   NOTREACHED();
 }
@@ -157,11 +147,7 @@ void WebThreadScheduler::SetRendererBackgrounded(bool backgrounded) {
   NOTREACHED();
 }
 
-void WebThreadScheduler::SetSchedulerKeepActive(bool keep_active) {
-  NOTREACHED();
-}
-
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 void WebThreadScheduler::PauseTimersForAndroidWebView() {
   NOTREACHED();
 }
@@ -169,7 +155,7 @@ void WebThreadScheduler::PauseTimersForAndroidWebView() {
 void WebThreadScheduler::ResumeTimersForAndroidWebView() {
   NOTREACHED();
 }
-#endif  // defined(OS_ANDROID)
+#endif  // BUILDFLAG(IS_ANDROID)
 
 std::unique_ptr<WebThreadScheduler::RendererPauseHandle>
 WebThreadScheduler::PauseRenderer() {
@@ -188,17 +174,6 @@ void WebThreadScheduler::SetTopLevelBlameContext(
 }
 
 void WebThreadScheduler::SetRendererProcessType(WebRendererProcessType type) {
-  NOTREACHED();
-}
-
-WebScopedVirtualTimePauser WebThreadScheduler::CreateWebScopedVirtualTimePauser(
-    const char* name,
-    WebScopedVirtualTimePauser::VirtualTaskDuration duration) {
-  NOTREACHED();
-  return WebScopedVirtualTimePauser();
-}
-
-void WebThreadScheduler::OnMainFrameRequestedForInput() {
   NOTREACHED();
 }
 

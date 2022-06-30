@@ -10,7 +10,6 @@
 #include "ash/ash_export.h"
 #include "ash/shelf/shelf_button_delegate.h"
 #include "ash/shelf/shelf_control_button.h"
-#include "base/macros.h"
 
 namespace ash {
 
@@ -25,21 +24,31 @@ class ASH_EXPORT BackButton : public ShelfControlButton,
   static const char kViewClassName[];
 
   explicit BackButton(Shelf* shelf);
+
+  BackButton(const BackButton&) = delete;
+  BackButton& operator=(const BackButton&) = delete;
+
   ~BackButton() override;
+
+  // Called when a locale change is detected. Updates the button tooltip and
+  // accessible name.
+  void HandleLocaleChange();
 
   // views::Button:
   void PaintButtonContents(gfx::Canvas* canvas) override;
   const char* GetClassName() const override;
+  std::u16string GetTooltipText(const gfx::Point& p) const override;
+
+  // views::View:
+  void OnThemeChanged() override;
 
   // ShelfButtonDelegate:
   void OnShelfButtonAboutToRequestFocusFromTabTraversal(ShelfButton* button,
                                                         bool reverse) override;
+
   void ButtonPressed(views::Button* sender,
                      const ui::Event& event,
                      views::InkDrop* ink_drop) override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BackButton);
 };
 
 }  // namespace ash

@@ -4,7 +4,7 @@
 
 #import "ios/chrome/browser/ui/table_view/cells/table_view_item.h"
 
-#include "base/logging.h"
+#include "base/check.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -28,6 +28,7 @@
   DCHECK([cell class] == self.cellClass);
   DCHECK([cell isKindOfClass:[TableViewCell class]]);
   cell.accessoryType = self.accessoryType;
+  cell.accessoryView = self.accessoryView;
   cell.useCustomSeparator = self.useCustomSeparator;
   cell.accessibilityTraits = self.accessibilityTraits;
   cell.accessibilityIdentifier = self.accessibilityIdentifier;

@@ -35,7 +35,7 @@
 
 namespace blink {
 
-#if !defined(OS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 const unsigned kCMaxInactiveFontData = 250;
 const unsigned kCTargetInactiveFontData = 200;
 #else
@@ -43,9 +43,10 @@ const unsigned kCMaxInactiveFontData = 225;
 const unsigned kCTargetInactiveFontData = 200;
 #endif
 
-scoped_refptr<SimpleFontData> FontDataCache::Get(const FontPlatformData* platform_data,
-                                          ShouldRetain should_retain,
-                                          bool subpixel_ascent_descent) {
+scoped_refptr<SimpleFontData> FontDataCache::Get(
+    const FontPlatformData* platform_data,
+    ShouldRetain should_retain,
+    bool subpixel_ascent_descent) {
   if (!platform_data)
     return nullptr;
 
@@ -58,6 +59,7 @@ scoped_refptr<SimpleFontData> FontDataCache::Get(const FontPlatformData* platfor
     return nullptr;
   }
 
+  AutoLockForParallelTextShaping guard(lock_);
   Cache::iterator result = cache_.find(platform_data);
   if (result == cache_.end()) {
     std::pair<scoped_refptr<SimpleFontData>, unsigned> new_value(
@@ -92,12 +94,14 @@ scoped_refptr<SimpleFontData> FontDataCache::Get(const FontPlatformData* platfor
 }
 
 bool FontDataCache::Contains(const FontPlatformData* font_platform_data) const {
+  AutoLockForParallelTextShaping guard(lock_);
   return cache_.Contains(font_platform_data);
 }
 
 void FontDataCache::Release(const SimpleFontData* font_data) {
   DCHECK(!font_data->IsCustomFont());
 
+  AutoLockForParallelTextShaping guard(lock_);
   Cache::iterator it = cache_.find(&(font_data->PlatformData()));
   DCHECK_NE(it, cache_.end());
   if (it == cache_.end())
@@ -109,6 +113,7 @@ void FontDataCache::Release(const SimpleFontData* font_data) {
 }
 
 bool FontDataCache::Purge(PurgeSeverity purge_severity) {
+  AutoLockForParallelTextShaping guard(lock_);
   if (purge_severity == kForcePurge)
     return PurgeLeastRecentlyUsed(INT_MAX);
 
@@ -126,13 +131,15 @@ bool FontDataCache::PurgeLeastRecentlyUsed(int count) {
   if (is_purging)
     return false;
 
+  lock_.AssertAcquired();
+
   is_purging = true;
 
   Vector<scoped_refptr<SimpleFontData>, 20> font_data_to_delete;
   auto end = inactive_font_data_.end();
   auto it = inactive_font_data_.begin();
   for (int i = 0; i < count && it != end; ++it, ++i) {
-    scoped_refptr<SimpleFontData>& font_data = *it.Get();
+    const scoped_refptr<SimpleFontData>& font_data = *it;
     cache_.erase(&(font_data->PlatformData()));
     // We should not delete SimpleFontData here because deletion can modify
     // m_inactiveFontData. See http://trac.webkit.org/changeset/44011

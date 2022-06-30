@@ -5,21 +5,23 @@
 #ifndef NET_TEST_URL_REQUEST_SSL_CERTIFICATE_ERROR_JOB_H_
 #define NET_TEST_URL_REQUEST_SSL_CERTIFICATE_ERROR_JOB_H_
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "net/url_request/url_request_job.h"
 #include "url/gurl.h"
 
 namespace net {
 
-class NetworkDelegate;
 class URLRequest;
 
 // SSLCertificateErrorJob simulates a ERR_CERT_DATE_INVALID error.
 class SSLCertificateErrorJob : public URLRequestJob {
  public:
-  SSLCertificateErrorJob(URLRequest* request,
-                         NetworkDelegate* network_delegate);
+  explicit SSLCertificateErrorJob(URLRequest* request);
+
+  SSLCertificateErrorJob(const SSLCertificateErrorJob&) = delete;
+  SSLCertificateErrorJob& operator=(const SSLCertificateErrorJob&) = delete;
+
+  ~SSLCertificateErrorJob() override;
 
   // URLRequestJob implementation:
   void Start() override;
@@ -30,13 +32,9 @@ class SSLCertificateErrorJob : public URLRequestJob {
   static GURL GetMockUrl();
 
  private:
-  ~SSLCertificateErrorJob() override;
-
   void NotifyError();
 
   base::WeakPtrFactory<SSLCertificateErrorJob> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SSLCertificateErrorJob);
 };
 
 }  // namespace net

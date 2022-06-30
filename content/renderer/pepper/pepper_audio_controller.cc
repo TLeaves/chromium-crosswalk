@@ -7,7 +7,6 @@
 #include "content/renderer/pepper/pepper_audio_output_host.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/ppb_audio_impl.h"
-#include "content/renderer/render_frame_impl.h"
 
 namespace content {
 
@@ -92,18 +91,20 @@ void PepperAudioController::OnPepperInstanceDeleted() {
 void PepperAudioController::NotifyPlaybackStopsOnEmpty() {
   DCHECK(instance_);
 
-  RenderFrameImpl* render_frame = instance_->render_frame();
-  if (render_frame)
-    render_frame->PepperStopsPlayback(instance_);
+  mojom::PepperPluginInstanceHost* instance_host =
+      instance_->GetPepperPluginInstanceHost();
+  if (instance_host)
+    instance_host->StopsPlayback();
 }
 
 void PepperAudioController::StartPlaybackIfFirstInstance() {
   DCHECK(instance_);
 
   if (audio_output_hosts_.empty() && ppb_audios_.empty()) {
-    RenderFrameImpl* render_frame = instance_->render_frame();
-    if (render_frame)
-      render_frame->PepperStartsPlayback(instance_);
+    mojom::PepperPluginInstanceHost* instance_host =
+        instance_->GetPepperPluginInstanceHost();
+    if (instance_host)
+      instance_host->StartsPlayback();
   }
 }
 

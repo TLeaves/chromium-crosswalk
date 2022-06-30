@@ -4,20 +4,18 @@
 
 #include "chrome/utility/importer/importer_creator.h"
 
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "build/build_config.h"
 #include "chrome/utility/importer/bookmarks_file_importer.h"
 #include "chrome/utility/importer/firefox_importer.h"
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 #include "chrome/common/importer/edge_importer_utils_win.h"
 #include "chrome/utility/importer/edge_importer_win.h"
 #include "chrome/utility/importer/ie_importer_win.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include <CoreFoundation/CoreFoundation.h>
-
+#if BUILDFLAG(IS_MAC)
 #include "base/mac/foundation_util.h"
 #include "chrome/utility/importer/safari_importer.h"
 #endif
@@ -26,7 +24,7 @@ namespace importer {
 
 scoped_refptr<Importer> CreateImporterByType(ImporterType type) {
   switch (type) {
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
     case TYPE_IE:
       return new IEImporter();
     case TYPE_EDGE:
@@ -39,7 +37,7 @@ scoped_refptr<Importer> CreateImporterByType(ImporterType type) {
       return new BookmarksFileImporter();
     case TYPE_FIREFOX:
       return new FirefoxImporter();
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
     case TYPE_SAFARI:
       return new SafariImporter(base::mac::GetUserLibraryPath());
 #endif

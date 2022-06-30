@@ -6,7 +6,9 @@
 
 #import <Security/Security.h>
 
-#include "base/logging.h"
+#include <ostream>
+
+#include "base/check.h"
 #include "base/memory/ptr_util.h"
 #include "device/fido/mac/authenticator_config.h"
 #include "device/fido/mac/fake_keychain.h"
@@ -16,11 +18,13 @@ namespace device {
 namespace fido {
 namespace mac {
 
-static API_AVAILABLE(macosx(10.12.2))
-    ScopedTouchIdTestEnvironment* g_current_environment = nullptr;
+static ScopedTouchIdTestEnvironment* g_current_environment = nullptr;
 
-ScopedTouchIdTestEnvironment::ScopedTouchIdTestEnvironment()
-    : keychain_(std::make_unique<FakeKeychain>()) {
+ScopedTouchIdTestEnvironment::ScopedTouchIdTestEnvironment(
+    AuthenticatorConfig config)
+    : config_(std::move(config)),
+      keychain_(
+          std::make_unique<ScopedFakeKeychain>(config_.keychain_access_group)) {
   DCHECK(!g_current_environment);
   g_current_environment = this;
 
@@ -31,8 +35,6 @@ ScopedTouchIdTestEnvironment::ScopedTouchIdTestEnvironment()
   touch_id_context_touch_id_available_ptr_ =
       TouchIdContext::g_touch_id_available_;
   TouchIdContext::g_touch_id_available_ = &ForwardTouchIdAvailable;
-
-  Keychain::SetInstanceOverride(static_cast<Keychain*>(keychain_.get()));
 }
 
 ScopedTouchIdTestEnvironment::~ScopedTouchIdTestEnvironment() {
@@ -42,8 +44,6 @@ ScopedTouchIdTestEnvironment::~ScopedTouchIdTestEnvironment() {
   DCHECK(touch_id_context_touch_id_available_ptr_);
   TouchIdContext::g_touch_id_available_ =
       touch_id_context_touch_id_available_ptr_;
-
-  Keychain::ClearInstanceOverride();
   g_current_environment = nullptr;
 }
 
@@ -54,8 +54,8 @@ std::unique_ptr<TouchIdContext> ScopedTouchIdTestEnvironment::ForwardCreate() {
 
 // static
 bool ScopedTouchIdTestEnvironment::ForwardTouchIdAvailable(
-    const AuthenticatorConfig& config) {
-  return g_current_environment->TouchIdAvailable(config);
+    AuthenticatorConfig config) {
+  return g_current_environment->TouchIdAvailable(std::move(config));
 }
 
 bool ScopedTouchIdTestEnvironment::SetTouchIdAvailable(bool available) {
@@ -63,7 +63,7 @@ bool ScopedTouchIdTestEnvironment::SetTouchIdAvailable(bool available) {
 }
 
 bool ScopedTouchIdTestEnvironment::TouchIdAvailable(
-    const AuthenticatorConfig& config) {
+    AuthenticatorConfig config) {
   return touch_id_available_;
 }
 

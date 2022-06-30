@@ -41,21 +41,21 @@ void WebOmniboxEditControllerImpl::OnAutocompleteAccept(
     WindowOpenDisposition disposition,
     ui::PageTransition transition,
     AutocompleteMatchType::Type match_type,
-    base::TimeTicks match_selection_timestamp) {
+    base::TimeTicks match_selection_timestamp,
+    bool destination_url_entered_without_scheme,
+    const std::u16string& text,
+    const AutocompleteMatch& match,
+    const AutocompleteMatch& alternative_nav_match) {
   if (destination_url.is_valid()) {
     transition = ui::PageTransitionFromInt(
         transition | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
     [URLLoader_ loadGURLFromLocationBar:destination_url
-                            postContent:post_content
-                             transition:transition
-                            disposition:disposition];
+                                   postContent:post_content
+                                    transition:transition
+                                   disposition:disposition
+        destination_url_entered_without_scheme:
+            destination_url_entered_without_scheme];
   }
-}
-
-void WebOmniboxEditControllerImpl::OnInputInProgress(bool in_progress) {
-  // TODO(crbug.com/818649): see if this is really used.
-  if (in_progress)
-    [delegate_ locationBarBeganEdit];
 }
 
 void WebOmniboxEditControllerImpl::OnChanged() {

@@ -6,7 +6,11 @@
 
 #include <stddef.h>
 
-#include "base/logging.h"
+#include <algorithm>
+
+#include "base/i18n/rtl.h"
+#include "base/notreached.h"
+#include "ui/base/models/table_model.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/text_utils.h"
@@ -24,8 +28,8 @@ int WidthForContent(const gfx::FontList& header_font_list,
                     ui::TableModel* model) {
   int width = header_padding;
   if (!column.title.empty())
-    width = gfx::GetStringWidth(column.title, header_font_list) +
-        header_padding;
+    width =
+        gfx::GetStringWidth(column.title, header_font_list) + header_padding;
 
   for (int i = 0, row_count = model->RowCount(); i < row_count; ++i) {
     const int cell_width =
@@ -53,12 +57,13 @@ std::vector<int> CalculateTableColumnSizes(
       if (column.percent > 0) {
         total_percent += column.percent;
         // Make sure there is at least enough room for the header.
-        content_widths[i] = gfx::GetStringWidth(column.title, header_font_list)
-            + padding + header_padding;
+        content_widths[i] =
+            gfx::GetStringWidth(column.title, header_font_list) + padding +
+            header_padding;
       } else {
-        content_widths[i] = WidthForContent(header_font_list, content_font_list,
-                                            padding, header_padding, column,
-                                            model);
+        content_widths[i] =
+            WidthForContent(header_font_list, content_font_list, padding,
+                            header_padding, column, model);
         if (i == 0)
           content_widths[i] += first_column_padding;
       }
@@ -75,11 +80,11 @@ std::vector<int> CalculateTableColumnSizes(
     const ui::TableColumn& column = columns[i];
     int column_width = content_widths[i];
     if (column.width <= 0 && column.percent > 0 && available_width > 0) {
-      column_width += static_cast<int>(available_width *
-                                       (column.percent / total_percent));
+      column_width +=
+          static_cast<int>(available_width * (column.percent / total_percent));
     }
-    widths.push_back(column_width == 0 ? kUnspecifiedColumnWidth :
-                     column_width);
+    widths.push_back(column_width == 0 ? kUnspecifiedColumnWidth
+                                       : column_width);
   }
 
   // If no columns have specified a percent give the last column all the extra
@@ -114,6 +119,21 @@ int GetClosestVisibleColumnIndex(const TableView* table, int x) {
       return static_cast<int>(i);
   }
   return static_cast<int>(columns.size()) - 1;
+}
+
+ui::TableColumn::Alignment GetMirroredTableColumnAlignment(
+    ui::TableColumn::Alignment alignment) {
+  if (!base::i18n::IsRTL())
+    return alignment;
+
+  switch (alignment) {
+    case ui::TableColumn::LEFT:
+      return ui::TableColumn::RIGHT;
+    case ui::TableColumn::RIGHT:
+      return ui::TableColumn::LEFT;
+    case ui::TableColumn::CENTER:
+      return ui::TableColumn::CENTER;
+  }
 }
 
 }  // namespace views

@@ -34,6 +34,8 @@ enum StatusCode {
   kInvalidArgument = 61,
   kNoSuchCookie = 62,
   kElementClickIntercepted = 64,
+  kNoSuchShadowRoot = 65,
+  kDetachedShadowRoot = 66,
   kUnsupportedOperation = 405,
   // Chrome-specific status codes.
   kChromeNotReachable = 100,
@@ -42,6 +44,7 @@ enum StatusCode {
   kForbidden = 103,
   kTabCrashed,
   kTargetDetached,
+  kUnexpectedAlertOpen_Keep,
 };
 
 // Represents a WebDriver status, which may be an error or ok.

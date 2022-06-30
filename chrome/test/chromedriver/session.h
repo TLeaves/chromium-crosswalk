@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/test/chromedriver/basic_types.h"
@@ -57,7 +58,7 @@ struct InputCancelListEntry {
   InputCancelListEntry(InputCancelListEntry&& other);
   ~InputCancelListEntry();
 
-  base::DictionaryValue* input_state;
+  raw_ptr<base::DictionaryValue> input_state;
   std::unique_ptr<MouseEvent> mouse_event;
   std::unique_ptr<TouchEvent> touch_event;
   std::unique_ptr<KeyEvent> key_event;
@@ -70,6 +71,7 @@ struct Session {
 
   explicit Session(const std::string& id);
   Session(const std::string& id, std::unique_ptr<Chrome> chrome);
+  Session(const std::string& id, const std::string& host);
   ~Session();
 
   Status GetTargetWindow(WebView** web_view);
@@ -83,6 +85,7 @@ struct Session {
 
   const std::string id;
   bool w3c_compliant;
+  bool webSocketUrl = false;
   bool quit;
   bool detach;
   std::unique_ptr<Chrome> chrome;
@@ -124,9 +127,14 @@ struct Session {
   // |DevToolsEventListener|s owned by |chrome|.
   std::vector<std::unique_ptr<CommandListener>> command_listeners;
   bool strict_file_interactability;
+
   std::string unhandled_prompt_behavior;
   int click_count;
   base::TimeTicks mouse_click_timestamp;
+  std::string host;
+
+ private:
+  void SwitchFrameInternal(bool for_top_frame);
 };
 
 Session* GetThreadLocalSession();

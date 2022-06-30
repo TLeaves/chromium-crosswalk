@@ -5,7 +5,9 @@
 #ifndef CHROME_BROWSER_SAFE_BROWSING_CERTIFICATE_REPORTING_SERVICE_FACTORY_H_
 #define CHROME_BROWSER_SAFE_BROWSING_CERTIFICATE_REPORTING_SERVICE_FACTORY_H_
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/time/time.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
@@ -29,6 +31,11 @@ class CertificateReportingServiceFactory
   static CertificateReportingService* GetForBrowserContext(
       content::BrowserContext* context);
 
+  CertificateReportingServiceFactory(
+      const CertificateReportingServiceFactory&) = delete;
+  CertificateReportingServiceFactory& operator=(
+      const CertificateReportingServiceFactory&) = delete;
+
   // Setters for testing.
   void SetReportEncryptionParamsForTesting(uint8_t* server_public_key,
                                            uint32_t server_public_key_version);
@@ -36,7 +43,7 @@ class CertificateReportingServiceFactory
   void SetQueuedReportTTLForTesting(base::TimeDelta queued_report_ttl);
   void SetMaxQueuedReportCountForTesting(size_t max_report_count);
   void SetServiceResetCallbackForTesting(
-      const base::Callback<void()>& service_reset_callback);
+      const base::RepeatingClosure& service_reset_callback);
   void SetURLLoaderFactoryForTesting(
       scoped_refptr<network::SharedURLLoaderFactory> factory);
 
@@ -54,16 +61,14 @@ class CertificateReportingServiceFactory
       content::BrowserContext* context) const override;
 
   // Encryption parameters for certificate reports.
-  uint8_t* server_public_key_;
+  raw_ptr<uint8_t> server_public_key_;
   uint32_t server_public_key_version_;
 
-  base::Clock* clock_;
+  raw_ptr<base::Clock> clock_;
   base::TimeDelta queued_report_ttl_;
   size_t max_queued_report_count_;
-  base::Callback<void()> service_reset_callback_;
-  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(CertificateReportingServiceFactory);
+  base::RepeatingClosure service_reset_callback_;
+  scoped_refptr<network::SharedURLLoaderFactory> test_url_loader_factory_;
 };
 
 #endif  // CHROME_BROWSER_SAFE_BROWSING_CERTIFICATE_REPORTING_SERVICE_FACTORY_H_

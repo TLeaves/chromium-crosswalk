@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
 
 namespace chromecast {
 
@@ -29,21 +30,20 @@ CastRedirectHandler::CastRedirectHandler() {}
 CastRedirectHandler::~CastRedirectHandler() {}
 
 bool CastRedirectHandler::Parse(extensions::Extension* extension,
-                                base::string16* error) {
+                                std::u16string* error) {
   std::unique_ptr<Data> info(new Data);
   const base::DictionaryValue* dict;
   if (extension->manifest()->GetDictionary(kCastRedirect, &dict)) {
-    for (const auto& kv : *dict) {
-      std::string path;
-      if (kv.second->GetAsString(&path)) {
-        info->redirects.emplace_back(kv.first, path);
+    for (const auto kv : dict->DictItems()) {
+      if (kv.second.is_string()) {
+        info->redirects.emplace_back(kv.first, kv.second.GetString());
       }
     }
   }
 
-  std::string url;
-  if (extension->manifest()->GetString(kCastUrl, &url)) {
-    info->cast_url = url;
+  if (const std::string* url =
+          extension->manifest()->FindStringPath(kCastUrl)) {
+    info->cast_url = *url;
   }
 
   if (!info->redirects.empty() || !info->cast_url.empty()) {

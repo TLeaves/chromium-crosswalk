@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/component_updater/metadata_table_chromeos.h"
-#include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace component_updater {
@@ -19,14 +19,17 @@ constexpr char kComponent[2][11] = {"component1", "component2"};
 
 class CrOSComponentInstallerMetadataTest : public testing::Test {
  public:
-  CrOSComponentInstallerMetadataTest() {}
-  ~CrOSComponentInstallerMetadataTest() override {}
+  CrOSComponentInstallerMetadataTest() = default;
+
+  CrOSComponentInstallerMetadataTest(
+      const CrOSComponentInstallerMetadataTest&) = delete;
+  CrOSComponentInstallerMetadataTest& operator=(
+      const CrOSComponentInstallerMetadataTest&) = delete;
+
+  ~CrOSComponentInstallerMetadataTest() override = default;
 
  protected:
-  content::TestBrowserThreadBundle thread_bundle_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CrOSComponentInstallerMetadataTest);
+  content::BrowserTaskEnvironment task_environment_;
 };
 
 TEST_F(CrOSComponentInstallerMetadataTest, Add) {
@@ -38,7 +41,7 @@ TEST_F(CrOSComponentInstallerMetadataTest, Add) {
   metadata_table->AddItem(kHashedUserId[0], kComponent[0]);
   metadata_table->AddItem(kHashedUserId[1], kComponent[1]);
   metadata_table->AddItem(kHashedUserId[0], kComponent[1]);
-  ASSERT_EQ(metadata_table->installed_items_.GetList().size(), 3U);
+  ASSERT_EQ(metadata_table->installed_items_.GetListDeprecated().size(), 3U);
   EXPECT_TRUE(
       metadata_table->HasComponentForUser(kHashedUserId[0], kComponent[0]));
   EXPECT_TRUE(
@@ -49,7 +52,7 @@ TEST_F(CrOSComponentInstallerMetadataTest, Add) {
       metadata_table->HasComponentForUser(kHashedUserId[1], kComponent[0]));
   // Add an existing item.
   metadata_table->AddItem(kHashedUserId[0], kComponent[0]);
-  EXPECT_EQ(metadata_table->installed_items_.GetList().size(), 3U);
+  EXPECT_EQ(metadata_table->installed_items_.GetListDeprecated().size(), 3U);
 }
 
 TEST_F(CrOSComponentInstallerMetadataTest, Delete) {
@@ -68,8 +71,9 @@ TEST_F(CrOSComponentInstallerMetadataTest, Delete) {
   // Delete component items.
   EXPECT_TRUE(metadata_table->DeleteItem(kHashedUserId[1], kComponent[1]));
   EXPECT_TRUE(metadata_table->DeleteItem(kHashedUserId[0], kComponent[1]));
-  ASSERT_EQ(metadata_table->installed_items_.GetList().size(), 1U);
-  const base::Value& item = metadata_table->installed_items_.GetList()[0];
+  ASSERT_EQ(metadata_table->installed_items_.GetListDeprecated().size(), 1U);
+  const base::Value& item =
+      metadata_table->installed_items_.GetListDeprecated()[0];
   EXPECT_EQ(item.FindKey(kMetadataContentItemHashedUserIdKey)->GetString(),
             kHashedUserId[0]);
   EXPECT_EQ(item.FindKey(kMetadataContentItemComponentKey)->GetString(),

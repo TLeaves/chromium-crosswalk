@@ -7,28 +7,21 @@
 
 #import <UIKit/UIKit.h>
 
+@protocol EdgeLayoutGuideProvider;
+
 // Struct to track the current keyboard state.
 typedef struct {
   // Is YES if the keyboard is visible or becoming visible.
   BOOL isVisible;
   // Is YES if keyboard is or becoming undocked from bottom of screen.
   BOOL isUndocked;
-  // Is YES if keyboard is or becoming split in more than one piece.
-  BOOL isSplit;
   // Is YES if a hardware keyboard is in use and only the top part of the
   // software keyboard is showing.
   BOOL isHardware;
-  // Is YES if a picker (iPhone only) is currently displayed instead of
-  // keyboard.
-  BOOL isPicker;
 } KeyboardState;
 
 // Delegate informed about the visible/hidden state of the keyboard.
 @protocol KeyboardObserverHelperConsumer <NSObject>
-
-// Indicates that |UIKeyboardWillHideNotification| was posted but the keyboard
-// was not hidden. For example, this can happen when jumping between fields.
-- (void)keyboardDidStayOnScreen;
 
 // Indicates that the keyboard state changed, at least on one of the
 // |KeyboardState| aspects.
@@ -39,17 +32,22 @@ typedef struct {
 // Helper to observe the keyboard and report updates.
 @interface KeyboardObserverHelper : NSObject
 
+// Singleton for KeyboardObserverHelper.
++ (instancetype)sharedKeyboardObserver;
+
+- (instancetype)init NS_UNAVAILABLE;
+
+// Adds consumer of KeyboardObserverHelper.
+- (void)addConsumer:(id<KeyboardObserverHelperConsumer>)consumer;
+
 // Flag that indicates if the keyboard is on screen.
 // TODO(crbug.com/974226): look into deprecating keyboardOnScreen for
 // isKeyboardVisible.
 @property(nonatomic, readonly, getter=isKeyboardOnScreen) BOOL keyboardOnScreen;
 
-// The consumer to inform of the keyboard state changes.
-@property(nonatomic, weak) id<KeyboardObserverHelperConsumer> consumer;
-
-// Current keyboard state.
-@property(nonatomic, readonly, getter=getKeyboardState)
-    KeyboardState keyboardState;
+// Returns keyboard's height if it covers the full width of the display,
+// otherwise returns 0. Note: This includes the keyboard accessory's height.
+@property(nonatomic, readonly) CGFloat visibleKeyboardHeight;
 
 @end
 

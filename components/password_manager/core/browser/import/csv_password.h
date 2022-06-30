@@ -9,7 +9,7 @@
 
 #include "base/containers/flat_map.h"
 #include "base/strings/string_piece.h"
-#include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_form.h"
 
 namespace password_manager {
 
@@ -21,34 +21,31 @@ class CSVPassword {
   enum class Label { kOrigin, kUsername, kPassword };
   using ColumnMap = base::flat_map<size_t, Label>;
 
+  // Status describes parsing errors.
+  enum class Status { kOK, kSyntaxError, kSemanticError };
+
   // Number of values in the Label enum.
   static constexpr size_t kLabelCount = 3;
 
-  CSVPassword();
-  explicit CSVPassword(ColumnMap map, base::StringPiece csv_row);
-  CSVPassword(const CSVPassword&);
-  CSVPassword(CSVPassword&&);
-  CSVPassword& operator=(const CSVPassword&);
-  CSVPassword& operator=(CSVPassword&&);
-  ~CSVPassword();
+  explicit CSVPassword(const ColumnMap& map, base::StringPiece csv_row);
+  CSVPassword(const CSVPassword&) = delete;
+  CSVPassword(CSVPassword&&) = delete;
+  CSVPassword& operator=(const CSVPassword&) = delete;
+  CSVPassword& operator=(CSVPassword&&) = delete;
 
-  // Returns whether the associated CSV row can be parsed successfully.
-  // If returning true and |form| is not null, it also stores the parsed result
-  // in |*form|. It does not return base::Optional<PasswordForm> for efficiency
-  // reasons in cases when the parsed form is not needed.
-  bool Parse(autofill::PasswordForm* form) const;
-  // Convenience wrapper around Parse() for cases known to be correctly
-  // parseable.
-  autofill::PasswordForm ParseValid() const;
+  // Returns the status of the parse.
+  Status GetParseStatus() const;
+
+  // Returns PasswordForm populated with parsed data, if initial parsing
+  // completed successfully.
+  PasswordForm ToPasswordForm() const;
 
  private:
-  // The members |map_| and |row_| are only modified in constructor or
-  // operator=().
+  GURL url_;
+  base::StringPiece username_;
+  base::StringPiece password_;
 
-  // |map_| stores the meaning of particular columns in the row.
-  ColumnMap map_;
-  // |row_| contains the CSV row from which the PasswordForm is parsed.
-  base::StringPiece row_;
+  Status status_;
 };
 
 }  // namespace password_manager

@@ -9,12 +9,15 @@
 #include <utility>
 
 #include "base/hash/sha1.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/test/simple_test_clock.h"
 #include "base/time/default_clock.h"
+#include "base/time/time.h"
 #include "components/consent_auditor/pref_names.h"
 #include "components/prefs/testing_pref_service.h"
-#include "components/sync/model/fake_model_type_controller_delegate.h"
+#include "components/sync/protocol/user_consent_specifics.pb.h"
+#include "components/sync/test/model/fake_model_type_controller_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ArcPlayTermsOfServiceConsent =
@@ -37,9 +40,6 @@ const char kLocalConsentLocaleKey[] = "locale";
 // Fake product version for testing.
 const char kCurrentAppVersion[] = "1.2.3.4";
 const char kCurrentAppLocale[] = "en-US";
-
-// Fake account ID for testing.
-const char kAccountId[] = "testing_account_id";
 
 // A helper function to load the |description|, |confirmation|, |version|,
 // and |locale|, in that order, from a record for the |feature| in
@@ -110,6 +110,11 @@ class FakeConsentSyncBridge : public ConsentSyncBridge {
 
 class ConsentAuditorImplTest : public testing::Test {
  public:
+  // Fake account ID for testing.
+  const CoreAccountId kAccountId;
+
+  ConsentAuditorImplTest() : kAccountId("testing_account_id") {}
+
   void SetUp() override {
     pref_service_ = std::make_unique<TestingPrefServiceSimple>();
     // Use normal clock by default.
@@ -145,7 +150,7 @@ class ConsentAuditorImplTest : public testing::Test {
 
  private:
   std::unique_ptr<ConsentAuditorImpl> consent_auditor_;
-  base::Clock* clock_;
+  raw_ptr<base::Clock> clock_;
 
   std::unique_ptr<TestingPrefServiceSimple> pref_service_;
   std::string app_version_;
@@ -168,7 +173,7 @@ TEST_F(ConsentAuditorImplTest, LocalConsentPrefRepresentation) {
   consent_auditor()->RecordLocalConsent("feature1", kFeature1Description,
                                         kFeature1Confirmation);
   ASSERT_TRUE(pref_service()->HasPrefPath(prefs::kLocalConsentsDictionary));
-  const base::DictionaryValue* consents =
+  const base::Value* consents =
       pref_service()->GetDictionary(prefs::kLocalConsentsDictionary);
   ASSERT_TRUE(consents);
   std::string description;
@@ -195,7 +200,7 @@ TEST_F(ConsentAuditorImplTest, LocalConsentPrefRepresentation) {
   EXPECT_EQ(kCurrentAppLocale, locale);
 
   // They are two separate records; the latter did not overwrite the former.
-  EXPECT_EQ(2u, consents->size());
+  EXPECT_EQ(2u, consents->DictSize());
   EXPECT_TRUE(
       consents->FindKeyOfType("feature1", base::Value::Type::DICTIONARY));
 
@@ -222,7 +227,7 @@ TEST_F(ConsentAuditorImplTest, LocalConsentPrefRepresentation) {
   EXPECT_EQ(kFeature2NewAppLocale, locale);
 
   // We still have two records.
-  EXPECT_EQ(2u, consents->size());
+  EXPECT_EQ(2u, consents->DictSize());
 }
 
 TEST_F(ConsentAuditorImplTest, RecordGaiaConsentAsUserConsent) {
@@ -258,7 +263,7 @@ TEST_F(ConsentAuditorImplTest, RecordGaiaConsentAsUserConsent) {
 
   EXPECT_EQ(now.since_origin().InMicroseconds(),
             consent.client_consent_time_usec());
-  EXPECT_EQ(kAccountId, consent.account_id());
+  EXPECT_EQ(kAccountId.ToString(), consent.account_id());
   EXPECT_EQ(kCurrentAppLocale, consent.locale());
 
   EXPECT_TRUE(consent.has_sync_consent());
@@ -305,7 +310,7 @@ TEST_F(ConsentAuditorImplTest, RecordArcPlayConsentRevocation) {
   ASSERT_EQ(1U, consents.size());
   UserConsentSpecifics consent = consents[0];
 
-  EXPECT_EQ(kAccountId, consent.account_id());
+  EXPECT_EQ(kAccountId.ToString(), consent.account_id());
   EXPECT_EQ(kCurrentAppLocale, consent.locale());
 
   EXPECT_TRUE(consent.has_arc_play_terms_of_service_consent());
@@ -347,11 +352,11 @@ TEST_F(ConsentAuditorImplTest, RecordArcPlayConsent) {
   play_consent.set_consent_flow(ArcPlayTermsOfServiceConsent::SETUP);
 
   // Verify the hash: 2fd4e1c6 7a2d28fc ed849ee1 bb76e739 1b93eb12.
-  const char play_tos_hash[] = {0x2f, 0xd4, 0xe1, 0xc6, 0x7a, 0x2d, 0x28,
-                                0xfc, 0xed, 0x84, 0x9e, 0xe1, 0xbb, 0x76,
-                                0xe7, 0x39, 0x1b, 0x93, 0xeb, 0x12};
-  play_consent.set_play_terms_of_service_hash(
-      std::string(play_tos_hash, base::kSHA1Length));
+  const uint8_t play_tos_hash[] = {0x2f, 0xd4, 0xe1, 0xc6, 0x7a, 0x2d, 0x28,
+                                   0xfc, 0xed, 0x84, 0x9e, 0xe1, 0xbb, 0x76,
+                                   0xe7, 0x39, 0x1b, 0x93, 0xeb, 0x12};
+  play_consent.set_play_terms_of_service_hash(std::string(
+      reinterpret_cast<const char*>(play_tos_hash), base::kSHA1Length));
   play_consent.set_play_terms_of_service_text_length(7);
 
   consent_auditor()->RecordArcPlayConsent(kAccountId, play_consent);
@@ -361,7 +366,7 @@ TEST_F(ConsentAuditorImplTest, RecordArcPlayConsent) {
   ASSERT_EQ(1U, consents.size());
   UserConsentSpecifics consent = consents[0];
 
-  EXPECT_EQ(kAccountId, consent.account_id());
+  EXPECT_EQ(kAccountId.ToString(), consent.account_id());
   EXPECT_EQ(kCurrentAppLocale, consent.locale());
 
   EXPECT_TRUE(consent.has_arc_play_terms_of_service_consent());
@@ -369,7 +374,8 @@ TEST_F(ConsentAuditorImplTest, RecordArcPlayConsent) {
       consent.arc_play_terms_of_service_consent();
 
   EXPECT_EQ(7, actual_play_consent.play_terms_of_service_text_length());
-  EXPECT_EQ(std::string(play_tos_hash, base::kSHA1Length),
+  EXPECT_EQ(std::string(reinterpret_cast<const char*>(play_tos_hash),
+                        base::kSHA1Length),
             actual_play_consent.play_terms_of_service_hash());
 
   EXPECT_EQ(kConfirmationMessageId, actual_play_consent.confirmation_grd_id());
@@ -413,6 +419,8 @@ TEST_F(ConsentAuditorImplTest, RecordAssistantActivityControlConsent) {
   const char ui_audit_key[] = {0x67, 0x23, 0x78};
   assistant_consent.set_ui_audit_key(std::string(ui_audit_key, 3));
 
+  assistant_consent.set_setting_type(AssistantActivityControlConsent::ALL);
+
   consent_auditor()->RecordAssistantActivityControlConsent(kAccountId,
                                                            assistant_consent);
 
@@ -421,7 +429,7 @@ TEST_F(ConsentAuditorImplTest, RecordAssistantActivityControlConsent) {
   ASSERT_EQ(1U, consents.size());
   UserConsentSpecifics consent = consents[0];
 
-  EXPECT_EQ(kAccountId, consent.account_id());
+  EXPECT_EQ(kAccountId.ToString(), consent.account_id());
   EXPECT_EQ(kCurrentAppLocale, consent.locale());
 
   EXPECT_EQ(true, consent.has_assistant_activity_control_consent());
@@ -429,6 +437,8 @@ TEST_F(ConsentAuditorImplTest, RecordAssistantActivityControlConsent) {
             consent.assistant_activity_control_consent().status());
   EXPECT_EQ(std::string(ui_audit_key, 3),
             consent.assistant_activity_control_consent().ui_audit_key());
+  EXPECT_EQ(AssistantActivityControlConsent::ALL,
+            consent.assistant_activity_control_consent().setting_type());
 }
 
 }  // namespace consent_auditor

@@ -8,30 +8,45 @@
 #include <limits>
 
 #include "ash/app_list/app_list_controller_impl.h"
-#include "ash/public/cpp/shelf_item_delegate.h"
+#include "ash/public/cpp/app_menu_constants.h"
 #include "ash/shell.h"
 #include "base/metrics/histogram_macros.h"
+#include "ui/base/models/image_model.h"
 #include "ui/display/types/display_constants.h"
+#include "ui/gfx/favicon_size.h"
 
 namespace ash {
 
 ShelfApplicationMenuModel::ShelfApplicationMenuModel(
-    const base::string16& title,
-    Items items,
+    const std::u16string& title,
+    const Items& items,
     ShelfItemDelegate* delegate)
     : ui::SimpleMenuModel(this), delegate_(delegate) {
-  AddItem(std::numeric_limits<int>::max(), title);
-  for (size_t i = 0; i < items.size(); i++)
-    AddItemWithIcon(i, items[i].first, items[i].second);
+  AddTitle(title);
+  // Add an empty icon to the title for it to be aligned with the other menu
+  // item elements. See crbug/1117650.
+  SetIcon(0,
+          ui::ImageModel::FromImageGenerator(
+              base::BindRepeating([](const ui::ColorProvider* color_provider) {
+                return gfx::ImageSkia();
+              }),
+              gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize)));
+
+  for (const auto& item : items) {
+    enabled_commands_.emplace(item.command_id);
+    AddItemWithIcon(item.command_id, item.title,
+                    ui::ImageModel::FromImageSkia(item.icon));
+  }
   AddSeparator(ui::SPACING_SEPARATOR);
-  DCHECK_EQ(GetItemCount(), int{items.size() + 2}) << "Update metrics |- 2|";
+  DCHECK_EQ(GetItemCount(), static_cast<int>(items.size() + 2))
+      << "Update metrics |- 2|";
 }
 
 ShelfApplicationMenuModel::~ShelfApplicationMenuModel() = default;
 
 bool ShelfApplicationMenuModel::IsCommandIdEnabled(int command_id) const {
   // This enables items added in the constructor, but not the title.
-  return command_id >= 0 && command_id < GetItemCount();
+  return enabled_commands_.contains(command_id);
 }
 
 void ShelfApplicationMenuModel::ExecuteCommand(int command_id,
@@ -39,13 +54,9 @@ void ShelfApplicationMenuModel::ExecuteCommand(int command_id,
   DCHECK(IsCommandIdEnabled(command_id));
   // Have the delegate execute its own custom command id for the given item.
   if (delegate_) {
-    if (Shell::Get()->app_list_controller()) {
-      // Record app launch when selecting window to open from disambiguation
-      // menu.
-      Shell::Get()->app_list_controller()->RecordShelfAppLaunched(
-          base::nullopt /* recorded_app_list_view_state */,
-          base::nullopt /* recorded_home_launcher_shown */);
-    }
+    // Record app launch when selecting window to open from disambiguation
+    // menu.
+    Shell::Get()->app_list_controller()->RecordShelfAppLaunched();
 
     // The display hosting the menu is irrelevant, windows activate in-place.
     delegate_->ExecuteCommand(false /*from_context_menu*/, command_id,

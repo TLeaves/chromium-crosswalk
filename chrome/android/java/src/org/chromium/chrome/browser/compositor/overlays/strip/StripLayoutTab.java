@@ -7,27 +7,36 @@ package org.chromium.chrome.browser.compositor.overlays.strip;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.RectF;
 
+import androidx.annotation.VisibleForTesting;
+import androidx.core.content.res.ResourcesCompat;
+
+import com.google.android.material.color.MaterialColors;
+
 import org.chromium.base.ContextUtils;
+import org.chromium.base.MathUtils;
 import org.chromium.base.ObserverList;
-import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.compositor.animation.CompositorAnimator;
-import org.chromium.chrome.browser.compositor.animation.FloatProperty;
 import org.chromium.chrome.browser.compositor.layouts.LayoutRenderHost;
 import org.chromium.chrome.browser.compositor.layouts.LayoutUpdateHost;
 import org.chromium.chrome.browser.compositor.layouts.components.CompositorButton;
 import org.chromium.chrome.browser.compositor.layouts.components.CompositorButton.CompositorOnClickHandler;
 import org.chromium.chrome.browser.compositor.layouts.components.TintedCompositorButton;
-import org.chromium.chrome.browser.compositor.layouts.components.VirtualView;
 import org.chromium.chrome.browser.compositor.overlays.strip.TabLoadTracker.TabLoadTrackerCallback;
+import org.chromium.chrome.browser.flags.CachedFeatureFlags;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
+import org.chromium.chrome.browser.layouts.animation.CompositorAnimator;
+import org.chromium.chrome.browser.layouts.animation.FloatProperty;
+import org.chromium.chrome.browser.layouts.components.VirtualView;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.util.MathUtils;
+import org.chromium.components.browser_ui.styles.ChromeColors;
 import org.chromium.ui.base.LocalizationUtils;
 import org.chromium.ui.resources.AndroidResourceType;
 import org.chromium.ui.resources.LayoutResource;
 import org.chromium.ui.resources.ResourceManager;
+import org.chromium.ui.util.ColorUtils;
 
 import java.util.List;
 
@@ -36,6 +45,8 @@ import java.util.List;
  * a particular tab so it can draw itself onto the GL canvas.
  */
 public class StripLayoutTab implements VirtualView {
+    private static final String TAG = "StripLayoutTab";
+
     /** An observer interface for StripLayoutTab. */
     public interface Observer {
         /** @param visible Whether the StripLayoutTab is visible. */
@@ -102,6 +113,20 @@ public class StripLayoutTab implements VirtualView {
                 }
             };
 
+    /** A property for animations to use for changing the drawX of the tab. */
+    public static final FloatProperty<StripLayoutTab> DRAW_X =
+            new FloatProperty<StripLayoutTab>("drawX") {
+                @Override
+                public void setValue(StripLayoutTab object, float value) {
+                    object.setDrawX(value);
+                }
+
+                @Override
+                public Float get(StripLayoutTab object) {
+                    return object.getDrawX();
+                }
+            };
+
     // Behavior Constants
     private static final float VISIBILITY_FADE_CLOSE_BUTTON_PERCENTAGE = 0.99f;
 
@@ -110,6 +135,7 @@ public class StripLayoutTab implements VirtualView {
 
     // Close button width
     private static final int CLOSE_BUTTON_WIDTH_DP = 36;
+    private static final int CLOSE_BUTTON_WIDTH_SCROLLING_STRIP_DP = 48;
 
     private int mId = Tab.INVALID_TAB_ID;
 
@@ -132,6 +158,7 @@ public class StripLayoutTab implements VirtualView {
     private float mIdealX;
     private float mTabOffsetX;
     private float mTabOffsetY;
+    private float mTrailingMargin;
 
     // Actual draw parameters
     private float mDrawX;
@@ -182,8 +209,9 @@ public class StripLayoutTab implements VirtualView {
         };
         mCloseButton = new TintedCompositorButton(
                 context, 0, 0, closeClickAction, R.drawable.btn_tab_close_normal);
-        mCloseButton.setTintResources(R.color.default_icon_color, R.color.default_icon_color_blue,
-                R.color.default_icon_color_white, R.color.modern_blue_300);
+        mCloseButton.setTintResources(R.color.default_icon_color_tint_list,
+                R.color.default_icon_color_accent1_tint_list, R.color.default_icon_color_light,
+                R.color.modern_blue_300);
         mCloseButton.setIncognito(mIncognito);
         mCloseButton.setBounds(getCloseRect());
         mCloseButton.setClickSlop(0.f);
@@ -271,13 +299,20 @@ public class StripLayoutTab implements VirtualView {
      * @return The tint color resource that represents the tab background.
      */
     public int getTint(boolean foreground) {
-        int tint = mIncognito ? R.color.compositor_background_tab_bg_incognito
-                              : R.color.compositor_background_tab_bg;
         if (foreground) {
-            tint = mIncognito ? R.color.modern_grey_800 : R.color.default_bg_color_elev_3;
+            return ChromeColors.getDefaultThemeColor(mContext, mIncognito);
         }
 
-        return mContext.getResources().getColor(tint);
+        if (mIncognito) {
+            return mContext.getResources().getColor(
+                    R.color.baseline_neutral_900_with_neutral_1000_alpha_30);
+        }
+
+        final int baseColor =
+                ChromeColors.getSurfaceColor(mContext, R.dimen.compositor_background_tab_elevation);
+        final float overlayAlpha = ResourcesCompat.getFloat(
+                mContext.getResources(), R.dimen.compositor_background_tab_overlay_alpha);
+        return ColorUtils.getColorWithOverlay(baseColor, Color.BLACK, overlayAlpha);
     }
 
     /**
@@ -285,13 +320,20 @@ public class StripLayoutTab implements VirtualView {
      * @return The tint color resource that represents the tab outline.
      */
     public int getOutlineTint(boolean foreground) {
-        int tint = mIncognito ? R.color.compositor_background_tab_outline_incognito
-                              : R.color.compositor_background_tab_outline;
         if (foreground) {
-            tint = mIncognito ? R.color.modern_grey_800 : R.color.default_bg_color_elev_3;
+            return getTint(true);
         }
 
-        return mContext.getResources().getColor(tint);
+        if (mIncognito) {
+            return mContext.getResources().getColor(
+                    R.color.baseline_neutral_900_with_neutral_1000_alpha_30_with_neutral_variant_400_alpha_15);
+        }
+
+        final int baseColor = getTint(false);
+        final int overlayColor = MaterialColors.getColor(mContext, R.attr.colorOutline, TAG);
+        final float overlayAlpha = ResourcesCompat.getFloat(
+                mContext.getResources(), R.dimen.compositor_background_tab_outline_alpha);
+        return ColorUtils.getColorWithOverlay(baseColor, overlayColor, overlayAlpha);
     }
 
     /**
@@ -574,6 +616,23 @@ public class StripLayoutTab implements VirtualView {
     }
 
     /**
+     * This is used to help calculate the tab's position and is not used for rendering.
+     * @param trailingMargin The trailing margin of the tab (used for margins around tab groups
+     *                       when reordering, etc.).
+     */
+    public void setTrailingMargin(float trailingMargin) {
+        mTrailingMargin = trailingMargin;
+    }
+
+    /**
+     * This is used to help calculate the tab's position and is not used for rendering.
+     * @return The trailing margin of the tab.
+     */
+    public float getTrailingMargin() {
+        return mTrailingMargin;
+    }
+
+    /**
      * Finishes any content animations currently owned and running on this StripLayoutTab.
      */
     public void finishAnimation() {
@@ -589,26 +648,32 @@ public class StripLayoutTab implements VirtualView {
     }
 
     private RectF getCloseRect() {
+        boolean tabStripImprovementsEnabled =
+                CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_STRIP_IMPROVEMENTS);
+        int closeButtonWidth = tabStripImprovementsEnabled ? CLOSE_BUTTON_WIDTH_SCROLLING_STRIP_DP
+                                                           : CLOSE_BUTTON_WIDTH_DP;
         if (!LocalizationUtils.isLayoutRtl()) {
-            mClosePlacement.left = getWidth() - CLOSE_BUTTON_WIDTH_DP;
-            mClosePlacement.right = mClosePlacement.left + CLOSE_BUTTON_WIDTH_DP;
+            mClosePlacement.left = getWidth() - closeButtonWidth;
+            mClosePlacement.right = mClosePlacement.left + closeButtonWidth;
         } else {
             mClosePlacement.left = 0;
-            mClosePlacement.right = CLOSE_BUTTON_WIDTH_DP;
+            mClosePlacement.right = closeButtonWidth;
         }
 
         mClosePlacement.top = 0;
         mClosePlacement.bottom = getHeight();
 
         float xOffset = 0;
-        ResourceManager manager = mRenderHost.getResourceManager();
-        if (manager != null) {
-            LayoutResource resource =
-                    manager.getResource(AndroidResourceType.STATIC, getResourceId());
-            if (resource != null) {
-                xOffset = LocalizationUtils.isLayoutRtl()
-                        ? resource.getPadding().left
-                        : -(resource.getBitmapSize().width() - resource.getPadding().right);
+        if (!tabStripImprovementsEnabled) {
+            ResourceManager manager = mRenderHost.getResourceManager();
+            if (manager != null) {
+                LayoutResource resource =
+                        manager.getResource(AndroidResourceType.STATIC, getResourceId());
+                if (resource != null) {
+                    xOffset = LocalizationUtils.isLayoutRtl()
+                            ? resource.getPadding().left
+                            : -(resource.getBitmapSize().width() - resource.getPadding().right);
+                }
             }
         }
 

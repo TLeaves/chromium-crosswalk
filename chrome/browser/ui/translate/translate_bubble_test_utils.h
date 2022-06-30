@@ -5,7 +5,8 @@
 #ifndef CHROME_BROWSER_UI_TRANSLATE_TRANSLATE_BUBBLE_TEST_UTILS_H_
 #define CHROME_BROWSER_UI_TRANSLATE_TRANSLATE_BUBBLE_TEST_UTILS_H_
 
-#include "base/strings/string16.h"
+#include <string>
+
 
 class TranslateBubbleModel;
 class Browser;
@@ -19,6 +20,8 @@ namespace test_utils {
 // Obtain the TranslateModel associated with the current bubble.
 const TranslateBubbleModel* GetCurrentModel(Browser* browser);
 
+void CloseCurrentBubble(Browser* browser);
+
 // Presses 'Translate' on the currently open translate bubble.
 void PressTranslate(Browser* browser);
 
@@ -28,7 +31,7 @@ void PressRevert(Browser* browser);
 // Selects the target language with the given display name on the opened
 // translate bubble.
 void SelectTargetLanguageByDisplayName(Browser* browser,
-                                       const base::string16& display_name);
+                                       const std::u16string& display_name);
 
 }  // namespace test_utils
 

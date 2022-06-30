@@ -7,12 +7,9 @@ group("examples") {
   deps = [
     "//ppapi/examples/2d",
     "//ppapi/examples/audio",
-    "//ppapi/examples/audio_encode",
     "//ppapi/examples/audio_input",
     "//ppapi/examples/crxfs",
-    "//ppapi/examples/enumerate_devices",
     "//ppapi/examples/file_chooser",
-    "//ppapi/examples/flash_topmost",
     "//ppapi/examples/font",
     "//ppapi/examples/gamepad",
     "//ppapi/examples/gles2",

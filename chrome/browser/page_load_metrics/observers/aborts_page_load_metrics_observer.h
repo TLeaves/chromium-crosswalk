@@ -5,8 +5,7 @@
 #ifndef CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_ABORTS_PAGE_LOAD_METRICS_OBSERVER_H_
 #define CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_ABORTS_PAGE_LOAD_METRICS_OBSERVER_H_
 
-#include "base/macros.h"
-#include "chrome/browser/page_load_metrics/page_load_metrics_observer.h"
+#include "components/page_load_metrics/browser/page_load_metrics_observer.h"
 
 namespace internal {
 
@@ -31,16 +30,19 @@ class AbortsPageLoadMetricsObserver
  public:
   AbortsPageLoadMetricsObserver();
 
-  // page_load_metrics::PageLoadMetricsObserver:
-  void OnComplete(
-      const page_load_metrics::mojom::PageLoadTiming& timing,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
-  void OnFailedProvisionalLoad(
-      const page_load_metrics::FailedProvisionalLoadInfo& failed_load_info,
-      const page_load_metrics::PageLoadExtraInfo& extra_info) override;
+  AbortsPageLoadMetricsObserver(const AbortsPageLoadMetricsObserver&) = delete;
+  AbortsPageLoadMetricsObserver& operator=(
+      const AbortsPageLoadMetricsObserver&) = delete;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(AbortsPageLoadMetricsObserver);
+  // page_load_metrics::PageLoadMetricsObserver:
+  ObservePolicy OnFencedFramesStart(
+      content::NavigationHandle* navigation_handle,
+      const GURL& currently_committed_url) override;
+  void OnComplete(
+      const page_load_metrics::mojom::PageLoadTiming& timing) override;
+  void OnFailedProvisionalLoad(
+      const page_load_metrics::FailedProvisionalLoadInfo& failed_load_info)
+      override;
 };
 
 #endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_ABORTS_PAGE_LOAD_METRICS_OBSERVER_H_

@@ -9,6 +9,7 @@
 #include "base/base64.h"
 #include "base/big_endian.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_util.h"
 #include "net/base/io_buffer.h"
 
 namespace content {
@@ -39,7 +40,7 @@ MerkleIntegritySourceStream::MerkleIntegritySourceStream(
     // TODO(ksakamoto): Use appropriate SourceType.
     : net::FilterSourceStream(SourceStream::TYPE_NONE, std::move(upstream)) {
   std::string next_proof;
-  if (!digest_header_value.starts_with(kMiSha256Header) ||
+  if (!base::StartsWith(digest_header_value, kMiSha256Header) ||
       !base::Base64Decode(digest_header_value.substr(kMiSha256HeaderLength),
                           &next_proof) ||
       next_proof.size() != SHA256_DIGEST_LENGTH) {
@@ -102,7 +103,8 @@ bool MerkleIntegritySourceStream::FilterDataImpl(base::span<char>* output,
       return false;
     }
     uint64_t record_size;
-    base::ReadBigEndian(bytes.data(), &record_size);
+    base::ReadBigEndian(reinterpret_cast<const uint8_t*>(bytes.data()),
+                        &record_size);
     if (record_size == 0) {
       return false;
     }

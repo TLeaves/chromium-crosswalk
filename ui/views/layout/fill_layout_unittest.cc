@@ -4,6 +4,9 @@
 
 #include "ui/views/layout/fill_layout.h"
 
+#include <memory>
+
+#include "base/memory/raw_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/border.h"
 #include "ui/views/test/test_views.h"
@@ -23,6 +26,9 @@ class FillLayoutTest : public testing::Test {
     SetHostSize(kDefaultHostWidth, kDefaultHostHeight);
   }
 
+  FillLayoutTest(const FillLayoutTest&) = delete;
+  FillLayoutTest& operator=(const FillLayoutTest&) = delete;
+
  protected:
   // Convenience function to get the preferred size from |layout_|.
   gfx::Size GetPreferredSize() const {
@@ -35,8 +41,9 @@ class FillLayoutTest : public testing::Test {
   }
 
   // Creates a View with the given |width| and |height| and adds it to |host_|.
-  View* AddChildView(int width, int height) {
-    View* child_view = new StaticSizedView(gfx::Size(width, height));
+  StaticSizedView* AddChildView(int width, int height) {
+    StaticSizedView* child_view = new StaticSizedView(gfx::Size(width, height));
+    child_view->SizeToPreferredSize();
     host_->AddChildView(child_view);
     return child_view;
   }
@@ -45,17 +52,14 @@ class FillLayoutTest : public testing::Test {
     host_->SetSize(gfx::Size(width, height));
   }
 
-  void SetHostInsets(int top, int left, int bottom, int right) {
-    host_->SetBorder(CreateEmptyBorder(gfx::Insets(top, left, bottom, right)));
+  void SetHostInsets(const gfx::Insets& insets) {
+    host_->SetBorder(CreateEmptyBorder(insets));
   }
 
   // The test target.
-  FillLayout* layout_ = nullptr;
+  raw_ptr<FillLayout> layout_ = nullptr;
 
   std::unique_ptr<View> host_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FillLayoutTest);
 };
 
 }  // namespace
@@ -81,7 +85,8 @@ TEST_F(FillLayoutTest, GetPreferredSizeWithInsets) {
   const int kRightInset = 7;
 
   AddChildView(kChildWidth, kChildHeight);
-  SetHostInsets(kTopInset, kLeftInset, kBottomInset, kRightInset);
+  SetHostInsets(
+      gfx::Insets::TLBR(kTopInset, kLeftInset, kBottomInset, kRightInset));
 
   EXPECT_EQ(gfx::Size(kChildWidth + kLeftInset + kRightInset,
                       kChildHeight + kTopInset + kBottomInset),
@@ -124,7 +129,8 @@ TEST_F(FillLayoutTest, GetPreferredHeightForWidthWithInsets) {
   const int kExpectedHeight = kChildHeight + kTopInset + kBottomInset;
 
   AddChildView(kChildWidth, kChildHeight);
-  SetHostInsets(kTopInset, kLeftInset, kBottomInset, kRightInset);
+  SetHostInsets(
+      gfx::Insets::TLBR(kTopInset, kLeftInset, kBottomInset, kRightInset));
 
   EXPECT_EQ(kExpectedHeight, GetPreferredHeightForWidth(0));
   EXPECT_EQ(kExpectedHeight, GetPreferredHeightForWidth(25));
@@ -147,7 +153,7 @@ TEST_F(FillLayoutTest, LayoutWithNoChildren) {
 }
 
 TEST_F(FillLayoutTest, LayoutWithOneChild) {
-  View* child = AddChildView(25, 50);
+  View* const child = AddChildView(25, 50);
   host_->Layout();
 
   EXPECT_EQ(gfx::Rect(0, 0, kDefaultHostWidth, kDefaultHostHeight),
@@ -162,8 +168,9 @@ TEST_F(FillLayoutTest, LayoutWithInsets) {
   const int kBottomInset = 8;
   const int kRightInset = 7;
 
-  View* child = AddChildView(kChildWidth, kChildHeight);
-  SetHostInsets(kTopInset, kLeftInset, kBottomInset, kRightInset);
+  View* const child = AddChildView(kChildWidth, kChildHeight);
+  SetHostInsets(
+      gfx::Insets::TLBR(kTopInset, kLeftInset, kBottomInset, kRightInset));
   host_->Layout();
 
   EXPECT_EQ(gfx::Rect(kLeftInset, kTopInset,
@@ -173,9 +180,9 @@ TEST_F(FillLayoutTest, LayoutWithInsets) {
 }
 
 TEST_F(FillLayoutTest, LayoutMultipleChildren) {
-  View* child_1 = AddChildView(10, 50);
-  View* child_2 = AddChildView(5, 5);
-  View* child_3 = AddChildView(25, 10);
+  View* const child_1 = AddChildView(10, 50);
+  View* const child_2 = AddChildView(5, 5);
+  View* const child_3 = AddChildView(25, 10);
 
   const gfx::Rect kExpectedBounds(0, 0, kDefaultHostWidth, kDefaultHostHeight);
 
@@ -184,6 +191,85 @@ TEST_F(FillLayoutTest, LayoutMultipleChildren) {
   EXPECT_EQ(kExpectedBounds, child_1->bounds());
   EXPECT_EQ(kExpectedBounds, child_2->bounds());
   EXPECT_EQ(kExpectedBounds, child_3->bounds());
+}
+
+TEST_F(FillLayoutTest, LayoutIgnoreView) {
+  View* const child_1 = AddChildView(10, 50);
+  View* const child_2 = AddChildView(5, 5);
+  View* const child_3 = AddChildView(25, 10);
+
+  layout_->SetChildViewIgnoredByLayout(child_3, true);
+  EXPECT_EQ(gfx::Size(10, 50), GetPreferredSize());
+  host_->Layout();
+
+  const gfx::Size kExpectedSize(kDefaultHostWidth, kDefaultHostHeight);
+  EXPECT_EQ(kExpectedSize, child_1->size());
+  EXPECT_EQ(kExpectedSize, child_2->size());
+  EXPECT_EQ(gfx::Size(25, 10), child_3->size());
+}
+
+TEST_F(FillLayoutTest, LayoutIgnoresHiddenView) {
+  View* const child_1 = AddChildView(10, 50);
+  View* const child_2 = AddChildView(5, 5);
+  View* const child_3 = AddChildView(25, 10);
+  child_3->SetVisible(false);
+  layout_->SetIncludeHiddenViews(false);
+
+  EXPECT_EQ(gfx::Size(10, 50), GetPreferredSize());
+  host_->Layout();
+
+  const gfx::Size kExpectedSize(kDefaultHostWidth, kDefaultHostHeight);
+  EXPECT_EQ(kExpectedSize, child_1->size());
+  EXPECT_EQ(kExpectedSize, child_2->size());
+  EXPECT_EQ(gfx::Size(25, 10), child_3->size());
+}
+
+TEST_F(FillLayoutTest, LayoutIncludesHiddenView) {
+  View* const child_1 = AddChildView(10, 50);
+  View* const child_2 = AddChildView(5, 5);
+  View* const child_3 = AddChildView(25, 10);
+  child_3->SetVisible(false);
+
+  EXPECT_EQ(gfx::Size(25, 50), GetPreferredSize());
+  host_->Layout();
+
+  const gfx::Size kExpectedSize(kDefaultHostWidth, kDefaultHostHeight);
+  EXPECT_EQ(kExpectedSize, child_1->size());
+  EXPECT_EQ(kExpectedSize, child_2->size());
+  EXPECT_EQ(kExpectedSize, child_3->size());
+}
+
+TEST_F(FillLayoutTest, MinimumSizeDisabled) {
+  StaticSizedView* const child_1 = AddChildView(10, 50);
+  StaticSizedView* const child_2 = AddChildView(5, 5);
+  StaticSizedView* const child_3 = AddChildView(25, 10);
+  child_1->set_minimum_size({1, 3});
+  child_2->set_minimum_size({3, 1});
+  child_3->set_minimum_size({2, 2});
+  EXPECT_EQ(host_->GetPreferredSize(), host_->GetMinimumSize());
+}
+
+TEST_F(FillLayoutTest, MinimumSizeEnabled) {
+  layout_->SetMinimumSizeEnabled(true);
+  StaticSizedView* const child_1 = AddChildView(10, 50);
+  StaticSizedView* const child_2 = AddChildView(5, 5);
+  StaticSizedView* const child_3 = AddChildView(25, 10);
+  child_1->set_minimum_size({1, 3});
+  child_2->set_minimum_size({3, 1});
+  child_3->set_minimum_size({2, 2});
+  EXPECT_EQ(gfx::Size(3, 3), host_->GetMinimumSize());
+}
+
+TEST_F(FillLayoutTest, MinimumSizeExcludesView) {
+  layout_->SetMinimumSizeEnabled(true);
+  StaticSizedView* const child_1 = AddChildView(10, 50);
+  StaticSizedView* const child_2 = AddChildView(5, 5);
+  StaticSizedView* const child_3 = AddChildView(25, 10);
+  child_1->set_minimum_size({1, 3});
+  child_2->set_minimum_size({3, 1});
+  child_3->set_minimum_size({2, 2});
+  layout_->SetChildViewIgnoredByLayout(child_2, true);
+  EXPECT_EQ(gfx::Size(2, 3), host_->GetMinimumSize());
 }
 
 }  // namespace views

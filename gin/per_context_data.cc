@@ -4,7 +4,6 @@
 
 #include "gin/per_context_data.h"
 
-#include "base/logging.h"
 #include "gin/public/context_holder.h"
 #include "gin/public/wrapper_info.h"
 
@@ -12,16 +11,15 @@ namespace gin {
 
 PerContextData::PerContextData(ContextHolder* context_holder,
                                v8::Local<v8::Context> context)
-    : context_holder_(context_holder),
-      runner_(NULL) {
+    : context_holder_(context_holder), runner_(nullptr) {
   context->SetAlignedPointerInEmbedderData(
-      kPerContextDataStartIndex + kEmbedderNativeGin, this);
+      int{kPerContextDataStartIndex} + kEmbedderNativeGin, this);
 }
 
 PerContextData::~PerContextData() {
   v8::HandleScope handle_scope(context_holder_->isolate());
   context_holder_->context()->SetAlignedPointerInEmbedderData(
-      kPerContextDataStartIndex + kEmbedderNativeGin, NULL);
+      int{kPerContextDataStartIndex} + kEmbedderNativeGin, NULL);
 }
 
 // static

@@ -4,8 +4,10 @@
 
 #include "net/base/elements_upload_data_stream.h"
 
+#include <utility>
+
 #include "base/bind.h"
-#include "base/logging.h"
+#include "base/check_op.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/upload_bytes_element_reader.h"
@@ -17,9 +19,7 @@ ElementsUploadDataStream::ElementsUploadDataStream(
     std::vector<std::unique_ptr<UploadElementReader>> element_readers,
     int64_t identifier)
     : UploadDataStream(false, identifier),
-      element_readers_(std::move(element_readers)),
-      element_index_(0),
-      read_error_(OK) {}
+      element_readers_(std::move(element_readers)) {}
 
 ElementsUploadDataStream::~ElementsUploadDataStream() = default;
 

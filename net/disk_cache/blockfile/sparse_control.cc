@@ -10,10 +10,10 @@
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
-#include "base/single_thread_task_runner.h"
+#include "base/numerics/checked_math.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/interval.h"
@@ -43,6 +43,10 @@ const int kMaxMapSize = 8 * 1024;
 // The maximum number of bytes that a child can store.
 const int kMaxEntrySize = 0x100000;
 
+// How much we can address. 8 KiB bitmap (kMaxMapSize above) gives us offsets
+// up to 64 GiB.
+const int64_t kMaxEndOffset = 8ll * kMaxMapSize * kMaxEntrySize;
+
 // The size of each data block (tracked by the child allocation bitmap).
 const int kBlockSize = 1024;
 
@@ -64,7 +68,10 @@ class ChildrenDeleter
       public disk_cache::FileIOCallback {
  public:
   ChildrenDeleter(disk_cache::BackendImpl* backend, const std::string& name)
-      : backend_(backend->GetWeakPtr()), name_(name), signature_(0) {}
+      : backend_(backend->GetWeakPtr()), name_(name) {}
+
+  ChildrenDeleter(const ChildrenDeleter&) = delete;
+  ChildrenDeleter& operator=(const ChildrenDeleter&) = delete;
 
   void OnFileIOComplete(int bytes_copied) override;
 
@@ -82,9 +89,8 @@ class ChildrenDeleter
   base::WeakPtr<disk_cache::BackendImpl> backend_;
   std::string name_;
   disk_cache::Bitmap children_map_;
-  int64_t signature_;
+  int64_t signature_ = 0;
   std::unique_ptr<char[]> buffer_;
-  DISALLOW_COPY_AND_ASSIGN(ChildrenDeleter);
 };
 
 // This is the callback of the file operation.
@@ -196,19 +202,7 @@ namespace disk_cache {
 
 SparseControl::SparseControl(EntryImpl* entry)
     : entry_(entry),
-      child_(nullptr),
-      operation_(kNoOperation),
-      pending_(false),
-      finished_(false),
-      init_(false),
-      range_found_(false),
-      abort_(false),
-      child_map_(child_data_.bitmap, kNumSparseBits, kNumSparseBits / 32),
-      offset_(0),
-      buf_len_(0),
-      child_offset_(0),
-      child_len_(0),
-      result_(0) {
+      child_map_(child_data_.bitmap, kNumSparseBits, kNumSparseBits / 32) {
   memset(&sparse_header_, 0, sizeof(sparse_header_));
   memset(&child_data_, 0, sizeof(child_data_));
 }
@@ -264,11 +258,37 @@ int SparseControl::StartIO(SparseOperation op,
   if (offset < 0 || buf_len < 0)
     return net::ERR_INVALID_ARGUMENT;
 
-  // We only support up to 64 GB.
-  if (static_cast<uint64_t>(offset) + static_cast<unsigned int>(buf_len) >=
-      UINT64_C(0x1000000000)) {
-    return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
+  int64_t end_offset = 0;  // non-inclusive.
+  if (!base::CheckAdd(offset, buf_len).AssignIfValid(&end_offset)) {
+    // Writes aren't permitted to try to cross the end of address space;
+    // read/GetAvailableRange clip.
+    if (op == kWriteOperation)
+      return net::ERR_INVALID_ARGUMENT;
+    else
+      end_offset = std::numeric_limits<int64_t>::max();
   }
+
+  if (offset >= kMaxEndOffset) {
+    // Interval is within valid offset space, but completely outside backend
+    // supported range. Permit GetAvailableRange to say "nothing here", actual
+    // I/O fails.
+    if (op == kGetRangeOperation)
+      return 0;
+    else
+      return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
+  }
+
+  if (end_offset > kMaxEndOffset) {
+    // Interval is partially what the backend can handle. Fail writes, clip
+    // reads.
+    if (op == kWriteOperation)
+      return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
+    else
+      end_offset = kMaxEndOffset;
+  }
+
+  DCHECK_GE(end_offset, offset);
+  buf_len = end_offset - offset;
 
   DCHECK(!user_buf_.get());
   DCHECK(user_callback_.is_null());
@@ -306,25 +326,23 @@ int SparseControl::StartIO(SparseOperation op,
   return net::ERR_IO_PENDING;
 }
 
-int SparseControl::GetAvailableRange(int64_t offset, int len, int64_t* start) {
+RangeResult SparseControl::GetAvailableRange(int64_t offset, int len) {
   DCHECK(init_);
   // We don't support simultaneous IO for sparse data.
   if (operation_ != kNoOperation)
-    return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
-
-  DCHECK(start);
+    return RangeResult(net::ERR_CACHE_OPERATION_NOT_SUPPORTED);
 
   range_found_ = false;
   int result = StartIO(kGetRangeOperation, offset, nullptr, len,
                        CompletionOnceCallback());
-  if (range_found_) {
-    *start = offset_;
-    return result;
-  }
+  if (range_found_)
+    return RangeResult(offset_, result);
 
-  // This is a failure. We want to return a valid start value in any case.
-  *start = offset;
-  return result < 0 ? result : 0;  // Don't mask error codes to the caller.
+  // This is a failure. We want to return a valid start value if it's just an
+  // empty range, though.
+  if (result < 0)
+    return RangeResult(static_cast<net::Error>(result));
+  return RangeResult(offset, 0);
 }
 
 void SparseControl::CancelIO() {
@@ -420,7 +438,7 @@ int SparseControl::OpenSparseEntry(int data_len) {
   if (!(PARENT_ENTRY & entry_->GetEntryFlags()))
     return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
 
-  // Dont't go over board with the bitmap. 8 KB gives us offsets up to 64 GB.
+  // Don't go over board with the bitmap.
   int map_len = data_len - sizeof(sparse_header_);
   if (map_len > kMaxMapSize || map_len % 4)
     return net::ERR_CACHE_OPERATION_NOT_SUPPORTED;
@@ -690,7 +708,8 @@ void SparseControl::DoChildrenIO() {
   // |finished_| to true.
   if (kGetRangeOperation == operation_ && entry_->net_log().IsCapturing()) {
     entry_->net_log().EndEvent(net::NetLogEventType::SPARSE_GET_RANGE, [&] {
-      return CreateNetLogGetAvailableRangeResultParams(offset_, result_);
+      return CreateNetLogGetAvailableRangeResultParams(
+          RangeResult(offset_, result_));
     });
   }
   if (finished_) {

@@ -7,27 +7,42 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace network {
 
-TestURLLoaderClient::TestURLLoaderClient() : binding_(this) {}
-TestURLLoaderClient::~TestURLLoaderClient() {}
+TestURLLoaderClient::TestURLLoaderClient() = default;
+TestURLLoaderClient::~TestURLLoaderClient() = default;
 
-void TestURLLoaderClient::OnReceiveResponse(
-    const ResourceResponseHead& response_head) {
+void TestURLLoaderClient::OnReceiveEarlyHints(
+    network::mojom::EarlyHintsPtr early_hints) {
   EXPECT_FALSE(has_received_response_);
   EXPECT_FALSE(has_received_cached_metadata_);
   EXPECT_FALSE(has_received_completion_);
+  has_received_early_hints_ = true;
+  early_hints_.push_back(std::move(early_hints));
+}
+
+void TestURLLoaderClient::OnReceiveResponse(
+    mojom::URLResponseHeadPtr response_head,
+    mojo::ScopedDataPipeConsumerHandle body) {
+  EXPECT_FALSE(has_received_response_);
+  EXPECT_FALSE(has_received_completion_);
   has_received_response_ = true;
-  response_head_ = response_head;
+  response_head_ = std::move(response_head);
   if (quit_closure_for_on_receive_response_)
     std::move(quit_closure_for_on_receive_response_).Run();
+
+  response_body_ = std::move(body);
+  if (quit_closure_for_on_start_loading_response_body_)
+    std::move(quit_closure_for_on_start_loading_response_body_).Run();
 }
 
 void TestURLLoaderClient::OnReceiveRedirect(
     const net::RedirectInfo& redirect_info,
-    const ResourceResponseHead& response_head) {
+    mojom::URLResponseHeadPtr response_head) {
   EXPECT_FALSE(has_received_cached_metadata_);
   EXPECT_FALSE(response_body_.is_valid());
   EXPECT_FALSE(has_received_response_);
@@ -36,14 +51,13 @@ void TestURLLoaderClient::OnReceiveRedirect(
   EXPECT_FALSE(has_received_completion_);
   has_received_redirect_ = true;
   redirect_info_ = redirect_info;
-  response_head_ = response_head;
+  response_head_ = std::move(response_head);
   if (quit_closure_for_on_receive_redirect_)
     std::move(quit_closure_for_on_receive_redirect_).Run();
 }
 
 void TestURLLoaderClient::OnReceiveCachedMetadata(mojo_base::BigBuffer data) {
   EXPECT_FALSE(has_received_cached_metadata_);
-  EXPECT_TRUE(has_received_response_);
   EXPECT_FALSE(has_received_completion_);
   has_received_cached_metadata_ = true;
   cached_metadata_ =
@@ -76,15 +90,6 @@ void TestURLLoaderClient::OnUploadProgress(
   std::move(ack_callback).Run();
 }
 
-void TestURLLoaderClient::OnStartLoadingResponseBody(
-    mojo::ScopedDataPipeConsumerHandle body) {
-  EXPECT_TRUE(has_received_response_);
-  EXPECT_FALSE(has_received_completion_);
-  response_body_ = std::move(body);
-  if (quit_closure_for_on_start_loading_response_body_)
-    std::move(quit_closure_for_on_start_loading_response_body_).Run();
-}
-
 void TestURLLoaderClient::OnComplete(const URLLoaderCompletionStatus& status) {
   EXPECT_FALSE(has_received_completion_);
   has_received_completion_ = true;
@@ -97,16 +102,17 @@ void TestURLLoaderClient::ClearHasReceivedRedirect() {
   has_received_redirect_ = false;
 }
 
-mojom::URLLoaderClientPtr TestURLLoaderClient::CreateInterfacePtr() {
-  mojom::URLLoaderClientPtr client_ptr;
-  binding_.Bind(mojo::MakeRequest(&client_ptr));
-  binding_.set_connection_error_handler(base::BindOnce(
-      &TestURLLoaderClient::OnConnectionError, base::Unretained(this)));
-  return client_ptr;
+mojo::PendingRemote<mojom::URLLoaderClient>
+TestURLLoaderClient::CreateRemote() {
+  mojo::PendingRemote<mojom::URLLoaderClient> client_remote;
+  receiver_.Bind(client_remote.InitWithNewPipeAndPassReceiver());
+  receiver_.set_disconnect_handler(base::BindOnce(
+      &TestURLLoaderClient::OnMojoDisconnect, base::Unretained(this)));
+  return client_remote;
 }
 
 void TestURLLoaderClient::Unbind() {
-  binding_.Unbind();
+  receiver_.reset();
   response_body_.reset();
 }
 
@@ -150,11 +156,11 @@ void TestURLLoaderClient::RunUntilComplete() {
   run_loop.Run();
 }
 
-void TestURLLoaderClient::RunUntilConnectionError() {
-  if (has_received_connection_error_)
+void TestURLLoaderClient::RunUntilDisconnect() {
+  if (has_received_disconnect_)
     return;
   base::RunLoop run_loop;
-  quit_closure_for_on_connection_error_ = run_loop.QuitClosure();
+  quit_closure_for_disconnect_ = run_loop.QuitClosure();
   run_loop.Run();
 }
 
@@ -164,12 +170,12 @@ void TestURLLoaderClient::RunUntilTransferSizeUpdated() {
   run_loop.Run();
 }
 
-void TestURLLoaderClient::OnConnectionError() {
-  if (has_received_connection_error_)
+void TestURLLoaderClient::OnMojoDisconnect() {
+  if (has_received_disconnect_)
     return;
-  has_received_connection_error_ = true;
-  if (quit_closure_for_on_connection_error_)
-    std::move(quit_closure_for_on_connection_error_).Run();
+  has_received_disconnect_ = true;
+  if (quit_closure_for_disconnect_)
+    std::move(quit_closure_for_disconnect_).Run();
 }
 
 }  // namespace network

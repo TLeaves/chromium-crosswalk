@@ -5,6 +5,7 @@
 #ifndef IOS_CHROME_BROWSER_READING_LIST_READING_LIST_DISTILLER_PAGE_H_
 #define IOS_CHROME_BROWSER_READING_LIST_READING_LIST_DISTILLER_PAGE_H_
 
+#include <objc/objc.h>
 #include <memory>
 #include <string>
 
@@ -24,6 +25,11 @@ class FaviconWebStateDispatcher;
 // distillation.
 class ReadingListDistillerPageDelegate {
  public:
+  ReadingListDistillerPageDelegate(const ReadingListDistillerPageDelegate&) =
+      delete;
+  ReadingListDistillerPageDelegate& operator=(
+      const ReadingListDistillerPageDelegate&) = delete;
+
   virtual ~ReadingListDistillerPageDelegate();
 
   // A callback called if the URL passed to the distilled led to a redirection.
@@ -36,15 +42,12 @@ class ReadingListDistillerPageDelegate {
 
  protected:
   ReadingListDistillerPageDelegate();
-  DISALLOW_COPY_AND_ASSIGN(ReadingListDistillerPageDelegate);
 };
 
 // An DistillerPageIOS that will retain WebState to allow favicon download and
 // and add a 2 seconds delay between loading and distillation.
 class ReadingListDistillerPage : public dom_distiller::DistillerPageIOS {
  public:
-  typedef base::Callback<void(const GURL&, const GURL&)> RedirectionCallback;
-
   // Creates a ReadingListDistillerPage to distill |url|. WebStates to download
   // the pages will be provided by web_state_dispatcher.
   // |browser_state|, |web_state_dispatcher| and |delegate| must not be null.
@@ -53,6 +56,10 @@ class ReadingListDistillerPage : public dom_distiller::DistillerPageIOS {
       web::BrowserState* browser_state,
       FaviconWebStateDispatcher* web_state_dispatcher,
       ReadingListDistillerPageDelegate* delegate);
+
+  ReadingListDistillerPage(const ReadingListDistillerPage&) = delete;
+  ReadingListDistillerPage& operator=(const ReadingListDistillerPage&) = delete;
+
   ~ReadingListDistillerPage() override;
 
  protected:
@@ -79,7 +86,7 @@ class ReadingListDistillerPage : public dom_distiller::DistillerPageIOS {
   // Handles the JavaScript response. If the URL of the iframe is returned,
   // triggers a navigation to it. Stop distillation of the page there as the new
   // load will trigger a new distillation.
-  bool HandleGoogleCachedAMPPageJavaScriptResult(id result, id error);
+  void OnHandleGoogleCachedAMPPageResult(const base::Value* value, bool error);
 
   // Work around the fact that articles from wikipedia has the major part of the
   // article hidden.
@@ -88,6 +95,10 @@ class ReadingListDistillerPage : public dom_distiller::DistillerPageIOS {
   // HandleWikipediaPage sets the style of collapsable parts of article to
   // visible.
   void HandleWikipediaPage();
+  // OnHandleWikipediaPageResult is called asynchronously with the
+  // result of the javascript evaluation started in
+  // HandleWikipediaPage.
+  void OnHandleWikipediaPageResult(const base::Value* value);
 
   // Continue the distillation on the page that is currently loaded in
   // |CurrentWebState()|.
@@ -104,8 +115,6 @@ class ReadingListDistillerPage : public dom_distiller::DistillerPageIOS {
   ReadingListDistillerPageDelegate* delegate_;
   int delayed_task_id_;
   base::WeakPtrFactory<ReadingListDistillerPage> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ReadingListDistillerPage);
 };
 
 }  // namespace reading_list

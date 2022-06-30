@@ -11,18 +11,19 @@
 #include <map>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/string16.h"
+#include "base/scoped_observation.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "components/history/core/browser/history_db_task.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_service_observer.h"
 #include "components/history/core/browser/history_types.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -43,7 +44,6 @@ class BookmarkModel;
 
 namespace history {
 class HistoryDatabase;
-class HistoryService;
 class HQPPerfTestOnePopularURL;
 }
 
@@ -107,8 +107,10 @@ class InMemoryURLIndex : public KeyedService,
                    history::HistoryService* history_service,
                    TemplateURLService* template_url_service,
                    const base::FilePath& history_dir,
-                   const SchemeSet& client_schemes_to_whitelist);
+                   const SchemeSet& client_schemes_to_allowlist);
   ~InMemoryURLIndex() override;
+  InMemoryURLIndex(const InMemoryURLIndex&) = delete;
+  InMemoryURLIndex& operator=(const InMemoryURLIndex&) = delete;
 
   // Opens and prepares the index of historical URL visits. If the index private
   // data cannot be restored from its cache file then it is rebuilt from the
@@ -118,11 +120,11 @@ class InMemoryURLIndex : public KeyedService,
   // Scans the history index and returns a vector with all scored, matching
   // history items. This entry point simply forwards the call on to the
   // URLIndexPrivateData class. For a complete description of this function
-  // refer to that class.  If |cursor_position| is base::string16::npos, the
+  // refer to that class.  If |cursor_position| is std::u16string::npos, the
   // function doesn't do anything special with the cursor; this is equivalent
   // to the cursor being at the end.  In total, |max_matches| of items will be
   // returned in the |ScoredHistoryMatches| vector.
-  ScoredHistoryMatches HistoryItemsForTerms(const base::string16& term_string,
+  ScoredHistoryMatches HistoryItemsForTerms(const std::u16string& term_string,
                                             size_t cursor_position,
                                             size_t max_matches);
 
@@ -157,7 +159,12 @@ class InMemoryURLIndex : public KeyedService,
   class RebuildPrivateDataFromHistoryDBTask : public history::HistoryDBTask {
    public:
     explicit RebuildPrivateDataFromHistoryDBTask(
-        InMemoryURLIndex* index, const SchemeSet& scheme_whitelist);
+        InMemoryURLIndex* index,
+        const SchemeSet& scheme_allowlist);
+    RebuildPrivateDataFromHistoryDBTask(
+        const RebuildPrivateDataFromHistoryDBTask&) = delete;
+    RebuildPrivateDataFromHistoryDBTask& operator=(
+        const RebuildPrivateDataFromHistoryDBTask&) = delete;
 
     bool RunOnDBThread(history::HistoryBackend* backend,
                        history::HistoryDatabase* db) override;
@@ -166,12 +173,13 @@ class InMemoryURLIndex : public KeyedService,
    private:
     ~RebuildPrivateDataFromHistoryDBTask() override;
 
-    InMemoryURLIndex* index_;  // Call back to this index at completion.
-    SchemeSet scheme_whitelist_;  // Schemes to be indexed.
+    raw_ptr<InMemoryURLIndex> index_;  // Call back to this index at completion.
+    SchemeSet scheme_allowlist_;  // Schemes to be indexed.
     bool succeeded_;  // Indicates if the rebuild was successful.
     scoped_refptr<URLIndexPrivateData> data_;  // The rebuilt private data.
-
-    DISALLOW_COPY_AND_ASSIGN(RebuildPrivateDataFromHistoryDBTask);
+    // When the task was first requested from the main thread. This is the same
+    // time as when this task object is constructed.
+    const base::TimeTicks task_creation_time_;
   };
 
   // Initializes all index data members in preparation for restoring the index
@@ -196,7 +204,7 @@ class InMemoryURLIndex : public KeyedService,
   // or rebuilding our private data from the history database. |succeeded|
   // will be true if the rebuild was successful. |data| will point to a new
   // instanceof the private data just rebuilt.
-  void DoneRebuidingPrivateDataFromHistoryDB(
+  void DoneRebuildingPrivateDataFromHistoryDB(
       bool succeeded,
       scoped_refptr<URLIndexPrivateData> private_data);
 
@@ -238,7 +246,6 @@ class InMemoryURLIndex : public KeyedService,
   void OnURLVisited(history::HistoryService* history_service,
                     ui::PageTransition transition,
                     const history::URLRow& row,
-                    const history::RedirectList& redirects,
                     base::Time visit_time) override;
   void OnURLsModified(history::HistoryService* history_service,
                       const history::URLRows& changed_urls) override;
@@ -267,33 +274,33 @@ class InMemoryURLIndex : public KeyedService,
     return &private_data_tracker_;
   }
 
-  // Returns the set of whitelisted schemes. For unit testing only.
-  const SchemeSet& scheme_whitelist() { return scheme_whitelist_; }
+  // Returns the set of allowlisted schemes. For unit testing only.
+  const SchemeSet& scheme_allowlist() { return scheme_allowlist_; }
 
   // The BookmarkModel; may be null when testing.
-  bookmarks::BookmarkModel* bookmark_model_;
+  raw_ptr<bookmarks::BookmarkModel> bookmark_model_;
 
   // The HistoryService; may be null when testing.
-  history::HistoryService* history_service_;
+  raw_ptr<history::HistoryService> history_service_;
 
   // The TemplateURLService; may be null when testing.  Used to identify URLs
   // that are from the default search provider.
-  TemplateURLService* template_url_service_;
+  raw_ptr<TemplateURLService> template_url_service_;
 
   // Directory where cache file resides. This is, except when unit testing,
   // the same directory in which the history database is found. It should never
   // be empty.
   base::FilePath history_dir_;
 
-  // Only URLs with a whitelisted scheme are indexed.
-  SchemeSet scheme_whitelist_;
+  // Only URLs with a allowlisted scheme are indexed.
+  SchemeSet scheme_allowlist_;
 
   // The index's durable private data.
   scoped_refptr<URLIndexPrivateData> private_data_;
 
   // Observers to notify upon restoral or save of the private data cache.
-  RestoreCacheObserver* restore_cache_observer_;
-  SaveCacheObserver* save_cache_observer_;
+  raw_ptr<RestoreCacheObserver> restore_cache_observer_;
+  raw_ptr<SaveCacheObserver> save_cache_observer_;
 
   // Task runner used for operations which require disk access.
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -317,9 +324,11 @@ class InMemoryURLIndex : public KeyedService,
   // HistoryServiceLoaded Notification.
   bool listen_to_history_service_loaded_;
 
-  base::ThreadChecker thread_checker_;
+  base::ScopedObservation<history::HistoryService,
+                          history::HistoryServiceObserver>
+      history_service_observation_{this};
 
-  DISALLOW_COPY_AND_ASSIGN(InMemoryURLIndex);
+  base::ThreadChecker thread_checker_;
 };
 
 #endif  // COMPONENTS_OMNIBOX_BROWSER_IN_MEMORY_URL_INDEX_H_

@@ -5,24 +5,24 @@
 #ifndef UI_EVENTS_OZONE_EVDEV_CURSOR_DELEGATE_EVDEV_H_
 #define UI_EVENTS_OZONE_EVDEV_CURSOR_DELEGATE_EVDEV_H_
 
-#include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
+#include "base/component_export.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
 class Vector2dF;
 class Rect;
-}
+}  // namespace gfx
 
 namespace ui {
 
-class EVENTS_OZONE_EVDEV_EXPORT CursorDelegateEvdev {
+class COMPONENT_EXPORT(EVDEV) CursorDelegateEvdev {
  public:
-  virtual ~CursorDelegateEvdev() {}
+  virtual ~CursorDelegateEvdev() = default;
 
   // Move the cursor from the Evdev thread.
   virtual void MoveCursor(const gfx::Vector2dF& delta) = 0;
-  // Move the cursor from the UI or Evdev (e.g. on a tablet).
+  // Move the cursor from the UI thread.
   virtual void MoveCursorTo(gfx::AcceleratedWidget widget,
                             const gfx::PointF& location) = 0;
   // Move the cursor from the UI or Evdev thread.

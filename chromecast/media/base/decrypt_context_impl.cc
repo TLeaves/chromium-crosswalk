@@ -5,10 +5,11 @@
 #include "chromecast/media/base/decrypt_context_impl.h"
 
 #include <memory>
+#include <ostream>
 #include <vector>
 
 #include "base/bind.h"
-#include "base/logging.h"
+#include "base/check.h"
 #include "chromecast/public/media/cast_decoder_buffer.h"
 
 namespace chromecast {

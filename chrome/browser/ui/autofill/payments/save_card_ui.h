@@ -15,8 +15,9 @@ enum class BubbleType {
   // Save prompt when uploading a card to Google payments.
   UPLOAD_SAVE,
 
-  // The sign-in promo that is shown after local save.
-  SIGN_IN_PROMO,
+  // Credit card upload is in progress. No bubble visible but show the credit
+  // card icon with the loading indicator animation.
+  UPLOAD_IN_PROGRESS,
 
   // The manage cards bubble when bubble is reshown after
   // icon is clicked.
@@ -28,6 +29,15 @@ enum class BubbleType {
   // There is no bubble to show anymore. This also
   // indicates that the icon should not be visible.
   INACTIVE
+};
+
+// The type of experiment running for the save card ui.
+enum SaveCardUiExperiment {
+  // Show the text for faster and protected image.
+  FASTER_AND_PROTECTED = 1,
+
+  // Show the text for encrypted and secure image.
+  ENCRYPTED_AND_SECURE = 2
 };
 
 }  // namespace autofill

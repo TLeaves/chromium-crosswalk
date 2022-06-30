@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -33,6 +33,9 @@ class Transport;
 // created by the JingleSessionManager.
 class JingleSession : public Session {
  public:
+  JingleSession(const JingleSession&) = delete;
+  JingleSession& operator=(const JingleSession&) = delete;
+
   ~JingleSession() override;
 
   // Session interface.
@@ -47,7 +50,7 @@ class JingleSession : public Session {
  private:
   friend class JingleSessionManager;
 
-  typedef base::Callback<void(JingleMessageReply::ErrorType)> ReplyCallback;
+  using ReplyCallback = base::OnceCallback<void(JingleMessageReply::ErrorType)>;
 
   explicit JingleSession(JingleSessionManager* session_manager);
 
@@ -85,22 +88,22 @@ class JingleSession : public Session {
   // messages.
   void OnIncomingMessage(const std::string& id,
                          std::unique_ptr<JingleMessage> message,
-                         const ReplyCallback& reply_callback);
+                         ReplyCallback reply_callback);
 
   // Called by OnIncomingMessage() to process the incoming Jingle messages
   // in the same order that they are sent.
   void ProcessIncomingMessage(std::unique_ptr<JingleMessage> message,
-                              const ReplyCallback& reply_callback);
+                              ReplyCallback reply_callback);
 
   // Message handlers for incoming messages.
   void OnAccept(std::unique_ptr<JingleMessage> message,
-                const ReplyCallback& reply_callback);
+                ReplyCallback reply_callback);
   void OnSessionInfo(std::unique_ptr<JingleMessage> message,
-                     const ReplyCallback& reply_callback);
+                     ReplyCallback reply_callback);
   void OnTransportInfo(std::unique_ptr<JingleMessage> message,
-                       const ReplyCallback& reply_callback);
+                       ReplyCallback reply_callback);
   void OnTerminate(std::unique_ptr<JingleMessage> message,
-                   const ReplyCallback& reply_callback);
+                   ReplyCallback reply_callback);
 
   // Called from OnAccept() to initialize session config.
   bool InitializeConfigFromDescription(const ContentDescription* description);
@@ -135,9 +138,9 @@ class JingleSession : public Session {
 
   base::ThreadChecker thread_checker_;
 
-  JingleSessionManager* session_manager_;
+  raw_ptr<JingleSessionManager> session_manager_;
   SignalingAddress peer_address_;
-  Session::EventHandler* event_handler_;
+  raw_ptr<Session::EventHandler> event_handler_;
 
   std::string session_id_;
   State state_;
@@ -147,7 +150,7 @@ class JingleSession : public Session {
 
   std::unique_ptr<Authenticator> authenticator_;
 
-  Transport* transport_ = nullptr;
+  raw_ptr<Transport> transport_ = nullptr;
 
   // Pending Iq requests. Used for all messages except transport-info.
   std::vector<std::unique_ptr<IqRequest>> pending_requests_;
@@ -159,7 +162,7 @@ class JingleSession : public Session {
     PendingMessage();
     PendingMessage(PendingMessage&& moved);
     PendingMessage(std::unique_ptr<JingleMessage> message,
-                   const ReplyCallback& reply_callback);
+                   ReplyCallback reply_callback);
     ~PendingMessage();
     PendingMessage& operator=(PendingMessage&& moved);
     std::unique_ptr<JingleMessage> message;
@@ -182,9 +185,7 @@ class JingleSession : public Session {
   // The SessionPlugins attached to this session.
   std::vector<SessionPlugin*> plugins_;
 
-  base::WeakPtrFactory<JingleSession> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(JingleSession);
+  base::WeakPtrFactory<JingleSession> weak_factory_{this};
 };
 
 }  // namespace protocol

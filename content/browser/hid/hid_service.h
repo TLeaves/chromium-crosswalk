@@ -9,49 +9,105 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "content/public/browser/frame_service_base.h"
-#include "mojo/public/cpp/bindings/binding_set.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
+#include "content/public/browser/hid_delegate.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver_set.h"
+#include "mojo/public/cpp/bindings/remote_set.h"
 #include "services/device/public/mojom/hid.mojom.h"
 #include "third_party/blink/public/mojom/hid/hid.mojom.h"
+#include "url/origin.h"
 
 namespace content {
 
 class HidChooser;
-class RenderFrameHost;
 
 // HidService provides an implementation of the HidService mojom interface. This
 // interface is used by Blink to implement the WebHID API.
-class HidService : public content::FrameServiceBase<blink::mojom::HidService> {
+class CONTENT_EXPORT HidService : public blink::mojom::HidService,
+                                  public device::mojom::HidConnectionWatcher,
+                                  public HidDelegate::Observer {
  public:
-  static void Create(RenderFrameHost*, blink::mojom::HidServiceRequest);
+  HidService(BrowserContext*, const url::Origin&, RenderFrameHostImpl*);
+  HidService(HidService&) = delete;
+  HidService& operator=(HidService&) = delete;
+  ~HidService() override;
+
+  // Use this when creating from a document.
+  static void Create(RenderFrameHostImpl*,
+                     mojo::PendingReceiver<blink::mojom::HidService>);
+
+  // Use this when creating from a service worker, which doesn't have
+  // RenderFrameHost.
+  static void Create(BrowserContext*,
+                     const url::Origin&,
+                     mojo::PendingReceiver<blink::mojom::HidService>);
 
   // blink::mojom::HidService:
+  void RegisterClient(
+      mojo::PendingAssociatedRemote<device::mojom::HidManagerClient> client)
+      override;
   void GetDevices(GetDevicesCallback callback) override;
-  void RequestDevice(std::vector<blink::mojom::HidDeviceFilterPtr> filters,
-                     RequestDeviceCallback callback) override;
+  void RequestDevice(
+      std::vector<blink::mojom::HidDeviceFilterPtr> filters,
+      std::vector<blink::mojom::HidDeviceFilterPtr> exclusion_filters,
+      RequestDeviceCallback callback) override;
   void Connect(const std::string& device_guid,
-               device::mojom::HidConnectionClientPtr client,
+               mojo::PendingRemote<device::mojom::HidConnectionClient> client,
                ConnectCallback callback) override;
+  void Forget(device::mojom::HidDeviceInfoPtr device_info,
+              ForgetCallback callback) override;
+
+  // HidDelegate::Observer:
+  void OnDeviceAdded(const device::mojom::HidDeviceInfo& device_info) override;
+  void OnDeviceRemoved(
+      const device::mojom::HidDeviceInfo& device_info) override;
+  void OnDeviceChanged(
+      const device::mojom::HidDeviceInfo& device_info) override;
+  void OnHidManagerConnectionError() override;
+  void OnPermissionRevoked(const url::Origin& origin) override;
 
  private:
-  HidService(RenderFrameHost*, blink::mojom::HidServiceRequest);
-  ~HidService() override;
+  void OnWatcherRemoved(bool cleanup_watcher_ids);
+  void IncrementActiveFrameCount();
+  void DecrementActiveFrameCount();
 
   void FinishGetDevices(GetDevicesCallback callback,
                         std::vector<device::mojom::HidDeviceInfoPtr> devices);
-  void FinishRequestDevice(RequestDeviceCallback callback,
-                           device::mojom::HidDeviceInfoPtr device);
-  void FinishConnect(ConnectCallback callback,
-                     device::mojom::HidConnectionPtr connection);
+  void FinishRequestDevice(
+      RequestDeviceCallback callback,
+      std::vector<device::mojom::HidDeviceInfoPtr> devices);
+  void FinishConnect(
+      ConnectCallback callback,
+      mojo::PendingRemote<device::mojom::HidConnection> connection);
+
+  // The BrowserContext pointed by |browser_context_| always outlives
+  // HidService itself.
+  const raw_ptr<BrowserContext> browser_context_;
+
+  // When RenderFrameHost pointed by |render_frame_host| is destroyed, the
+  // bound HidService will be destroyed first. It should be safe to access
+  // |render_frame_host_| whenever it is not null.
+  const raw_ptr<RenderFrameHostImpl> render_frame_host_;
 
   // The last shown HID chooser UI.
   std::unique_ptr<HidChooser> chooser_;
+  url::Origin origin_;
+
+  // Used to bind with Blink.
+  mojo::AssociatedRemoteSet<device::mojom::HidManagerClient> clients_;
+
+  // Each pipe here watches a connection created by Connect() in order to notify
+  // the WebContentsImpl when an active connection indicator should be shown.
+  mojo::ReceiverSet<device::mojom::HidConnectionWatcher> watchers_;
+
+  // Maps every receiver to a guid to allow closing particular connections when
+  // the user revokes a permission.
+  std::multimap<std::string, mojo::ReceiverId> watcher_ids_;
 
   base::WeakPtrFactory<HidService> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(HidService);
 };
 
 }  // namespace content

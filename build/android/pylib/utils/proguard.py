@@ -33,11 +33,8 @@ _PROGUARD_ANNOTATION_VALUE_RE = re.compile(r'^(\s*?)- \S+? \[(.*)\]$')
 
 
 def _GetProguardPath():
-  # Use the one in lib.java rather than source tree because it is the one that
-  # is added to swarming .isolate files.
-  return os.path.join(
-      constants.GetOutDirectory(), 'lib.java', 'third_party', 'proguard',
-      'proguard603.jar')
+  return os.path.join(constants.DIR_SOURCE_ROOT, 'third_party', 'proguard',
+                      'lib', 'proguard603.jar')
 
 
 def Dump(jar_path):
@@ -91,7 +88,7 @@ def Dump(jar_path):
     would produce a very complex JSON.
   """
 
-  with tempfile.NamedTemporaryFile() as proguard_output:
+  with tempfile.NamedTemporaryFile('w+') as proguard_output:
     cmd_helper.GetCmdStatusAndOutput([
         'java',
         '-jar', _GetProguardPath(),
@@ -100,14 +97,16 @@ def Dump(jar_path):
         '-dump', proguard_output.name])
     return Parse(proguard_output)
 
-class _AnnotationElement(object):
+
+class _AnnotationElement:
   def __init__(self, name, ftype, depth):
     self.ref = None
     self.name = name
     self.ftype = ftype
     self.depth = depth
 
-class _ParseState(object):
+
+class _ParseState:
   _INITIAL_VALUES = (lambda: None, list, dict)
   # Empty annotations are represented as 'None', not as an empty dictionary.
   _LAZY_INITIAL_VALUES = (lambda: None, list, lambda: None)

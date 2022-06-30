@@ -11,16 +11,17 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
 #include "components/policy/core/common/async_policy_provider.h"
 #include "components/policy/core/common/configuration_policy_provider_test.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_types.h"
+#include "components/policy/policy_constants.h"
 #include "components/strings/grit/components_strings.h"
 
 namespace policy {
@@ -29,10 +30,18 @@ namespace {
 
 // Subdirectory of the config dir that contains mandatory policies.
 const base::FilePath::CharType kMandatoryPath[] = FILE_PATH_LITERAL("managed");
+// The policy input supports trailing comma and c++ styled comments.
+const char PolicyWithQuirks[] = R"({
+  // Some comments here.
+  "HomepageIsNewTabPage": true,
+  /* Some more comments here */
+})";
 
 class TestHarness : public PolicyProviderTestHarness {
  public:
   TestHarness();
+  TestHarness(const TestHarness&) = delete;
+  TestHarness& operator=(const TestHarness&) = delete;
   ~TestHarness() override;
 
   void SetUp() override;
@@ -50,9 +59,8 @@ class TestHarness : public PolicyProviderTestHarness {
                             bool policy_value) override;
   void InstallStringListPolicy(const std::string& policy_name,
                                const base::ListValue* policy_value) override;
-  void InstallDictionaryPolicy(
-      const std::string& policy_name,
-      const base::DictionaryValue* policy_value) override;
+  void InstallDictionaryPolicy(const std::string& policy_name,
+                               const base::Value* policy_value) override;
   void Install3rdPartyPolicy(const base::DictionaryValue* policies) override;
 
   const base::FilePath& test_dir() { return test_dir_.GetPath(); }
@@ -60,9 +68,10 @@ class TestHarness : public PolicyProviderTestHarness {
   // JSON-encode a dictionary and write it to a file.
   void WriteConfigFile(const base::DictionaryValue& dict,
                        const std::string& file_name);
+  void WriteConfigFile(const std::string& data, const std::string& file_name);
 
-  // Returns a unique name for a policy file. Each subsequent call returns a new
-  // name that comes lexicographically after the previous one.
+  // Returns a unique name for a policy file. Each subsequent call returns a
+  // new name that comes lexicographically after the previous one.
   std::string NextConfigFileName();
 
   static PolicyProviderTestHarness* Create();
@@ -70,8 +79,6 @@ class TestHarness : public PolicyProviderTestHarness {
  private:
   base::ScopedTempDir test_dir_;
   int next_policy_file_index_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestHarness);
 };
 
 TestHarness::TestHarness()
@@ -80,7 +87,7 @@ TestHarness::TestHarness()
                                 POLICY_SOURCE_PLATFORM),
       next_policy_file_index_(100) {}
 
-TestHarness::~TestHarness() {}
+TestHarness::~TestHarness() = default;
 
 void TestHarness::SetUp() {
   ASSERT_TRUE(test_dir_.CreateUniqueTempDir());
@@ -102,36 +109,35 @@ void TestHarness::InstallEmptyPolicy() {
 void TestHarness::InstallStringPolicy(const std::string& policy_name,
                                       const std::string& policy_value) {
   base::DictionaryValue dict;
-  dict.SetString(policy_name, policy_value);
+  dict.SetStringKey(policy_name, policy_value);
   WriteConfigFile(dict, NextConfigFileName());
 }
 
 void TestHarness::InstallIntegerPolicy(const std::string& policy_name,
                                        int policy_value) {
   base::DictionaryValue dict;
-  dict.SetInteger(policy_name, policy_value);
+  dict.SetIntKey(policy_name, policy_value);
   WriteConfigFile(dict, NextConfigFileName());
 }
 
 void TestHarness::InstallBooleanPolicy(const std::string& policy_name,
                                        bool policy_value) {
   base::DictionaryValue dict;
-  dict.SetBoolean(policy_name, policy_value);
+  dict.SetBoolKey(policy_name, policy_value);
   WriteConfigFile(dict, NextConfigFileName());
 }
 
 void TestHarness::InstallStringListPolicy(const std::string& policy_name,
                                           const base::ListValue* policy_value) {
   base::DictionaryValue dict;
-  dict.Set(policy_name, std::make_unique<base::Value>(policy_value->Clone()));
+  dict.SetKey(policy_name, policy_value->Clone());
   WriteConfigFile(dict, NextConfigFileName());
 }
 
-void TestHarness::InstallDictionaryPolicy(
-    const std::string& policy_name,
-    const base::DictionaryValue* policy_value) {
+void TestHarness::InstallDictionaryPolicy(const std::string& policy_name,
+                                          const base::Value* policy_value) {
   base::DictionaryValue dict;
-  dict.Set(policy_name, std::make_unique<base::Value>(policy_value->Clone()));
+  dict.SetKey(policy_name, policy_value->Clone());
   WriteConfigFile(dict, NextConfigFileName());
 }
 
@@ -146,10 +152,15 @@ void TestHarness::WriteConfigFile(const base::DictionaryValue& dict,
   std::string data;
   JSONStringValueSerializer serializer(&data);
   serializer.Serialize(dict);
+  WriteConfigFile(data, file_name);
+}
+
+void TestHarness::WriteConfigFile(const std::string& data,
+                                  const std::string& file_name) {
   const base::FilePath mandatory_dir(test_dir().Append(kMandatoryPath));
   ASSERT_TRUE(base::CreateDirectory(mandatory_dir));
   const base::FilePath file_path(mandatory_dir.AppendASCII(file_name));
-  ASSERT_EQ((int) data.size(),
+  ASSERT_EQ((int)data.size(),
             base::WriteFile(file_path, data.c_str(), data.size()));
 }
 
@@ -190,9 +201,8 @@ class ConfigDirPolicyLoaderTest : public PolicyTestBase {
 // The preferences dictionary is expected to be empty when there are no files to
 // load.
 TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsEmpty) {
-  ConfigDirPolicyLoader loader(
-      scoped_task_environment_.GetMainThreadTaskRunner(), harness_.test_dir(),
-      POLICY_SCOPE_MACHINE);
+  ConfigDirPolicyLoader loader(task_environment_.GetMainThreadTaskRunner(),
+                               harness_.test_dir(), POLICY_SCOPE_MACHINE);
   std::unique_ptr<PolicyBundle> bundle(loader.Load());
   ASSERT_TRUE(bundle.get());
   const PolicyBundle kEmptyBundle;
@@ -204,13 +214,27 @@ TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsEmpty) {
 TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsNonExistentDirectory) {
   base::FilePath non_existent_dir(
       harness_.test_dir().Append(FILE_PATH_LITERAL("not_there")));
-  ConfigDirPolicyLoader loader(
-      scoped_task_environment_.GetMainThreadTaskRunner(), non_existent_dir,
-      POLICY_SCOPE_MACHINE);
+  ConfigDirPolicyLoader loader(task_environment_.GetMainThreadTaskRunner(),
+                               non_existent_dir, POLICY_SCOPE_MACHINE);
   std::unique_ptr<PolicyBundle> bundle(loader.Load());
   ASSERT_TRUE(bundle.get());
   const PolicyBundle kEmptyBundle;
   EXPECT_TRUE(bundle->Equals(kEmptyBundle));
+}
+
+TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsWithComments) {
+  harness_.WriteConfigFile(PolicyWithQuirks, "policies.json");
+  ConfigDirPolicyLoader loader(task_environment_.GetMainThreadTaskRunner(),
+                               harness_.test_dir(), POLICY_SCOPE_MACHINE);
+  std::unique_ptr<PolicyBundle> bundle(loader.Load());
+  ASSERT_TRUE(bundle.get());
+  PolicyBundle expected_bundle;
+  expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
+      .Set(key::kHomepageIsNewTabPage, POLICY_LEVEL_MANDATORY,
+           POLICY_SCOPE_MACHINE, POLICY_SOURCE_PLATFORM, base::Value(true),
+           /*external_data_fetcher=*/nullptr);
+
+  EXPECT_TRUE(bundle->Equals(expected_bundle));
 }
 
 // Test merging values from different files.
@@ -221,18 +245,17 @@ TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsMergePrefs) {
   // but this is better than nothing.
   base::DictionaryValue test_dict_bar;
   const char kHomepageLocation[] = "HomepageLocation";
-  test_dict_bar.SetString(kHomepageLocation, "http://bar.com");
+  test_dict_bar.SetStringKey(kHomepageLocation, "http://bar.com");
   for (unsigned int i = 1; i <= 4; ++i)
     harness_.WriteConfigFile(test_dict_bar, base::NumberToString(i));
   base::DictionaryValue test_dict_foo;
-  test_dict_foo.SetString(kHomepageLocation, "http://foo.com");
+  test_dict_foo.SetStringKey(kHomepageLocation, "http://foo.com");
   harness_.WriteConfigFile(test_dict_foo, "9");
   for (unsigned int i = 5; i <= 8; ++i)
     harness_.WriteConfigFile(test_dict_bar, base::NumberToString(i));
 
-  ConfigDirPolicyLoader loader(
-      scoped_task_environment_.GetMainThreadTaskRunner(), harness_.test_dir(),
-      POLICY_SCOPE_USER);
+  ConfigDirPolicyLoader loader(task_environment_.GetMainThreadTaskRunner(),
+                               harness_.test_dir(), POLICY_SCOPE_USER);
   std::unique_ptr<PolicyBundle> bundle(loader.Load());
   ASSERT_TRUE(bundle.get());
   PolicyBundle expected_bundle;
@@ -246,13 +269,14 @@ TEST_F(ConfigDirPolicyLoaderTest, ReadPrefsMergePrefs) {
             .Get(kHomepageLocation)
             ->DeepCopy();
     conflict_policy.conflicts.clear();
-    conflict_policy.value = std::make_unique<base::Value>("http://bar.com");
+    conflict_policy.set_value(base::Value("http://bar.com"));
     expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .GetMutable(kHomepageLocation)
-        ->AddConflictingPolicy(conflict_policy);
+        ->AddConflictingPolicy(std::move(conflict_policy));
     expected_bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .GetMutable(kHomepageLocation)
-        ->AddWarning(IDS_POLICY_CONFLICT_DIFF_VALUE);
+        ->AddMessage(PolicyMap::MessageType::kWarning,
+                     IDS_POLICY_CONFLICT_DIFF_VALUE);
   }
   EXPECT_TRUE(bundle->Equals(expected_bundle));
 }

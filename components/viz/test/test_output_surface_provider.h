@@ -11,21 +11,28 @@
 
 namespace viz {
 
-// Test implementation that creates a FakeOutputSurface.
+// Test implementation that creates a fake OutputSurface.
 class TestOutputSurfaceProvider : public OutputSurfaceProvider {
  public:
   TestOutputSurfaceProvider();
+
+  TestOutputSurfaceProvider(const TestOutputSurfaceProvider&) = delete;
+  TestOutputSurfaceProvider& operator=(const TestOutputSurfaceProvider&) =
+      delete;
+
   ~TestOutputSurfaceProvider() override;
 
   // OutputSurfaceProvider implementation.
+  std::unique_ptr<DisplayCompositorMemoryAndTaskController> CreateGpuDependency(
+      bool gpu_compositing,
+      gpu::SurfaceHandle surface_handle) override;
   std::unique_ptr<OutputSurface> CreateOutputSurface(
       gpu::SurfaceHandle surface_handle,
       bool gpu_compositing,
       mojom::DisplayClient* display_client,
-      const RendererSettings& renderer_settings) override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestOutputSurfaceProvider);
+      DisplayCompositorMemoryAndTaskController* display_controller,
+      const RendererSettings& renderer_settings,
+      const DebugRendererSettings* debug_settings) override;
 };
 
 }  // namespace viz

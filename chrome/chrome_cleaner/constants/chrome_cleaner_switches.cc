@@ -31,6 +31,11 @@ const char kCrashHandlerSwitch[] = "crash-handler";
 // are properly recorded by crashpad.
 const char kCrashSwitch[] = "crash";
 
+// Instead of showing an elevation prompt, proceed as if the user denied the
+// elevation. (Do this even if the cleaner is already running elevated, so that
+// it behaves the same in unit tests run from elevated command shells.)
+const char kDenyElevationForTestingSwitch[] = "deny-elevation-for-testing";
+
 // Dump the raw logs to a file with the same base name as the executable. The
 // dumped file is a raw protobuf and has a "pb" extension.
 // WARNING: this switch is used by internal test systems. Be careful when making
@@ -77,6 +82,10 @@ const char kLogInterfaceCallsToSwitch[] = "log-interface-calls-to";
 
 // Specify the time to wait between logs upload retries, in minutes.
 const char kLogUploadRetryIntervalSwitch[] = "logs-upload-retry-interval";
+
+// The Mojo pipe token for IPC communication between the Software Reporter and
+// Chrome. Dropped in M80.
+const char kChromeMojoPipeTokenSwitch[] = "chrome-mojo-pipe-token";
 
 // Prevent the crash client from uploading crash reports.
 const char kNoCrashUploadSwitch[] = "no-crash-upload";

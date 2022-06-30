@@ -16,12 +16,14 @@ namespace web {
 
 // This class is an implementation of SystemCookieStore, WKHTTPSystemCookieStore
 // uses WKHTTPCookieStore as the underlying system cookie store.
-class API_AVAILABLE(ios(11.0)) WKHTTPSystemCookieStore
-    : public net::SystemCookieStore,
-      public WKWebViewConfigurationProviderObserver {
+class WKHTTPSystemCookieStore : public net::SystemCookieStore,
+                                public WKWebViewConfigurationProviderObserver {
  public:
   explicit WKHTTPSystemCookieStore(
       WKWebViewConfigurationProvider* config_provider);
+
+  WKHTTPSystemCookieStore(const WKHTTPSystemCookieStore&) = delete;
+  WKHTTPSystemCookieStore& operator=(const WKHTTPSystemCookieStore&) = delete;
 
   ~WKHTTPSystemCookieStore() override;
 
@@ -71,8 +73,6 @@ class API_AVAILABLE(ios(11.0)) WKHTTPSystemCookieStore
   // Using CRWWKHTTPCookieStore instead of using WKHTTPCookieStore directly to
   // work around several bugs on WKHTTPCookieStore.
   CRWWKHTTPCookieStore* crw_cookie_store_ = nil;
-
-  DISALLOW_COPY_AND_ASSIGN(WKHTTPSystemCookieStore);
 };
 
 }  // namespace web

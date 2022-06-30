@@ -8,10 +8,12 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/kiosk/kiosk_delegate.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
 
 class PrefService;
 
@@ -35,6 +37,11 @@ class CastExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::BrowserContext* context,
       PrefService* pref_service,
       chromecast::shell::CastNetworkContexts* cast_network_contexts);
+
+  CastExtensionsBrowserClient(const CastExtensionsBrowserClient&) = delete;
+  CastExtensionsBrowserClient& operator=(const CastExtensionsBrowserClient&) =
+      delete;
+
   ~CastExtensionsBrowserClient() override;
 
   // ExtensionsBrowserClient overrides:
@@ -63,20 +70,20 @@ class CastExtensionsBrowserClient : public ExtensionsBrowserClient {
       int* resource_id) const override;
   void LoadResourceFromResourceBundle(
       const network::ResourceRequest& request,
-      network::mojom::URLLoaderRequest loader,
+      mojo::PendingReceiver<network::mojom::URLLoader> loader,
       const base::FilePath& resource_relative_path,
       int resource_id,
-      const std::string& content_security_policy,
-      network::mojom::URLLoaderClientPtr client,
-      bool send_cors_header) override;
-  bool AllowCrossRendererResourceLoad(const GURL& url,
-                                      content::ResourceType resource_type,
-                                      ui::PageTransition page_transition,
-                                      int child_id,
-                                      bool is_incognito,
-                                      const Extension* extension,
-                                      const ExtensionSet& extensions,
-                                      const ProcessMap& process_map) override;
+      scoped_refptr<net::HttpResponseHeaders> headers,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client) override;
+  bool AllowCrossRendererResourceLoad(
+      const network::ResourceRequest& request,
+      network::mojom::RequestDestination destination,
+      ui::PageTransition page_transition,
+      int child_id,
+      bool is_incognito,
+      const Extension* extension,
+      const ExtensionSet& extensions,
+      const ProcessMap& process_map) override;
   PrefService* GetPrefServiceForContext(
       content::BrowserContext* context) override;
   void GetEarlyExtensionPrefsObservers(
@@ -92,10 +99,10 @@ class CastExtensionsBrowserClient : public ExtensionsBrowserClient {
   bool IsAppModeForcedForApp(const ExtensionId& id) override;
   bool IsLoggedInAsPublicAccount() override;
   ExtensionSystemProvider* GetExtensionSystemFactory() override;
-  void RegisterExtensionInterfaces(service_manager::BinderRegistryWithArgs<
-                                       content::RenderFrameHost*>* registry,
-                                   content::RenderFrameHost* render_frame_host,
-                                   const Extension* extension) const override;
+  void RegisterBrowserInterfaceBindersForFrame(
+      mojo::BinderMapWithContext<content::RenderFrameHost*>* binder_map,
+      content::RenderFrameHost* render_frame_host,
+      const Extension* extension) const override;
   std::unique_ptr<RuntimeAPIDelegate> CreateRuntimeAPIDelegate(
       content::BrowserContext* context) const override;
   const ComponentExtensionResourceManager*
@@ -103,7 +110,8 @@ class CastExtensionsBrowserClient : public ExtensionsBrowserClient {
   void BroadcastEventToRenderers(
       events::HistogramValue histogram_value,
       const std::string& event_name,
-      std::unique_ptr<base::ListValue> args) override;
+      base::Value::List args,
+      bool dispatch_to_off_the_record_profiles) override;
   ExtensionCache* GetExtensionCache() override;
   bool IsBackgroundUpdateAllowed() override;
   bool IsMinBrowserVersionSupported(const std::string& min_version) override;
@@ -129,7 +137,7 @@ class CastExtensionsBrowserClient : public ExtensionsBrowserClient {
   // Support for extension APIs.
   std::unique_ptr<ExtensionsAPIClient> api_client_;
 
-  DISALLOW_COPY_AND_ASSIGN(CastExtensionsBrowserClient);
+  std::unique_ptr<KioskDelegate> kiosk_delegate_;
 };
 
 }  // namespace extensions

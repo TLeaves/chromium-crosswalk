@@ -42,19 +42,17 @@ class ColorChooser;
 class ColorInputType final : public InputType,
                              public KeyboardClickableInputTypeView,
                              public ColorChooserClient {
-  USING_GARBAGE_COLLECTED_MIXIN(ColorInputType);
-
  public:
   explicit ColorInputType(HTMLInputElement&);
   ~ColorInputType() override;
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
   using InputType::GetElement;
 
   // ColorChooserClient implementation.
   void DidChooseColor(const Color&) override;
   void DidEndChooser() override;
   Element& OwnerElement() const override;
-  IntRect ElementRectRelativeToViewport() const override;
+  gfx::Rect ElementRectRelativeToViewport() const override;
   Color CurrentColor() override;
   bool ShouldShowSuggestions() const override;
   Vector<mojom::blink::ColorSuggestionPtr> Suggestions() const override;
@@ -71,7 +69,10 @@ class ColorInputType final : public InputType,
   void CreateShadowSubtree() override;
   void DidSetValue(const String&, bool value_changed) override;
   void HandleDOMActivateEvent(Event&) override;
+  ControlPart AutoAppearance() const override;
+  void OpenPopupView() override;
   void ClosePopupView() override;
+  bool HasOpenedPopup() const override;
   bool ShouldRespectListAttribute() override;
   bool TypeMismatchFor(const String&) const override;
   void WarnIfValueIsInvalid(const String&) const override;
@@ -79,7 +80,6 @@ class ColorInputType final : public InputType,
   AXObject* PopupRootAXObject() override;
 
   Color ValueAsColor() const;
-  void EndColorChooser();
   HTMLElement* ShadowColorSwatch() const;
 
   Member<ColorChooser> chooser_;

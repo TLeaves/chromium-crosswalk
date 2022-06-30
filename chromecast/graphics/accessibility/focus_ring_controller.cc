@@ -29,6 +29,7 @@ FocusRingController::FocusRingController(
 
 FocusRingController::~FocusRingController() {
   SetVisible(false);
+  CHECK(!IsInObserverList());
 }
 
 void FocusRingController::SetVisible(bool visible) {
@@ -66,7 +67,7 @@ void FocusRingController::UpdateFocusRing() {
   // Workarounds that attempts to pick a better bounds.
   if (view->GetClassName() == views::LabelButton::kViewClassName) {
     view_bounds = view->GetLocalBounds();
-    view_bounds.Inset(2, 2, 2, 2);
+    view_bounds.Inset(2);
   }
 
   // Convert view bounds to widget/window coordinates.

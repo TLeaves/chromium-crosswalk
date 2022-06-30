@@ -5,11 +5,12 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_ADVERTISEMENT_MAC_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADVERTISEMENT_MAC_H_
 
+#include "base/memory/raw_ptr.h"
+
 #import <CoreBluetooth/CoreBluetooth.h>
 
 #include <memory>
 
-#include "base/macros.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
@@ -34,13 +35,17 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdvertisementMac
 
   BluetoothAdvertisementMac(
       std::unique_ptr<BluetoothAdvertisement::UUIDList> service_uuids,
-      const BluetoothAdapter::CreateAdvertisementCallback& callback,
-      const BluetoothAdapter::AdvertisementErrorCallback& error_callback,
+      BluetoothAdapter::CreateAdvertisementCallback callback,
+      BluetoothAdapter::AdvertisementErrorCallback error_callback,
       BluetoothLowEnergyAdvertisementManagerMac* advertisement_manager);
 
+  BluetoothAdvertisementMac(const BluetoothAdvertisementMac&) = delete;
+  BluetoothAdvertisementMac& operator=(const BluetoothAdvertisementMac&) =
+      delete;
+
   // BluetoothAdvertisement overrides:
-  void Unregister(const SuccessCallback& success_callback,
-                  const ErrorCallback& error_callback) override;
+  void Unregister(SuccessCallback success_callback,
+                  ErrorCallback error_callback) override;
 
   Status status() const { return status_; }
 
@@ -67,17 +72,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdvertisementMac
 
   void InvokeSuccessCallback();
 
-  BluetoothAdapter::CreateAdvertisementCallback success_callback() {
-    return success_callback_;
-  }
-
   std::unique_ptr<BluetoothAdvertisement::UUIDList> service_uuids_;
   BluetoothAdapter::CreateAdvertisementCallback success_callback_;
   BluetoothAdapter::AdvertisementErrorCallback error_callback_;
-  BluetoothLowEnergyAdvertisementManagerMac* advertisement_manager_;
+  raw_ptr<BluetoothLowEnergyAdvertisementManagerMac> advertisement_manager_;
   Status status_;
-
-  DISALLOW_COPY_AND_ASSIGN(BluetoothAdvertisementMac);
 };
 
 }  // namespace device

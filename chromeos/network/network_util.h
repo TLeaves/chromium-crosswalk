@@ -21,10 +21,6 @@
 #include "base/time/time.h"
 #include "base/values.h"
 
-namespace base {
-class ListValue;
-}
-
 namespace chromeos {
 
 class NetworkState;
@@ -70,6 +66,18 @@ struct COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularScanResult {
   std::string technology;  // Access technology.
 };
 
+// Struct for passing cellular SIM slot info data.
+struct COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularSIMSlotInfo {
+  CellularSIMSlotInfo();
+  CellularSIMSlotInfo(const CellularSIMSlotInfo& other);
+  ~CellularSIMSlotInfo();
+  int32_t slot_id;      // The physical slot number.
+  std::string eid;      // For eSIM capable SIM cards only, the EID of
+                        // the SIM Card.
+  std::string iccid;    // The ICCID of the SIM Card.
+  bool primary;         // True if the slot is primary (active).
+};
+
 typedef std::vector<WifiAccessPoint> WifiAccessPointVector;
 typedef std::vector<CellTower> CellTowerVector;
 
@@ -81,12 +89,6 @@ enum NetworkMethodErrorType {
   NETWORK_METHOD_ERROR_LOCAL = 1,
   NETWORK_METHOD_ERROR_REMOTE = 2,
 };
-
-// Callback for methods that initiate an operation and return no data.
-typedef base::Callback<void(
-    const std::string& path,
-    NetworkMethodErrorType error,
-    const std::string& error_message)> NetworkOperationCallback;
 
 namespace network_util {
 
@@ -105,19 +107,25 @@ int32_t NetmaskToPrefixLength(const std::string& netmask);
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
 std::string FormattedMacAddress(const std::string& shill_mac_address);
 
-// Parses |list|, which contains DictionaryValues and returns a vector of
+// Parses |list|, which contains dictionary Values and returns a vector of
 // CellularScanResult in |scan_results|. Returns false if parsing fails,
 // in which case the contents of |scan_results| will be undefined.
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
-bool ParseCellularScanResults(const base::ListValue& list,
+bool ParseCellularScanResults(const base::Value::ConstListView list,
                               std::vector<CellularScanResult>* scan_results);
+
+// Parses |list|, which contains dictionary Values and returns a vector of
+// CellularSIMSlotInfo in |sim_slot_infos|. Returns false if parsing fails,
+// in which case the contents of |sim_slot_infos| will be undefined.
+COMPONENT_EXPORT(CHROMEOS_NETWORK)
+bool ParseCellularSIMSlotInfo(const base::Value::ConstListView list,
+                              std::vector<CellularSIMSlotInfo>* sim_slot_infos);
 
 // Retrieves the ONC state dictionary for |network| using GetStateProperties.
 // This includes properties from the corresponding NetworkState if it exists.
 // Assumed to be called from the primary user profile.
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
-std::unique_ptr<base::DictionaryValue> TranslateNetworkStateToONC(
-    const NetworkState* network);
+base::Value TranslateNetworkStateToONC(const NetworkState* network);
 
 // Retrieves the list of network services by passing |pattern|,
 // |configured_only|, and |visible_only| to NetworkStateHandler::
@@ -125,14 +133,13 @@ std::unique_ptr<base::DictionaryValue> TranslateNetworkStateToONC(
 // dictionaries using TranslateShillServiceToONCPart. |limit| is used to limit
 // the number of results.
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
-std::unique_ptr<base::ListValue> TranslateNetworkListToONC(
-    NetworkTypePattern pattern,
-    bool configured_only,
-    bool visible_only,
-    int limit);
+base::Value TranslateNetworkListToONC(NetworkTypePattern pattern,
+                                      bool configured_only,
+                                      bool visible_only,
+                                      int limit);
 
 // Returns the Shill type corresponding to ONC |type| or an empty string if
-// there is no match. Only valid for ethernet, wifi, wimax, cellular, and vpn.
+// there is no match. Only valid for ethernet, wifi, cellular, and vpn.
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
 std::string TranslateONCTypeToShill(const std::string& type);
 
@@ -147,5 +154,14 @@ std::string TranslateShillTypeToONC(const std::string& type);
 
 }  // namespace network_util
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove when move to ash.
+namespace ash {
+using ::chromeos::CellTower;
+using ::chromeos::CellTowerVector;
+using ::chromeos::CellularSIMSlotInfo;
+using ::chromeos::WifiAccessPoint;
+using ::chromeos::WifiAccessPointVector;
+}  // namespace ash
 
 #endif  // CHROMEOS_NETWORK_NETWORK_UTIL_H_

@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/common/extensions/api/cookies.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_monster.h"
@@ -58,11 +59,16 @@ api::cookies::CookieStore CreateCookieStore(
     std::unique_ptr<base::ListValue> tab_ids);
 
 // Dispatch a request to the CookieManager for cookies associated with
-// |url|, or all cookies if |url.is_empty()|.
+// |url|.
 void GetCookieListFromManager(
     network::mojom::CookieManager* manager,
     const GURL& url,
     network::mojom::CookieManager::GetCookieListCallback callback);
+
+// Dispatch a request to the CookieManager for all cookies.
+void GetAllCookiesFromManager(
+    network::mojom::CookieManager* manager,
+    network::mojom::CookieManager::GetAllCookiesCallback callback);
 
 // Constructs a URL from a cookie's information for use in checking
 // a cookie against the extension's host permissions. The Secure
@@ -74,9 +80,16 @@ GURL GetURLFromCanonicalCookie(
 // Looks through all cookies in the given cookie store, and appends to the
 // match vector all the cookies that both match the given URL and cookie details
 // and are allowed by extension host permissions.
-void AppendMatchingCookiesToVector(
+void AppendMatchingCookiesFromCookieListToVector(
     const net::CookieList& all_cookies,
-    const GURL& url,
+    const api::cookies::GetAll::Params::Details* details,
+    const Extension* extension,
+    std::vector<api::cookies::Cookie>* match_vector);
+
+// Same as above except takes a CookieAccessResultList (and ignores the access
+// results).
+void AppendMatchingCookiesFromCookieAccessResultListToVector(
+    const net::CookieAccessResultList& all_cookies_with_access_result,
     const api::cookies::GetAll::Params::Details* details,
     const Extension* extension,
     std::vector<api::cookies::Cookie>* match_vector);
@@ -112,7 +125,7 @@ class MatchFilter {
   // 'foo.bar.com', '.foo.bar.com', and 'baz.foo.bar.com'.
   bool MatchesDomain(const std::string& domain);
 
-  const api::cookies::GetAll::Params::Details* details_;
+  raw_ptr<const api::cookies::GetAll::Params::Details> details_;
 };
 
 }  // namespace cookies_helpers

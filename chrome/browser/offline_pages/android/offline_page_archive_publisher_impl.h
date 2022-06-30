@@ -6,10 +6,9 @@
 #define CHROME_BROWSER_OFFLINE_PAGES_ANDROID_OFFLINE_PAGE_ARCHIVE_PUBLISHER_IMPL_H_
 
 #include <cstdint>
-#include <string>
 
 #include "base/callback.h"
-#include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "components/offline_pages/core/offline_page_archive_publisher.h"
 #include "components/offline_pages/core/offline_page_item.h"
 #include "components/offline_pages/core/offline_page_types.h"
@@ -59,8 +58,8 @@ class OfflinePageArchivePublisherImpl : public OfflinePageArchivePublisher {
       const std::vector<PublishedArchiveId>& publish_ids) const override;
 
  private:
-  ArchiveManager* archive_manager_;
-  Delegate* delegate_;
+  raw_ptr<ArchiveManager> archive_manager_;
+  raw_ptr<Delegate> delegate_;
 };
 
 }  // namespace offline_pages

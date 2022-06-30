@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/chromeos/fileapi/mtp_watcher_manager.h"
 
@@ -36,6 +35,11 @@ class MTPFileSystemBackendDelegate : public FileSystemBackendDelegate {
  public:
   explicit MTPFileSystemBackendDelegate(
       const base::FilePath& storage_partition_path);
+
+  MTPFileSystemBackendDelegate(const MTPFileSystemBackendDelegate&) = delete;
+  MTPFileSystemBackendDelegate& operator=(const MTPFileSystemBackendDelegate&) =
+      delete;
+
   ~MTPFileSystemBackendDelegate() override;
 
   // FileSystemBackendDelegate overrides.
@@ -54,13 +58,11 @@ class MTPFileSystemBackendDelegate : public FileSystemBackendDelegate {
   storage::WatcherManager* GetWatcherManager(
       storage::FileSystemType type) override;
   void GetRedirectURLForContents(const storage::FileSystemURL& url,
-                                 const storage::URLCallback& callback) override;
+                                 storage::URLCallback callback) override;
 
  private:
   std::unique_ptr<DeviceMediaAsyncFileUtil> device_media_async_file_util_;
   std::unique_ptr<MTPWatcherManager> mtp_watcher_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(MTPFileSystemBackendDelegate);
 };
 
 }  // namespace chromeos

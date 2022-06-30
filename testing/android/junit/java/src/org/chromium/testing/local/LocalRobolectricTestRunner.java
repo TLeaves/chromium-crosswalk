@@ -4,13 +4,16 @@
 
 package org.chromium.testing.local;
 
+import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
-import org.robolectric.internal.ManifestFactory;
+import org.robolectric.internal.bytecode.InstrumentationConfiguration;
 
 /**
- * A custom Robolectric Junit4 Test Runner with Chromium specific settings.
+ * A custom Robolectric Junit4 Test Runner with minimal Chromium-specific settings. Most test cases
+ * should prefer {@link org.chromium.base.test.BaseRobolectricTestRunner} in order to initialize
+ * base globals.
  */
 public class LocalRobolectricTestRunner extends RobolectricTestRunner {
     public static final int DEFAULT_SDK = 28;
@@ -35,8 +38,14 @@ public class LocalRobolectricTestRunner extends RobolectricTestRunner {
                 .build();
     }
 
+    /**
+     * This is to avoid a bug in robolectric's shadows-playservices - this workaround is from
+     * https://github.com/robolectric/robolectric/issues/7269.
+     */
     @Override
-    protected ManifestFactory getManifestFactory(Config config) {
-        return new GNManifestFactory();
+    protected InstrumentationConfiguration createClassLoaderConfig(FrameworkMethod method) {
+        return new InstrumentationConfiguration.Builder(super.createClassLoaderConfig(method))
+                .doNotInstrumentClass("com.google.android.gms.common.api.ApiException")
+                .build();
     }
 }

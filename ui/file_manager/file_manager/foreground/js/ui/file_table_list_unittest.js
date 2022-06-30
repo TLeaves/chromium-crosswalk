@@ -2,7 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+
+import {MockVolumeManager} from '../../../background/js/mock_volume_manager.js';
+import {FakeEntryImpl} from '../../../common/js/files_app_entry_types.js';
+import {VolumeManagerCommon} from '../../../common/js/volume_manager_types.js';
+import {importerHistoryInterfaces} from '../../../externs/background/import_history.js';
+import {DirectoryModel} from '../directory_model.js';
+import {FileListModel} from '../file_list_model.js';
+import {MetadataModel} from '../metadata/metadata_model.js';
+import {MockMetadataModel} from '../metadata/mock_metadata.js';
+
+import {A11yAnnounce} from './a11y_announce.js';
+import {FileListSelectionModel} from './file_list_selection_model.js';
+import {FileTable} from './file_table.js';
+import {FileTableList} from './file_table_list.js';
 
 /** @type {!MockVolumeManager} */
 let volumeManager;
@@ -13,7 +27,7 @@ let directoryModel;
 /** @type {!MetadataModel} */
 let metadataModel;
 
-/** @type {!importer.HistoryLoader} */
+/** @type {!importerHistoryInterfaces.HistoryLoader} */
 let historyLoader;
 
 /** @type {!HTMLElement} */
@@ -23,15 +37,15 @@ let element;
 let a11y;
 
 // Set up test components.
-function setUp() {
+export function setUp() {
   // Mock LoadTimeData strings.
   window.loadTimeData.getString = id => id;
-  window.loadTimeData.data = {};
+  window.loadTimeData.resetForTesting({});
 
   // Setup mock components.
   volumeManager = new MockVolumeManager();
   metadataModel = new MockMetadataModel({});
-  historyLoader = /** @type {!importer.HistoryLoader} */ ({
+  historyLoader = /** @type {!importerHistoryInterfaces.HistoryLoader} */ ({
     getHistory: () => {
       return Promise.resolve();
     },
@@ -103,7 +117,7 @@ function ctrlAndKey(keyName, code) {
 /**
  * Tests that the keyboard can be used to navigate the FileTableList.
  */
-function testMultipleSelectionWithKeyboard() {
+export function testMultipleSelectionWithKeyboard() {
   // Render the FileTable on |element|.
   const fullPage = true;
   FileTable.decorate(
@@ -117,9 +131,9 @@ function testMultipleSelectionWithKeyboard() {
 
   // Add FileTableList file entries, then draw and focus the table list.
   const entries = [
-    new FakeEntry('entry1-label', VolumeManagerCommon.RootType.CROSTINI),
-    new FakeEntry('entry2-label', VolumeManagerCommon.RootType.CROSTINI),
-    new FakeEntry('entry3-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry1-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry2-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry3-label', VolumeManagerCommon.RootType.CROSTINI),
   ];
   const dataModel = new FileListModel(metadataModel);
   dataModel.splice(0, 0, ...entries);
@@ -234,7 +248,7 @@ function testMultipleSelectionWithKeyboard() {
   }
 }
 
-function testKeyboardOperations() {
+export function testKeyboardOperations() {
   // Render the FileTable on |element|.
   const fullPage = true;
   FileTable.decorate(
@@ -248,9 +262,9 @@ function testKeyboardOperations() {
 
   // Add FileTableList file entries, then draw and focus the table list.
   const entries = [
-    new FakeEntry('entry1-label', VolumeManagerCommon.RootType.CROSTINI),
-    new FakeEntry('entry2-label', VolumeManagerCommon.RootType.CROSTINI),
-    new FakeEntry('entry3-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry1-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry2-label', VolumeManagerCommon.RootType.CROSTINI),
+    new FakeEntryImpl('entry3-label', VolumeManagerCommon.RootType.CROSTINI),
   ];
   const dataModel = new FileListModel(metadataModel);
   dataModel.splice(0, 0, ...entries);

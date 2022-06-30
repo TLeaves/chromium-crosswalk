@@ -12,21 +12,20 @@
 #include "chrome/browser/chromeos/extensions/wallpaper_function_base.h"
 #include "chrome/common/extensions/api/wallpaper_private.h"
 #include "components/account_id/account_id.h"
-#include "net/url_request/url_fetcher_delegate.h"
 
 namespace backdrop {
 class Collection;
 class Image;
 }  // namespace backdrop
 
-namespace backdrop_wallpaper_handlers {
-class CollectionInfoFetcher;
-class ImageInfoFetcher;
-class SurpriseMeImageFetcher;
-}  // namespace backdrop_wallpaper_handlers
+namespace wallpaper_handlers {
+class BackdropCollectionInfoFetcher;
+class BackdropImageInfoFetcher;
+class BackdropSurpriseMeImageFetcher;
+}  // namespace wallpaper_handlers
 
 // Wallpaper manager strings.
-class WallpaperPrivateGetStringsFunction : public UIThreadExtensionFunction {
+class WallpaperPrivateGetStringsFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getStrings",
                              WALLPAPERPRIVATE_GETSTRINGS)
@@ -39,8 +38,7 @@ class WallpaperPrivateGetStringsFunction : public UIThreadExtensionFunction {
 };
 
 // Check if sync themes setting is enabled.
-class WallpaperPrivateGetSyncSettingFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateGetSyncSettingFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getSyncSetting",
                              WALLPAPERPRIVATE_GETSYNCSETTING)
@@ -60,49 +58,53 @@ class WallpaperPrivateGetSyncSettingFunction
   int retry_number_ = 0;
 };
 
-class WallpaperPrivateSetWallpaperIfExistsFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateSetWallpaperIfExistsFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setWallpaperIfExists",
                              WALLPAPERPRIVATE_SETWALLPAPERIFEXISTS)
 
   WallpaperPrivateSetWallpaperIfExistsFunction();
 
+  WallpaperPrivateSetWallpaperIfExistsFunction(
+      const WallpaperPrivateSetWallpaperIfExistsFunction&) = delete;
+  WallpaperPrivateSetWallpaperIfExistsFunction& operator=(
+      const WallpaperPrivateSetWallpaperIfExistsFunction&) = delete;
+
  protected:
   ~WallpaperPrivateSetWallpaperIfExistsFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
   // Responds with the |file_exists| result.
   void OnSetOnlineWallpaperIfExistsCallback(bool file_exists);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateSetWallpaperIfExistsFunction);
 };
 
-class WallpaperPrivateSetWallpaperFunction : public UIThreadExtensionFunction {
+class WallpaperPrivateSetWallpaperFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setWallpaper",
                              WALLPAPERPRIVATE_SETWALLPAPER)
 
   WallpaperPrivateSetWallpaperFunction();
 
+  WallpaperPrivateSetWallpaperFunction(
+      const WallpaperPrivateSetWallpaperFunction&) = delete;
+  WallpaperPrivateSetWallpaperFunction& operator=(
+      const WallpaperPrivateSetWallpaperFunction&) = delete;
+
  protected:
   ~WallpaperPrivateSetWallpaperFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
   // Responds with the |success| status.
   void OnSetWallpaperCallback(bool success);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateSetWallpaperFunction);
 };
 
-class WallpaperPrivateResetWallpaperFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateResetWallpaperFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.resetWallpaper",
                              WALLPAPERPRIVATE_RESETWALLPAPER)
@@ -112,7 +114,7 @@ class WallpaperPrivateResetWallpaperFunction
  protected:
   ~WallpaperPrivateResetWallpaperFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 };
 
@@ -127,7 +129,7 @@ class WallpaperPrivateSetCustomWallpaperFunction
  protected:
   ~WallpaperPrivateSetCustomWallpaperFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
@@ -139,13 +141,10 @@ class WallpaperPrivateSetCustomWallpaperFunction
 
   // User account id of the active user when this api is been called.
   AccountId account_id_ = EmptyAccountId();
-
-  // User id hash of the logged in user.
-  std::string wallpaper_files_id_;
 };
 
 class WallpaperPrivateSetCustomWallpaperLayoutFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.setCustomWallpaperLayout",
                              WALLPAPERPRIVATE_SETCUSTOMWALLPAPERLAYOUT)
@@ -155,12 +154,12 @@ class WallpaperPrivateSetCustomWallpaperLayoutFunction
  protected:
   ~WallpaperPrivateSetCustomWallpaperLayoutFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 };
 
 class WallpaperPrivateMinimizeInactiveWindowsFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.minimizeInactiveWindows",
                              WALLPAPERPRIVATE_MINIMIZEINACTIVEWINDOWS)
@@ -173,7 +172,7 @@ class WallpaperPrivateMinimizeInactiveWindowsFunction
 };
 
 class WallpaperPrivateRestoreMinimizedWindowsFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.restoreMinimizedWindows",
                              WALLPAPERPRIVATE_RESTOREMINIMIZEDWINDOWS)
@@ -185,7 +184,7 @@ class WallpaperPrivateRestoreMinimizedWindowsFunction
   ResponseAction Run() override;
 };
 
-class WallpaperPrivateGetThumbnailFunction : public UIThreadExtensionFunction {
+class WallpaperPrivateGetThumbnailFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getThumbnail",
                              WALLPAPERPRIVATE_GETTHUMBNAIL)
@@ -195,7 +194,7 @@ class WallpaperPrivateGetThumbnailFunction : public UIThreadExtensionFunction {
  protected:
   ~WallpaperPrivateGetThumbnailFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
@@ -214,7 +213,7 @@ class WallpaperPrivateGetThumbnailFunction : public UIThreadExtensionFunction {
   void Get(const base::FilePath& path);
 };
 
-class WallpaperPrivateSaveThumbnailFunction : public UIThreadExtensionFunction {
+class WallpaperPrivateSaveThumbnailFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.saveThumbnail",
                              WALLPAPERPRIVATE_SAVETHUMBNAIL)
@@ -224,7 +223,7 @@ class WallpaperPrivateSaveThumbnailFunction : public UIThreadExtensionFunction {
  protected:
   ~WallpaperPrivateSaveThumbnailFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
@@ -239,29 +238,31 @@ class WallpaperPrivateSaveThumbnailFunction : public UIThreadExtensionFunction {
 };
 
 class WallpaperPrivateGetOfflineWallpaperListFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getOfflineWallpaperList",
                              WALLPAPERPRIVATE_GETOFFLINEWALLPAPERLIST)
   WallpaperPrivateGetOfflineWallpaperListFunction();
 
+  WallpaperPrivateGetOfflineWallpaperListFunction(
+      const WallpaperPrivateGetOfflineWallpaperListFunction&) = delete;
+  WallpaperPrivateGetOfflineWallpaperListFunction& operator=(
+      const WallpaperPrivateGetOfflineWallpaperListFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetOfflineWallpaperListFunction() override;
 
-  // UIThreadExtensionFunction overrides.
+  // ExtensionFunction overrides.
   ResponseAction Run() override;
 
  private:
   // Responds with the list of urls.
   void OnOfflineWallpaperListReturned(const std::vector<std::string>& url_list);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetOfflineWallpaperListFunction);
 };
 
 // The wallpaper UMA is recorded when a new wallpaper is set, either by the
 // built-in Wallpaper Picker App, or by a third party App.
-class WallpaperPrivateRecordWallpaperUMAFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateRecordWallpaperUMAFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.recordWallpaperUMA",
                              WALLPAPERPRIVATE_RECORDWALLPAPERUMA)
@@ -273,130 +274,144 @@ class WallpaperPrivateRecordWallpaperUMAFunction
   ResponseAction Run() override;
 };
 
-class WallpaperPrivateGetCollectionsInfoFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateGetCollectionsInfoFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getCollectionsInfo",
                              WALLPAPERPRIVATE_GETCOLLECTIONSINFO)
   WallpaperPrivateGetCollectionsInfoFunction();
 
+  WallpaperPrivateGetCollectionsInfoFunction(
+      const WallpaperPrivateGetCollectionsInfoFunction&) = delete;
+  WallpaperPrivateGetCollectionsInfoFunction& operator=(
+      const WallpaperPrivateGetCollectionsInfoFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetCollectionsInfoFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
   // The fetcher responsible for downloading and deserializing collections info.
-  std::unique_ptr<backdrop_wallpaper_handlers::CollectionInfoFetcher>
+  std::unique_ptr<wallpaper_handlers::BackdropCollectionInfoFetcher>
       collection_info_fetcher_;
 
   // Callback upon completion of fetching the collections info.
   void OnCollectionsInfoFetched(
       bool success,
       const std::vector<backdrop::Collection>& collections);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetCollectionsInfoFunction);
 };
 
-class WallpaperPrivateGetImagesInfoFunction : public UIThreadExtensionFunction {
+class WallpaperPrivateGetImagesInfoFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getImagesInfo",
                              WALLPAPERPRIVATE_GETIMAGESINFO)
   WallpaperPrivateGetImagesInfoFunction();
 
+  WallpaperPrivateGetImagesInfoFunction(
+      const WallpaperPrivateGetImagesInfoFunction&) = delete;
+  WallpaperPrivateGetImagesInfoFunction& operator=(
+      const WallpaperPrivateGetImagesInfoFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetImagesInfoFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
   // The fetcher responsible for downloading and deserializing the info of
   // images belonging to a specific collection.
-  std::unique_ptr<backdrop_wallpaper_handlers::ImageInfoFetcher>
+  std::unique_ptr<wallpaper_handlers::BackdropImageInfoFetcher>
       image_info_fetcher_;
 
   // Callback upon completion of fetching the images info.
   void OnImagesInfoFetched(bool success,
+                           const std::string& collection_id,
                            const std::vector<backdrop::Image>& images);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetImagesInfoFunction);
 };
 
-class WallpaperPrivateGetLocalImagePathsFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateGetLocalImagePathsFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getLocalImagePaths",
                              WALLPAPERPRIVATE_GETLOCALIMAGEPATHS)
   WallpaperPrivateGetLocalImagePathsFunction();
 
+  WallpaperPrivateGetLocalImagePathsFunction(
+      const WallpaperPrivateGetLocalImagePathsFunction&) = delete;
+  WallpaperPrivateGetLocalImagePathsFunction& operator=(
+      const WallpaperPrivateGetLocalImagePathsFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetLocalImagePathsFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
   // Responds with the list of collected image paths.
-  void OnGetImagePathsComplete(const std::vector<std::string>& image_paths);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetLocalImagePathsFunction);
+  void OnGetImagePathsComplete(const std::vector<base::FilePath>& image_paths);
 };
 
-class WallpaperPrivateGetLocalImageDataFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateGetLocalImageDataFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getLocalImageData",
                              WALLPAPERPRIVATE_GETLOCALIMAGEDATA)
   WallpaperPrivateGetLocalImageDataFunction();
 
+  WallpaperPrivateGetLocalImageDataFunction(
+      const WallpaperPrivateGetLocalImageDataFunction&) = delete;
+  WallpaperPrivateGetLocalImageDataFunction& operator=(
+      const WallpaperPrivateGetLocalImageDataFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetLocalImageDataFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
   // Responds with the image data or an error message.
   void OnReadImageDataComplete(std::unique_ptr<std::string> image_data,
                                bool success);
-
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetLocalImageDataFunction);
 };
 
 class WallpaperPrivateConfirmPreviewWallpaperFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.confirmPreviewWallpaper",
                              WALLPAPERPRIVATE_CONFIRMPREVIEWWALLPAPER)
   WallpaperPrivateConfirmPreviewWallpaperFunction();
 
+  WallpaperPrivateConfirmPreviewWallpaperFunction(
+      const WallpaperPrivateConfirmPreviewWallpaperFunction&) = delete;
+  WallpaperPrivateConfirmPreviewWallpaperFunction& operator=(
+      const WallpaperPrivateConfirmPreviewWallpaperFunction&) = delete;
+
  protected:
   ~WallpaperPrivateConfirmPreviewWallpaperFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateConfirmPreviewWallpaperFunction);
 };
 
 class WallpaperPrivateCancelPreviewWallpaperFunction
-    : public UIThreadExtensionFunction {
+    : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.cancelPreviewWallpaper",
                              WALLPAPERPRIVATE_CANCELPREVIEWWALLPAPER)
   WallpaperPrivateCancelPreviewWallpaperFunction();
 
+  WallpaperPrivateCancelPreviewWallpaperFunction(
+      const WallpaperPrivateCancelPreviewWallpaperFunction&) = delete;
+  WallpaperPrivateCancelPreviewWallpaperFunction& operator=(
+      const WallpaperPrivateCancelPreviewWallpaperFunction&) = delete;
+
  protected:
   ~WallpaperPrivateCancelPreviewWallpaperFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateCancelPreviewWallpaperFunction);
 };
 
 class WallpaperPrivateGetCurrentWallpaperThumbnailFunction
@@ -406,31 +421,37 @@ class WallpaperPrivateGetCurrentWallpaperThumbnailFunction
                              WALLPAPERPRIVATE_GETCURRENTWALLPAPERTHUMBNAIL)
   WallpaperPrivateGetCurrentWallpaperThumbnailFunction();
 
+  WallpaperPrivateGetCurrentWallpaperThumbnailFunction(
+      const WallpaperPrivateGetCurrentWallpaperThumbnailFunction&) = delete;
+  WallpaperPrivateGetCurrentWallpaperThumbnailFunction& operator=(
+      const WallpaperPrivateGetCurrentWallpaperThumbnailFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetCurrentWallpaperThumbnailFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
   // WallpaperFunctionBase:
   void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) override;
-
-  DISALLOW_COPY_AND_ASSIGN(
-      WallpaperPrivateGetCurrentWallpaperThumbnailFunction);
 };
 
-class WallpaperPrivateGetSurpriseMeImageFunction
-    : public UIThreadExtensionFunction {
+class WallpaperPrivateGetSurpriseMeImageFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.getSurpriseMeImage",
                              WALLPAPERPRIVATE_GETSURPRISEMEIMAGE)
   WallpaperPrivateGetSurpriseMeImageFunction();
 
+  WallpaperPrivateGetSurpriseMeImageFunction(
+      const WallpaperPrivateGetSurpriseMeImageFunction&) = delete;
+  WallpaperPrivateGetSurpriseMeImageFunction& operator=(
+      const WallpaperPrivateGetSurpriseMeImageFunction&) = delete;
+
  protected:
   ~WallpaperPrivateGetSurpriseMeImageFunction() override;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() override;
 
  private:
@@ -440,10 +461,20 @@ class WallpaperPrivateGetSurpriseMeImageFunction
                                 const std::string& next_resume_token);
 
   // Fetcher for the surprise me image info.
-  std::unique_ptr<backdrop_wallpaper_handlers::SurpriseMeImageFetcher>
+  std::unique_ptr<wallpaper_handlers::BackdropSurpriseMeImageFetcher>
       surprise_me_image_fetcher_;
+};
 
-  DISALLOW_COPY_AND_ASSIGN(WallpaperPrivateGetSurpriseMeImageFunction);
+class WallpaperPrivateIsSwaEnabledFunction : public ExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("wallpaperPrivate.isSwaEnabled",
+                             WALLPAPERPRIVATE_ISSWAENABLED)
+
+ protected:
+  ~WallpaperPrivateIsSwaEnabledFunction() override = default;
+
+  // ExtensionFunction:
+  ResponseAction Run() override;
 };
 
 #endif  // CHROME_BROWSER_CHROMEOS_EXTENSIONS_WALLPAPER_PRIVATE_API_H_

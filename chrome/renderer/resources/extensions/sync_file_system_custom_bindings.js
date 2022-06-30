@@ -45,7 +45,7 @@ apiBridge.registerCustomHook(function(bindingsAPI) {
 
   // Functions which return an [instanceOf=DOMFileSystem].
   apiFunctions.setCustomCallback('requestFileSystem',
-      function(name, request, callback, response) {
+      function(callback, response) {
     var result = null;
     if (response) {
       result = syncFileSystemNatives.GetSyncFileSystemObject(
@@ -58,7 +58,7 @@ apiBridge.registerCustomHook(function(bindingsAPI) {
   // Functions which return an array of FileStatusInfo object
   // which has [instanceOf=FileEntry].
   apiFunctions.setCustomCallback('getFileStatuses',
-      function(name, request, callback, response) {
+      function(callback, response) {
     var results = [];
     if (response) {
       for (var i = 0; i < response.length; i++) {
@@ -94,7 +94,7 @@ bindingUtil.registerEventArgumentMassager('syncFileSystem.onFileStatusChanged',
   var fileInfo = new Object();
   fileInfo.fileEntry = fileEntry;
   fileInfo.status = args[1];
-  if (fileInfo.status == "synced") {
+  if (fileInfo.status === 'synced') {
     fileInfo.action = args[2];
     fileInfo.direction = args[3];
   }

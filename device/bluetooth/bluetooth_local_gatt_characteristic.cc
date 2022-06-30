@@ -4,13 +4,14 @@
 
 #include "device/bluetooth/bluetooth_local_gatt_characteristic.h"
 
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "build/build_config.h"
 #include "device/bluetooth/bluetooth_local_gatt_service.h"
 
 namespace device {
 
-#if !defined(OS_LINUX) || defined(LINUX_WITHOUT_DBUS)
+#if (!BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)) || \
+    defined(LINUX_WITHOUT_DBUS)
 // static
 base::WeakPtr<BluetoothLocalGattCharacteristic>
 BluetoothLocalGattCharacteristic::Create(const BluetoothUUID& uuid,

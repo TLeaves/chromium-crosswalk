@@ -6,8 +6,8 @@
 
 #import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_switch_item.h"
-#import "ios/chrome/browser/ui/settings/cells/settings_switch_cell.h"
-#import "ios/chrome/browser/ui/settings/cells/settings_switch_item.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_switch_cell.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_switch_item.h"
 #import "ios/chrome/test/app/tab_test_util.h"
 #import "ios/testing/earl_grey/earl_grey_app.h"
 #import "ios/web/public/test/earl_grey/web_view_actions.h"
@@ -29,10 +29,15 @@ NSString* kChromeActionsErrorDomain = @"ChromeActionsError";
       chrome_test_util::GetCurrentWebState(), selector, triggerContextMenu);
 }
 
-+ (id<GREYAction>)turnSettingsSwitchOn:(BOOL)on {
++ (id<GREYAction>)scrollElementToVisible:(ElementSelector*)selector {
+  return WebViewScrollElementToVisible(chrome_test_util::GetCurrentWebState(),
+                                       selector);
+}
+
++ (id<GREYAction>)turnTableViewSwitchOn:(BOOL)on {
   id<GREYMatcher> constraints = grey_not(grey_systemAlertViewShown());
   NSString* actionName =
-      [NSString stringWithFormat:@"Turn settings switch to %@ state",
+      [NSString stringWithFormat:@"Turn table view switch to %@ state",
                                  on ? @"ON" : @"OFF"];
   return [GREYActionBlock
       actionWithName:actionName
@@ -43,11 +48,11 @@ NSString* kChromeActionsErrorDomain = @"ChromeActionsError";
           // action interacts with UI, kick it over to the main thread.
           __block BOOL success = NO;
           grey_dispatch_sync_on_main_thread(^{
-            SettingsSwitchCell* switchCell =
-                base::mac::ObjCCast<SettingsSwitchCell>(collectionViewCell);
+            TableViewSwitchCell* switchCell =
+                base::mac::ObjCCast<TableViewSwitchCell>(collectionViewCell);
             if (!switchCell) {
               NSString* description = @"The element isn't of the expected type "
-                                      @"(SettingsSwitchCell).";
+                                      @"(TableViewSwitchCell).";
               *errorOrNil = [NSError
                   errorWithDomain:kChromeActionsErrorDomain
                              code:0
@@ -80,8 +85,8 @@ NSString* kChromeActionsErrorDomain = @"ChromeActionsError";
           // action interacts with UI, kick it over to the main thread.
           __block BOOL success = NO;
           grey_dispatch_sync_on_main_thread(^{
-            SettingsSwitchCell* switchCell =
-                base::mac::ObjCCastStrict<SettingsSwitchCell>(syncSwitchCell);
+            TableViewSwitchCell* switchCell =
+                base::mac::ObjCCastStrict<TableViewSwitchCell>(syncSwitchCell);
             UISwitch* switchView = switchCell.switchView;
             if (switchView.on != on) {
               id<GREYAction> longPressAction = [GREYActions
@@ -98,6 +103,53 @@ NSString* kChromeActionsErrorDomain = @"ChromeActionsError";
 + (id<GREYAction>)tapWebElement:(ElementSelector*)selector {
   return web::WebViewTapElement(chrome_test_util::GetCurrentWebState(),
                                 selector);
+}
+
++ (id<GREYAction>)scrollToTop {
+  GREYPerformBlock scrollToTopBlock = ^BOOL(id element,
+                                            __strong NSError** error) {
+    grey_dispatch_sync_on_main_thread(^{
+      UIScrollView* view = base::mac::ObjCCast<UIScrollView>(element);
+      if (!view) {
+        *error = [NSError
+            errorWithDomain:kChromeActionsErrorDomain
+                       code:0
+                   userInfo:@{
+                     NSLocalizedDescriptionKey : @"View is not a UIScrollView"
+                   }];
+      }
+      view.contentOffset = CGPointZero;
+    });
+    return YES;
+  };
+  return [GREYActionBlock actionWithName:@"Scroll to top"
+                            performBlock:scrollToTopBlock];
+}
+
++ (id<GREYAction>)tapAtPointAtxOriginStartPercentage:(CGFloat)x
+                              yOriginStartPercentage:(CGFloat)y {
+  DCHECK(0 <= x && x <= 1);
+  DCHECK(0 <= y && y <= 1);
+
+  id<GREYMatcher> constraints = grey_notNil();
+  NSString* actionName =
+      [NSString stringWithFormat:@"Tap at point at percentage"];
+
+  GREYPerformBlock actionBlock = ^BOOL(id view, __strong NSError** errorOrNil) {
+    __block BOOL success = NO;
+    grey_dispatch_sync_on_main_thread(^{
+      CGRect rect = [view accessibilityFrame];
+      CGPoint pointToTap =
+          CGPointMake(rect.size.width * x, rect.size.height * y);
+      success =
+          [[GREYActions actionForTapAtPoint:pointToTap] perform:view
+                                                          error:errorOrNil];
+    });
+    return success;
+  };
+  return [GREYActionBlock actionWithName:actionName
+                             constraints:constraints
+                            performBlock:actionBlock];
 }
 
 @end

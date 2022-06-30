@@ -7,14 +7,12 @@
 
 #import "ios/chrome/app/spotlight/base_spotlight_manager.h"
 
+class ChromeBrowserState;
+
 namespace bookmarks {
 class BookmarkNode;
 class BookmarkModel;
 }
-
-namespace ios {
-class ChromeBrowserState;
-}  // namespace ios
 
 @class CSSearchableItem;
 @class TopSitesSpotlightManager;
@@ -32,7 +30,7 @@ class ChromeBrowserState;
 @property(nonatomic, weak) id<BookmarkUpdatedDelegate> delegate;
 
 + (BookmarksSpotlightManager*)bookmarksSpotlightManagerWithBrowserState:
-    (ios::ChromeBrowserState*)browserState;
+    (ChromeBrowserState*)browserState;
 
 // Checks the date of the latest global indexation and reindex all bookmarks if
 // needed.
@@ -49,7 +47,7 @@ initWithLargeIconService:(favicon::LargeIconService*)largeIconService
 - (void)getParentKeywordsForNode:(const bookmarks::BookmarkNode*)node
                          inArray:(NSMutableArray*)keywords;
 
-// Adds keywords to |item|.
+// Adds keywords to `item`.
 - (void)addKeywords:(NSArray*)keywords toSearchableItem:(CSSearchableItem*)item;
 
 // Called before the instance is deallocated. This method should be overridden

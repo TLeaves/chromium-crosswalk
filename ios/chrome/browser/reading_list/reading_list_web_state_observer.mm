@@ -17,7 +17,7 @@
 #include "ios/web/public/navigation/navigation_item.h"
 #include "ios/web/public/navigation/navigation_manager.h"
 #include "ios/web/public/navigation/reload_type.h"
-#import "ios/web/public/web_state/web_state_user_data.h"
+#import "ios/web/public/web_state_user_data.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -81,8 +81,7 @@ void ReadingListWebStateObserver::ReadingListModelLoaded(
     DidStartLoading(web_state_);
     return;
   }
-  if (last_load_result_ == web::PageLoadCompletionStatus::SUCCESS ||
-      web_state_->IsShowingWebInterstitial()) {
+  if (last_load_result_ == web::PageLoadCompletionStatus::SUCCESS) {
     return;
   }
   // An error page is being displayed.
@@ -118,8 +117,7 @@ void ReadingListWebStateObserver::DidStartLoading(web::WebState* web_state) {
 void ReadingListWebStateObserver::StartCheckingLoading() {
   DCHECK(reading_list_model_);
   DCHECK(web_state_);
-  if (!reading_list_model_->loaded() ||
-      web_state_->IsShowingWebInterstitial()) {
+  if (!reading_list_model_->loaded()) {
     StopCheckingProgress();
     return;
   }
@@ -161,10 +159,10 @@ void ReadingListWebStateObserver::StartCheckingLoading() {
   try_number_ = 0;
   timer_.reset(new base::RepeatingTimer());
   const base::TimeDelta kDelayUntilLoadingProgressIsChecked =
-      base::TimeDelta::FromMilliseconds(1500);
+      base::Milliseconds(1500);
   timer_->Start(
       FROM_HERE, kDelayUntilLoadingProgressIsChecked,
-      base::Bind(
+      base::BindRepeating(
           &ReadingListWebStateObserver::VerifyIfReadingListEntryStartedLoading,
           base::Unretained(this)));
 }

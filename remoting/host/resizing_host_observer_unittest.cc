@@ -7,16 +7,14 @@
 #include <list>
 #include <utility>
 
-#include "base/bind.h"
-#include "base/compiler_specific.h"
-#include "base/logging.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/test/simple_test_tick_clock.h"
+#include "base/test/task_environment.h"
+#include "remoting/host/base/screen_resolution.h"
 #include "remoting/host/desktop_resizer.h"
-#include "remoting/host/screen_resolution.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 
@@ -61,16 +59,18 @@ class FakeDesktopResizer : public DesktopResizer {
 
   ~FakeDesktopResizer() override {
     if (check_final_resolution_) {
-      EXPECT_EQ(initial_resolution_, GetCurrentResolution());
+      EXPECT_EQ(initial_resolution_, GetCurrentResolution(absl::nullopt));
     }
   }
 
   // remoting::DesktopResizer interface
-  ScreenResolution GetCurrentResolution() override {
+  ScreenResolution GetCurrentResolution(
+      absl::optional<webrtc::ScreenId> screen_id) override {
     return *current_resolution_;
   }
   std::list<ScreenResolution> GetSupportedResolutions(
-      const ScreenResolution& preferred) override {
+      const ScreenResolution& preferred,
+      absl::optional<webrtc::ScreenId> screen_id) override {
     std::list<ScreenResolution> result(supported_resolutions_.begin(),
                                        supported_resolutions_.end());
     if (exact_size_supported_) {
@@ -78,11 +78,13 @@ class FakeDesktopResizer : public DesktopResizer {
     }
     return result;
   }
-  void SetResolution(const ScreenResolution& resolution) override {
+  void SetResolution(const ScreenResolution& resolution,
+                     absl::optional<webrtc::ScreenId> screen_id) override {
     *current_resolution_ = resolution;
     ++call_counts_->set_resolution;
   }
-  void RestoreResolution(const ScreenResolution& resolution) override {
+  void RestoreResolution(const ScreenResolution& resolution,
+                         absl::optional<webrtc::ScreenId> screen_id) override {
     *current_resolution_ = resolution;
     ++call_counts_->restore_resolution;
   }
@@ -90,23 +92,15 @@ class FakeDesktopResizer : public DesktopResizer {
  private:
   bool exact_size_supported_;
   ScreenResolution initial_resolution_;
-  ScreenResolution *current_resolution_;
+  raw_ptr<ScreenResolution> current_resolution_;
   std::vector<ScreenResolution> supported_resolutions_;
-  CallCounts* call_counts_;
+  raw_ptr<CallCounts> call_counts_;
   bool check_final_resolution_;
 };
 
 class ResizingHostObserverTest : public testing::Test {
  public:
-  ResizingHostObserverTest()
-      : now_(base::TimeTicks::Now()) {
-  }
-
-  // This needs to be public because the derived test-case class needs to
-  // pass it to Bind, which fails if it's protected.
-  base::TimeTicks GetTime() {
-    return now_;
-  }
+  ResizingHostObserverTest() { clock_.SetNowTicks(base::TimeTicks::Now()); }
 
  protected:
   void InitDesktopResizer(const ScreenResolution& initial_resolution,
@@ -120,13 +114,17 @@ class ResizingHostObserverTest : public testing::Test {
             exact_size_supported, std::move(supported_resolutions),
             &current_resolution_, &call_counts_, restore_resolution),
         restore_resolution);
-    resizing_host_observer_->SetNowFunctionForTesting(
-        base::Bind(&ResizingHostObserverTest::GetTimeAndIncrement,
-                   base::Unretained(this)));
+    resizing_host_observer_->SetClockForTesting(&clock_);
+  }
+
+  void SetScreenResolution(const ScreenResolution& client_size) {
+    resizing_host_observer_->SetScreenResolution(client_size, absl::nullopt);
+    if (auto_advance_clock_)
+      clock_.Advance(base::Seconds(1));
   }
 
   ScreenResolution GetBestResolution(const ScreenResolution& client_size) {
-    resizing_host_observer_->SetScreenResolution(client_size);
+    SetScreenResolution(client_size);
     return current_resolution_;
   }
 
@@ -142,16 +140,11 @@ class ResizingHostObserverTest : public testing::Test {
     }
   }
 
-  base::TimeTicks GetTimeAndIncrement() {
-    base::TimeTicks result = now_;
-    now_ += base::TimeDelta::FromSeconds(1);
-    return result;
-  }
-
   ScreenResolution current_resolution_;
   FakeDesktopResizer::CallCounts call_counts_;
   std::unique_ptr<ResizingHostObserver> resizing_host_observer_;
-  base::TimeTicks now_;
+  base::SimpleTestTickClock clock_;
+  bool auto_advance_clock_ = true;
 };
 
 // Check that the resolution isn't restored if it wasn't changed by this class.
@@ -202,11 +195,11 @@ TEST_F(ResizingHostObserverTest, RestoreFlag) {
 TEST_F(ResizingHostObserverTest, RestoreOnEmptyClientResolution) {
   InitDesktopResizer(MakeResolution(640, 480), true,
                      std::vector<ScreenResolution>(), true);
-  resizing_host_observer_->SetScreenResolution(MakeResolution(200, 100));
+  SetScreenResolution(MakeResolution(200, 100));
   EXPECT_EQ(1, call_counts_.set_resolution);
   EXPECT_EQ(0, call_counts_.restore_resolution);
   EXPECT_EQ(MakeResolution(200, 100), current_resolution_);
-  resizing_host_observer_->SetScreenResolution(MakeResolution(0, 0));
+  SetScreenResolution(MakeResolution(0, 0));
   EXPECT_EQ(1, call_counts_.set_resolution);
   EXPECT_EQ(1, call_counts_.restore_resolution);
   EXPECT_EQ(MakeResolution(640, 480), current_resolution_);
@@ -294,29 +287,28 @@ TEST_F(ResizingHostObserverTest, NoSetSizeForSameSize) {
 TEST_F(ResizingHostObserverTest, RateLimited) {
   InitDesktopResizer(MakeResolution(640, 480), true,
                      std::vector<ScreenResolution>(), true);
-  resizing_host_observer_->SetNowFunctionForTesting(
-      base::Bind(&ResizingHostObserverTest::GetTime, base::Unretained(this)));
+  auto_advance_clock_ = false;
 
-  base::test::ScopedTaskEnvironment scoped_task_environment;
+  base::test::SingleThreadTaskEnvironment task_environment;
   base::RunLoop run_loop;
 
   EXPECT_EQ(MakeResolution(100, 100),
             GetBestResolution(MakeResolution(100, 100)));
-  now_ += base::TimeDelta::FromMilliseconds(900);
+  clock_.Advance(base::Milliseconds(900));
   EXPECT_EQ(MakeResolution(100, 100),
             GetBestResolution(MakeResolution(200, 200)));
-  now_ += base::TimeDelta::FromMilliseconds(99);
+  clock_.Advance(base::Milliseconds(99));
   EXPECT_EQ(MakeResolution(100, 100),
             GetBestResolution(MakeResolution(300, 300)));
-  now_ += base::TimeDelta::FromMilliseconds(1);
+  clock_.Advance(base::Milliseconds(1));
 
   // Due to the kMinimumResizeIntervalMs constant in resizing_host_observer.cc,
   // We need to wait a total of 1000ms for the final resize to be processed.
   // Since it was queued 900 + 99 ms after the first, we need to wait an
   // additional 1ms. However, since RunLoop is not guaranteed to process tasks
   // with the same due time in FIFO order, wait an additional 1ms for safety.
-  scoped_task_environment.GetMainThreadTaskRunner()->PostDelayedTask(
-      FROM_HERE, run_loop.QuitClosure(), base::TimeDelta::FromMilliseconds(2));
+  task_environment.GetMainThreadTaskRunner()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(2));
   run_loop.Run();
 
   // If the QuitClosure fired before the final resize, it's a test failure.

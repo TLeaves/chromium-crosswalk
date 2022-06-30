@@ -8,6 +8,7 @@
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/cocoa/scoped_menu_bar_lock.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -34,16 +35,16 @@ const CGFloat kMenuBarLockPadding = 50;
 @end
 
 @implementation MenuRevealMonitor {
-  base::mac::ScopedBlock<void (^)(double)> change_handler_;
-  base::scoped_nsobject<NSTitlebarAccessoryViewController> accVC_;
+  base::mac::ScopedBlock<void (^)(double)> _change_handler;
+  base::scoped_nsobject<NSTitlebarAccessoryViewController> _accVC;
 }
 
 - (instancetype)initWithWindow:(NSWindow*)window
                  changeHandler:(void (^)(double))handler {
   if ((self = [super init])) {
-    change_handler_.reset([handler copy]);
-    accVC_.reset([[NSTitlebarAccessoryViewController alloc] init]);
-    auto* accVC = accVC_.get();
+    _change_handler.reset([handler copy]);
+    _accVC.reset([[NSTitlebarAccessoryViewController alloc] init]);
+    auto* accVC = _accVC.get();
     accVC.view = [[[NSView alloc] initWithFrame:NSZeroRect] autorelease];
     [accVC addObserver:self
             forKeyPath:@"revealAmount"
@@ -55,8 +56,8 @@ const CGFloat kMenuBarLockPadding = 50;
 }
 
 - (void)dealloc {
-  [accVC_ removeObserver:self forKeyPath:@"revealAmount"];
-  [accVC_ removeFromParentViewController];
+  [_accVC removeObserver:self forKeyPath:@"revealAmount"];
+  [_accVC removeFromParentViewController];
   [super dealloc];
 }
 
@@ -67,7 +68,7 @@ const CGFloat kMenuBarLockPadding = 50;
   double revealAmount =
       base::mac::ObjCCastStrict<NSNumber>(change[NSKeyValueChangeNewKey])
           .doubleValue;
-  change_handler_.get()(revealAmount);
+  _change_handler.get()(revealAmount);
 }
 @end
 
@@ -81,15 +82,15 @@ const CGFloat kMenuBarLockPadding = 50;
 @end
 
 @implementation ImmersiveToolbarOverlayView {
-  ui::ScopedCrTrackingArea trackingArea_;
-  std::unique_ptr<ScopedMenuBarLock> menuBarLock_;
+  ui::ScopedCrTrackingArea _trackingArea;
+  std::unique_ptr<ScopedMenuBarLock> _menuBarLock;
 }
-@synthesize menuBarLockingEnabled = menuBarLockingEnabled_;
+@synthesize menuBarLockingEnabled = _menuBarLockingEnabled;
 
 - (void)setMenuBarLockingEnabled:(BOOL)menuBarLockingEnabled {
-  if (menuBarLockingEnabled == menuBarLockingEnabled_)
+  if (menuBarLockingEnabled == _menuBarLockingEnabled)
     return;
-  menuBarLockingEnabled_ = menuBarLockingEnabled;
+  _menuBarLockingEnabled = menuBarLockingEnabled;
   [self updateTrackingArea];
 }
 
@@ -98,24 +99,24 @@ const CGFloat kMenuBarLockPadding = 50;
   trackingRect.origin.y -= kMenuBarLockPadding;
   trackingRect.size.height += kMenuBarLockPadding;
 
-  if (CrTrackingArea* trackingArea = trackingArea_.get()) {
-    if (menuBarLockingEnabled_ && NSEqualRects(trackingRect, trackingArea.rect))
+  if (CrTrackingArea* trackingArea = _trackingArea.get()) {
+    if (_menuBarLockingEnabled && NSEqualRects(trackingRect, trackingArea.rect))
       return;
     else
       [self removeTrackingArea:trackingArea];
   }
 
-  if (menuBarLockingEnabled_) {
-    trackingArea_.reset([[CrTrackingArea alloc]
+  if (_menuBarLockingEnabled) {
+    _trackingArea.reset([[CrTrackingArea alloc]
         initWithRect:trackingRect
              options:NSTrackingMouseEnteredAndExited |
                      NSTrackingActiveInKeyWindow
                owner:self
             userInfo:nil]);
-    [self addTrackingArea:trackingArea_.get()];
+    [self addTrackingArea:_trackingArea.get()];
   } else {
-    trackingArea_.reset();
-    menuBarLock_.reset();
+    _trackingArea.reset();
+    _menuBarLock.reset();
   }
 }
 
@@ -132,11 +133,11 @@ const CGFloat kMenuBarLockPadding = 50;
 }
 
 - (void)mouseEntered:(NSEvent*)event {
-  menuBarLock_.reset(new ScopedMenuBarLock());
+  _menuBarLock = std::make_unique<ScopedMenuBarLock>();
 }
 
 - (void)mouseExited:(NSEvent*)event {
-  menuBarLock_.reset();
+  _menuBarLock.reset();
 }
 
 @end
@@ -152,15 +153,23 @@ class ImmersiveModeControllerMac : public ImmersiveModeController,
    public:
     RevealedLock(base::WeakPtr<ImmersiveModeControllerMac> controller,
                  AnimateReveal animate_reveal);
+
+    RevealedLock(const RevealedLock&) = delete;
+    RevealedLock& operator=(const RevealedLock&) = delete;
+
     ~RevealedLock() override;
 
    private:
     base::WeakPtr<ImmersiveModeControllerMac> controller_;
     AnimateReveal animate_reveal_;
-    DISALLOW_COPY_AND_ASSIGN(RevealedLock);
   };
 
   ImmersiveModeControllerMac();
+
+  ImmersiveModeControllerMac(const ImmersiveModeControllerMac&) = delete;
+  ImmersiveModeControllerMac& operator=(const ImmersiveModeControllerMac&) =
+      delete;
+
   ~ImmersiveModeControllerMac() override;
 
   // ImmersiveModeController overrides:
@@ -171,8 +180,8 @@ class ImmersiveModeControllerMac : public ImmersiveModeController,
   bool IsRevealed() const override;
   int GetTopContainerVerticalOffset(
       const gfx::Size& top_container_size) const override;
-  ImmersiveRevealedLock* GetRevealedLock(AnimateReveal animate_reveal) override
-      WARN_UNUSED_RESULT;
+  std::unique_ptr<ImmersiveRevealedLock> GetRevealedLock(
+      AnimateReveal animate_reveal) override;
   void OnFindBarVisibleBoundsChanged(
       const gfx::Rect& new_visible_bounds_in_screen) override;
   bool ShouldStayImmersiveAfterExitingFullscreen() override;
@@ -197,7 +206,7 @@ class ImmersiveModeControllerMac : public ImmersiveModeController,
   void LockDestroyed(AnimateReveal);
   void SetMenuRevealed(bool revealed);
 
-  BrowserView* browser_view_ = nullptr;  // weak
+  raw_ptr<BrowserView> browser_view_ = nullptr;  // weak
   std::unique_ptr<ImmersiveRevealedLock> focus_lock_;
   std::unique_ptr<ImmersiveRevealedLock> menu_lock_;
   bool enabled_ = false;
@@ -206,8 +215,6 @@ class ImmersiveModeControllerMac : public ImmersiveModeController,
   base::scoped_nsobject<NSObject> menu_reveal_monitor_;
 
   base::WeakPtrFactory<ImmersiveModeControllerMac> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImmersiveModeControllerMac);
 };
 
 }  // namespace
@@ -225,7 +232,9 @@ ImmersiveModeControllerMac::RevealedLock::~RevealedLock() {
 ImmersiveModeControllerMac::ImmersiveModeControllerMac()
     : weak_ptr_factory_(this) {}
 
-ImmersiveModeControllerMac::~ImmersiveModeControllerMac() = default;
+ImmersiveModeControllerMac::~ImmersiveModeControllerMac() {
+  CHECK(!views::WidgetObserver::IsInObserverList());
+}
 
 void ImmersiveModeControllerMac::Init(BrowserView* browser_view) {
   browser_view_ = browser_view;
@@ -234,7 +243,7 @@ void ImmersiveModeControllerMac::Init(BrowserView* browser_view) {
 void ImmersiveModeControllerMac::SetMenuRevealed(bool revealed) {
   if (revealed) {
     if (!menu_lock_)
-      menu_lock_.reset(GetRevealedLock(ANIMATE_REVEAL_YES));
+      menu_lock_ = GetRevealedLock(ANIMATE_REVEAL_YES);
     overlay_view_.get().menuBarLockingEnabled = YES;
   } else {
     if (menu_lock_)
@@ -291,12 +300,13 @@ int ImmersiveModeControllerMac::GetTopContainerVerticalOffset(
   return (enabled_ && !IsRevealed()) ? -top_container_size.height() : 0;
 }
 
-ImmersiveRevealedLock* ImmersiveModeControllerMac::GetRevealedLock(
-    AnimateReveal animate_reveal) {
+std::unique_ptr<ImmersiveRevealedLock>
+ImmersiveModeControllerMac::GetRevealedLock(AnimateReveal animate_reveal) {
   revealed_lock_count_++;
   if (enabled_ && revealed_lock_count_ == 1)
     browser_view_->OnImmersiveRevealStarted();
-  return new RevealedLock(weak_ptr_factory_.GetWeakPtr(), animate_reveal);
+  return std::make_unique<RevealedLock>(weak_ptr_factory_.GetWeakPtr(),
+                                        animate_reveal);
 }
 
 void ImmersiveModeControllerMac::OnFindBarVisibleBoundsChanged(
@@ -317,7 +327,7 @@ void ImmersiveModeControllerMac::OnDidChangeFocus(views::View* focused_before,
                                                   views::View* focused_now) {
   if (browser_view_->top_container()->Contains(focused_now)) {
     if (!focus_lock_)
-      focus_lock_.reset(GetRevealedLock(ANIMATE_REVEAL_YES));
+      focus_lock_ = GetRevealedLock(ANIMATE_REVEAL_YES);
   } else {
     focus_lock_.reset();
   }

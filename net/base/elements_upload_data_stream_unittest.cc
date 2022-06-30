@@ -16,9 +16,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/completion_once_callback.h"
@@ -30,7 +29,7 @@
 #include "net/base/upload_file_element_reader.h"
 #include "net/log/net_log_with_source.h"
 #include "net/test/gtest_util.h"
-#include "net/test/test_with_scoped_task_environment.h"
+#include "net/test/test_with_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -48,7 +47,7 @@ namespace net {
 namespace {
 
 const char kTestData[] = "0123456789";
-const size_t kTestDataSize = base::size(kTestData) - 1;
+const size_t kTestDataSize = std::size(kTestData) - 1;
 const size_t kTestBufferSize = 1 << 14;  // 16KB.
 
 // Reads data from the upload data stream, and returns the data as string.
@@ -72,9 +71,7 @@ class MockUploadElementReader : public UploadElementReader {
   MockUploadElementReader(int content_length, bool is_in_memory)
       : content_length_(content_length),
         bytes_remaining_(content_length),
-        is_in_memory_(is_in_memory),
-        init_result_(OK),
-        read_result_(OK) {}
+        is_in_memory_(is_in_memory) {}
 
   ~MockUploadElementReader() override = default;
 
@@ -135,16 +132,16 @@ class MockUploadElementReader : public UploadElementReader {
   bool is_in_memory_;
 
   // Result value returned from Init().
-  int init_result_;
+  int init_result_ = OK;
 
   // Result value returned from Read().
-  int read_result_;
+  int read_result_ = OK;
 };
 
 }  // namespace
 
 class ElementsUploadDataStreamTest : public PlatformTest,
-                                     public WithScopedTaskEnvironment {
+                                     public WithTaskEnvironment {
  public:
   void SetUp() override {
     PlatformTest::SetUp();
@@ -583,8 +580,7 @@ TEST_F(ElementsUploadDataStreamTest, FileChanged) {
   FileChangedHelper(temp_file_path, file_info.last_modified, false);
 
   // Test file changed.
-  FileChangedHelper(temp_file_path,
-                    file_info.last_modified - base::TimeDelta::FromSeconds(1),
+  FileChangedHelper(temp_file_path, file_info.last_modified - base::Seconds(1),
                     true);
 }
 

@@ -13,7 +13,6 @@
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "components/update_client/update_client_errors.h"
 
@@ -84,14 +83,18 @@ class ComponentUnpacker : public base::RefCountedThreadSafe<ComponentUnpacker> {
   using Callback = base::OnceCallback<void(const Result& result)>;
 
   // Constructs an unpacker for a specific component unpacking operation.
-  // |pk_hash| is the expected/ public key SHA256 hash. |path| is the current
-  // location of the CRX.
+  // |pk_hash| is the expected public developer key's SHA256 hash. If empty,
+  // the unpacker accepts any developer key. |path| is the current location
+  // of the CRX.
   ComponentUnpacker(const std::vector<uint8_t>& pk_hash,
                     const base::FilePath& path,
                     scoped_refptr<CrxInstaller> installer,
                     std::unique_ptr<Unzipper> unzipper,
                     scoped_refptr<Patcher> patcher,
                     crx_file::VerifierFormat crx_format);
+
+  ComponentUnpacker(const ComponentUnpacker&) = delete;
+  ComponentUnpacker& operator=(const ComponentUnpacker&) = delete;
 
   // Begins the actual unpacking of the files. May invoke a patcher and the
   // component installer if the package is a differential update.
@@ -139,8 +142,6 @@ class ComponentUnpacker : public base::RefCountedThreadSafe<ComponentUnpacker> {
   UnpackerError error_;
   int extended_error_;
   std::string public_key_;
-
-  DISALLOW_COPY_AND_ASSIGN(ComponentUnpacker);
 };
 
 }  // namespace update_client

@@ -18,6 +18,10 @@ namespace metrics {
 class DelegatingProvider final : public MetricsProvider {
  public:
   DelegatingProvider();
+
+  DelegatingProvider(const DelegatingProvider&) = delete;
+  DelegatingProvider& operator=(const DelegatingProvider&) = delete;
+
   ~DelegatingProvider() override;
 
   // Registers an additional MetricsProvider to forward calls to.
@@ -28,19 +32,24 @@ class DelegatingProvider final : public MetricsProvider {
 
   // MetricsProvider:
   void Init() override;
-  void AsyncInit(const base::Closure& done_callback) override;
+  void AsyncInit(base::OnceClosure done_callback) override;
   void OnDidCreateMetricsLog() override;
   void OnRecordingEnabled() override;
   void OnRecordingDisabled() override;
+  void OnClientStateCleared() override;
   void OnAppEnterBackground() override;
   bool HasIndependentMetrics() override;
   void ProvideSystemProfileMetrics(
+      SystemProfileProto* system_profile_proto) override;
+  void ProvideSystemProfileMetricsWithLogCreationTime(
+      base::TimeTicks log_creation_time,
       SystemProfileProto* system_profile_proto) override;
   bool HasPreviousSessionData() override;
   void ProvidePreviousSessionData(
       ChromeUserMetricsExtension* uma_proto) override;
   void ProvideCurrentSessionData(
       ChromeUserMetricsExtension* uma_proto) override;
+  void ProvideCurrentSessionUKMData() override;
   void ClearSavedStabilityMetrics() override;
   void RecordHistogramSnapshots(
       base::HistogramSnapshotManager* snapshot_manager) override;
@@ -49,8 +58,6 @@ class DelegatingProvider final : public MetricsProvider {
 
  private:
   std::vector<std::unique_ptr<MetricsProvider>> metrics_providers_;
-
-  DISALLOW_COPY_AND_ASSIGN(DelegatingProvider);
 };
 
 }  // namespace metrics

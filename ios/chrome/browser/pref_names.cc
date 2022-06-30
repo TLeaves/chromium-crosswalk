@@ -56,6 +56,17 @@ const char kEnableDoNotTrack[] = "enable_do_not_track";
 // Prefs for persisting HttpServerProperties.
 const char kHttpServerProperties[] = "net.http_server_properties";
 
+// Integer that specifies whether Incognito mode is:
+// 0 - Enabled. Default behaviour. Default mode is available on demand.
+// 1 - Disabled. User cannot browse pages in Incognito mode.
+// 2 - Forced. All pages/sessions are forced into Incognito.
+const char kIncognitoModeAvailability[] = "incognito.mode_availability";
+
+// Boolean that is true when the Incognito interstitial for third-party intents
+// is enabled.
+const char kIncognitoInterstitialEnabled[] =
+    "ios.settings.incognito_interstitial_enabled";
+
 // Caches the folder id of user's position in the bookmark hierarchy navigator.
 const char kIosBookmarkCachedFolderId[] = "ios.bookmark.cached_folder_id";
 
@@ -74,6 +85,10 @@ const char kIosBookmarkPromoAlreadySeen[] = "ios.bookmark.promo_already_seen";
 const char kIosBookmarkSigninPromoDisplayedCount[] =
     "ios.bookmark.signin_promo_displayed_count";
 
+// The time when the DiscoverFeed was last refreshed.
+const char kIosDiscoverFeedLastRefreshTime[] =
+    "ios.discover_feed.last_refresh_time";
+
 // Preference that hold a boolean indicating if the user has already dismissed
 // the sign-in promo in settings view.
 const char kIosSettingsPromoAlreadySeen[] = "ios.settings.promo_already_seen";
@@ -83,37 +98,45 @@ const char kIosSettingsPromoAlreadySeen[] = "ios.settings.promo_already_seen";
 const char kIosSettingsSigninPromoDisplayedCount[] =
     "ios.settings.signin_promo_displayed_count";
 
-// True if the previous session exited cleanly.
-// This can be different from kStabilityExitedCleanly, because the last run of
-// the program may not have included a browsing session, and thus the last run
-// of the program may have happened after the run that included the last
-// session.
-const char kLastSessionExitedCleanly[] =
-    "ios.user_experience_metrics.last_session_exited_cleanly";
+// Preference that hold a boolean indicating if the user has already dismissed
+// the sign-in promo in the ntp feed top section.
+const char kIosNtpFeedTopPromoAlreadySeen[] =
+    "ios.ntp_feed_top.promo_already_seen";
 
-// Preference that hold a boolean indicating whether metrics reporting should
-// be limited to wifi (when enabled).
-const char kMetricsReportingWifiOnly[] =
-    "ios.user_experience_metrics.wifi_only";
+// Integer to represent the number of time the sign-in promo has been displayed
+// in the ntp feed top section.
+const char kIosNtpFeedTopSigninPromoDisplayedCount[] =
+    "ios.ntp_feed_top.signin_promo_displayed_count";
 
-// Which page should be visible on the new tab page v4
-const char kNtpShownPage[] = "ntp.shown_page";
+// Preference that holds a boolean indicating whether the link previews are
+// enabled. Link previews display a live preview of the selected link after a
+// long press.
+const char kLinkPreviewEnabled[] = "ios.link_preview_enabled";
 
-// Boolean controlling whether history saving is disabled.
-const char kSavingBrowserHistoryDisabled[] = "history.saving_disabled";
+// Preference that holds a boolean indicating whether the suggestions on the NTP
+// are enabled.
+const char kNTPContentSuggestionsEnabled[] =
+    "ios.ntp.content_suggestions_enabled";
+
+// Preference that represents the sorting order of the Following feed content.
+const char kNTPFollowingFeedSortType[] = "ios.ntp.following_feed.sort_type";
+
+// Dictionary preference which tracks day(s) a given destination is clicked from
+// the new overflow menu carousel.
+const char kOverflowMenuDestinationUsageHistory[] =
+    "overflow_menu.destination_usage_history";
 
 // Boolean that is true when Suggest support is enabled.
 const char kSearchSuggestEnabled[] = "search.suggest_enabled";
 
-// A boolean pref set to true if prediction of network actions is allowed.
-// Actions include prerendering of web pages.
-// NOTE: The "dns_prefetching.enabled" value is used so that historical user
-// preferences are not lost.
-const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
+// Boolean indicating if displaying price drops for shopping URLs on Tabs
+// in the Tab Switching UI is enabled.
+const char kTrackPricesOnTabsEnabled[] = "track_prices_on_tabs.enabled";
 
-// Preference that hold a boolean indicating whether network prediction should
-// be limited to wifi (when enabled).
-const char kNetworkPredictionWifiOnly[] = "ios.dns_prefetching.wifi_only";
+// An integer set to one of the NetworkPredictionSetting enum values indicating
+// network prediction settings.
+const char kNetworkPredictionSetting[] =
+    "ios.prerender.network_prediction_settings";
 
 // Which bookmarks folder should be visible on the new tab page v4.
 const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
@@ -133,15 +156,36 @@ const char kSigninLastAccountsMigrated[] = "ios.signin.last_accounts_migrated";
 const char kSigninShouldPromptForSigninAgain[] =
     "ios.signin.should_prompt_for_signin_again";
 
-// Integer which indicates whether the user has authorized using geolocation
-// for Omnibox queries or the progress towards soliciting the user's
-// authorization.
-const char kOmniboxGeolocationAuthorizationState[] =
-    "ios.omnibox.geolocation_authorization_state";
+// Number of times the user dismissed the web sign-in dialog. This value is
+// reset to zero when the user signs in (using the web sign-in dialog).
+const char kSigninWebSignDismissalCount[] =
+    "ios.signin.web_signin_dismissal_count";
 
-// String which contains the application version when we last showed the
-// authorization alert.
-const char kOmniboxGeolocationLastAuthorizationAlertVersion[] =
-    "ios.omnibox.geolocation_last_authorization_alert_version";
+// Dictionary which stores the zoom levels the user has changed. The zoom levels
+// are unique for a given (iOS Dynamic Type, website domain) pair. Thus, the
+// dictionary keys are the iOS Dynamic Type level, mapping to sub-dictionarys
+// keyed by domain. The final values are double values representing the user
+// zoom level (i.e. 1 means no change, 100%).
+const char kIosUserZoomMultipliers[] = "ios.user_zoom_multipliers";
+
+const char kPrintingEnabled[] = "printing.enabled";
+
+// Bool used for the incognito biometric authentication setting.
+const char kIncognitoAuthenticationSetting[] =
+    "ios.settings.incognito_authentication_enabled";
+
+// Integer that represents the value of BrowserSigninPolicy. Values are defined
+// in ios/chrome/browser/policy/policy_util.h.
+const char kBrowserSigninPolicy[] = "signin.browser_signin_policy";
+
+// Bool that represents whether iCloud backups are allowed by policy.
+const char kAllowChromeDataInBackups[] = "ios.allow_chrome_data_in_backups";
+
+// Preference that holds the string value indicating the NTP URL to use for the
+// NTP Location policy.
+const char kNewTabPageLocationOverride[] = "ios.ntp.location_override";
+
+// A boolean specifying whether HTTPS-Only Mode is enabled.
+const char kHttpsOnlyModeEnabled[] = "ios.https_only_mode_enabled";
 
 }  // namespace prefs

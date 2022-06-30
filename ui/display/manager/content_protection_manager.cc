@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/logging.h"
+#include "base/check.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/observer_list.h"
-#include "base/stl_util.h"
 #include "ui/display/manager/apply_content_protection_task.h"
 #include "ui/display/manager/display_layout_manager.h"
 #include "ui/display/manager/query_content_protection_task.h"
@@ -21,7 +21,7 @@ namespace display {
 namespace {
 
 // HDCP requires suppressing content within 2 seconds when authentication drops.
-constexpr auto kDisplaySecurityPollingPeriod = base::TimeDelta::FromSeconds(2);
+constexpr auto kDisplaySecurityPollingPeriod = base::Seconds(2);
 
 }  // namespace
 
@@ -38,7 +38,7 @@ ContentProtectionManager::~ContentProtectionManager() {
 
 ContentProtectionManager::ClientId ContentProtectionManager::RegisterClient() {
   if (disabled())
-    return base::nullopt;
+    return absl::nullopt;
 
   ClientId client_id = next_client_id_++;
   bool success = requests_.emplace(*client_id, ContentProtections()).second;
@@ -58,7 +58,7 @@ void ContentProtectionManager::UnregisterClient(ClientId client_id) {
       layout_manager_, native_display_delegate_, AggregateContentProtections(),
       base::BindOnce(&ContentProtectionManager::OnContentProtectionApplied,
                      weak_ptr_factory_.GetWeakPtr(),
-                     ApplyContentProtectionCallback(), base::nullopt)));
+                     ApplyContentProtectionCallback(), absl::nullopt)));
 
   ToggleDisplaySecurityPolling();
 }
@@ -106,6 +106,20 @@ void ContentProtectionManager::ApplyContentProtection(
 
   protections->insert_or_assign(display_id, protection_mask);
 
+  if (HasExternalDisplaysWithContentProtection()) {
+    hdcp_key_manager_.SetKeyIfRequired(
+        layout_manager_->GetDisplayStates(), native_display_delegate_,
+        base::BindOnce(&ContentProtectionManager::QueueContentProtectionTask,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                       client_id));
+  } else {
+    QueueContentProtectionTask(std::move(callback), client_id);
+  }
+}
+
+void ContentProtectionManager::QueueContentProtectionTask(
+    ApplyContentProtectionCallback callback,
+    ClientId client_id) {
   QueueTask(std::make_unique<ApplyContentProtectionTask>(
       layout_manager_, native_display_delegate_, AggregateContentProtections(),
       base::BindOnce(&ContentProtectionManager::OnContentProtectionApplied,
@@ -224,7 +238,8 @@ void ContentProtectionManager::OnDisplayModeChangeFailed(
   KillTasks();
 }
 
-bool ContentProtectionManager::ShouldPollDisplaySecurity() const {
+bool ContentProtectionManager::HasExternalDisplaysWithContentProtection()
+    const {
   const auto displays = layout_manager_->GetDisplayStates();
   if (std::all_of(displays.begin(), displays.end(),
                   [](const DisplaySnapshot* display) {
@@ -241,7 +256,7 @@ bool ContentProtectionManager::ShouldPollDisplaySecurity() const {
 }
 
 void ContentProtectionManager::ToggleDisplaySecurityPolling() {
-  if (ShouldPollDisplaySecurity()) {
+  if (HasExternalDisplaysWithContentProtection()) {
     if (!security_timer_.IsRunning()) {
       security_timer_.Start(
           FROM_HERE, kDisplaySecurityPollingPeriod,

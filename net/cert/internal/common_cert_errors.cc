@@ -4,10 +4,9 @@
 
 #include "net/cert/internal/common_cert_errors.h"
 
-namespace net {
+namespace net::cert_errors {
 
-namespace cert_errors {
-
+DEFINE_CERT_ERROR_ID(kInternalError, "Internal error");
 DEFINE_CERT_ERROR_ID(kValidityFailedNotAfter, "Time is after notAfter");
 DEFINE_CERT_ERROR_ID(kValidityFailedNotBefore, "Time is before notBefore");
 DEFINE_CERT_ERROR_ID(kDistrustedByTrustStore, "Distrusted by trust store");
@@ -59,7 +58,9 @@ DEFINE_CERT_ERROR_ID(kCertificateRevoked, "Certificate is revoked");
 DEFINE_CERT_ERROR_ID(kNoRevocationMechanism,
                      "Certificate lacks a revocation mechanism");
 DEFINE_CERT_ERROR_ID(kUnableToCheckRevocation, "Unable to check revocation");
+DEFINE_CERT_ERROR_ID(kNoIssuersFound, "No matching issuer found");
+DEFINE_CERT_ERROR_ID(kDeadlineExceeded, "Deadline exceeded");
+DEFINE_CERT_ERROR_ID(kIterationLimitExceeded, "Iteration limit exceeded");
+DEFINE_CERT_ERROR_ID(kDepthLimitExceeded, "Depth limit exceeded");
 
-}  // namespace cert_errors
-
-}  // namespace net
+}  // namespace net::cert_errors

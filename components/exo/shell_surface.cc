@@ -4,8 +4,9 @@
 
 #include "components/exo/shell_surface.h"
 
+#include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/public/cpp/shell_window_ids.h"
-#include "ash/public/cpp/window_state_type.h"
+#include "ash/scoped_animation_disabler.h"
 #include "ash/shell.h"
 #include "ash/wm/desks/desks_util.h"
 #include "ash/wm/toplevel_window_event_handler.h"
@@ -13,14 +14,21 @@
 #include "ash/wm/window_state.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "chromeos/ui/base/window_state_type.h"
+#include "components/exo/custom_window_state_delegate.h"
 #include "components/exo/shell_surface_util.h"
+#include "components/exo/window_properties.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/ui_base_types.h"
+#include "ui/compositor/layer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/core/transient_window_manager.h"
@@ -33,44 +41,18 @@ namespace {
 // fullscreen or pinned state.
 constexpr int kMaximizedOrFullscreenOrPinnedLockTimeoutMs = 100;
 
+gfx::Rect GetClientBoundsInScreen(views::Widget* widget) {
+  gfx::Rect window_bounds = widget->GetWindowBoundsInScreen();
+  // Account for popup windows not having a non-client view.
+  if (widget->non_client_view()) {
+    return static_cast<ash::NonClientFrameViewAsh*>(
+               widget->non_client_view()->frame_view())
+        ->GetClientBoundsForWindowBounds(window_bounds);
+  }
+  return window_bounds;
+}
+
 }  // namespace
-
-////////////////////////////////////////////////////////////////////////////////
-// ShellSurface, ScopedAnimationsDisabled:
-
-// Helper class used to temporarily disable animations. Restores the
-// animations disabled property when instance is destroyed.
-class ShellSurface::ScopedAnimationsDisabled {
- public:
-  explicit ScopedAnimationsDisabled(ShellSurface* shell_surface);
-  ~ScopedAnimationsDisabled();
-
- private:
-  ShellSurface* const shell_surface_;
-  bool saved_animations_disabled_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedAnimationsDisabled);
-};
-
-ShellSurface::ScopedAnimationsDisabled::ScopedAnimationsDisabled(
-    ShellSurface* shell_surface)
-    : shell_surface_(shell_surface) {
-  if (shell_surface_->widget_) {
-    aura::Window* window = shell_surface_->widget_->GetNativeWindow();
-    saved_animations_disabled_ =
-        window->GetProperty(aura::client::kAnimationsDisabledKey);
-    window->SetProperty(aura::client::kAnimationsDisabledKey, true);
-  }
-}
-
-ShellSurface::ScopedAnimationsDisabled::~ScopedAnimationsDisabled() {
-  if (shell_surface_->widget_) {
-    aura::Window* window = shell_surface_->widget_->GetNativeWindow();
-    DCHECK_EQ(window->GetProperty(aura::client::kAnimationsDisabledKey), true);
-    window->SetProperty(aura::client::kAnimationsDisabledKey,
-                        saved_animations_disabled_);
-  }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // ShellSurface, Config:
@@ -127,22 +109,26 @@ ShellSurface::ScopedConfigure::~ScopedConfigure() {
 
 ShellSurface::ShellSurface(Surface* surface,
                            const gfx::Point& origin,
-                           bool activatable,
                            bool can_minimize,
                            int container)
-    : ShellSurfaceBase(surface, origin, activatable, can_minimize, container) {}
+    : ShellSurfaceBase(surface, origin, can_minimize, container) {}
 
 ShellSurface::ShellSurface(Surface* surface)
     : ShellSurfaceBase(surface,
                        gfx::Point(),
-                       true,
-                       true,
+                       /*can_minimize=*/true,
                        ash::desks_util::GetActiveDeskContainerId()) {}
 
 ShellSurface::~ShellSurface() {
   DCHECK(!scoped_configure_);
+  // Client is gone by now, so don't call callback.
+  configure_callback_.Reset();
+  origin_change_callback_.Reset();
   if (widget_)
     ash::WindowState::Get(widget_->GetNativeWindow())->RemoveObserver(this);
+
+  for (auto& observer : observers_)
+    observer.OnShellSurfaceDestroyed();
 }
 
 void ShellSurface::AcknowledgeConfigure(uint32_t serial) {
@@ -167,31 +153,42 @@ void ShellSurface::AcknowledgeConfigure(uint32_t serial) {
       break;
   }
 
-  if (widget_) {
-    UpdateWidgetBounds();
-    UpdateShadow();
-  }
+  for (auto& observer : observers_)
+    observer.OnAcknowledgeConfigure(serial);
+
+  // Shadow bounds update should be called in the next Commit() when applying
+  // config instead of updating right when the client acknowledge the config.
 }
 
 void ShellSurface::SetParent(ShellSurface* parent) {
   TRACE_EVENT1("exo", "ShellSurface::SetParent", "parent",
-               parent ? base::UTF16ToASCII(parent->title_) : "null");
+               parent ? base::UTF16ToASCII(parent->GetWindowTitle()) : "null");
 
   SetParentWindow(parent ? parent->GetWidget()->GetNativeWindow() : nullptr);
+}
+
+bool ShellSurface::CanMaximize() const {
+  // Prevent non-resizable windows being resized via maximize.
+  return ShellSurfaceBase::CanMaximize() && CanResize();
 }
 
 void ShellSurface::Maximize() {
   TRACE_EVENT0("exo", "ShellSurface::Maximize");
 
   if (!widget_) {
-    initial_show_state_ = ui::SHOW_STATE_MAXIMIZED;
+    if (initial_show_state_ != ui::SHOW_STATE_FULLSCREEN ||
+        ShouldExitFullscreenFromRestoreOrMaximized())
+      initial_show_state_ = ui::SHOW_STATE_MAXIMIZED;
     return;
   }
 
-  // Note: This will ask client to configure its surface even if already
-  // maximized.
-  ScopedConfigure scoped_configure(this, true);
-  widget_->Maximize();
+  if (!widget_->IsFullscreen() ||
+      ShouldExitFullscreenFromRestoreOrMaximized()) {
+    // Note: This will ask client to configure its surface even if already
+    // maximized.
+    ScopedConfigure scoped_configure(this, true);
+    widget_->Maximize();
+  }
 }
 
 void ShellSurface::Minimize() {
@@ -212,21 +209,30 @@ void ShellSurface::Restore() {
   TRACE_EVENT0("exo", "ShellSurface::Restore");
 
   if (!widget_) {
-    initial_show_state_ = ui::SHOW_STATE_NORMAL;
+    if (initial_show_state_ != ui::SHOW_STATE_FULLSCREEN ||
+        ShouldExitFullscreenFromRestoreOrMaximized())
+      initial_show_state_ = ui::SHOW_STATE_NORMAL;
     return;
   }
 
-  // Note: This will ask client to configure its surface even if not already
-  // maximized or minimized.
-  ScopedConfigure scoped_configure(this, true);
-  widget_->Restore();
+  if (!widget_->IsFullscreen() ||
+      ShouldExitFullscreenFromRestoreOrMaximized()) {
+    // Note: This will ask client to configure its surface even if already
+    // maximized.
+    ScopedConfigure scoped_configure(this, true);
+    widget_->Restore();
+  }
 }
 
 void ShellSurface::SetFullscreen(bool fullscreen) {
   TRACE_EVENT1("exo", "ShellSurface::SetFullscreen", "fullscreen", fullscreen);
 
   if (!widget_) {
-    initial_show_state_ = ui::SHOW_STATE_FULLSCREEN;
+    if (fullscreen) {
+      initial_show_state_ = ui::SHOW_STATE_FULLSCREEN;
+    } else if (initial_show_state_ == ui::SHOW_STATE_FULLSCREEN) {
+      initial_show_state_ = ui::SHOW_STATE_DEFAULT;
+    }
     return;
   }
 
@@ -265,8 +271,26 @@ void ShellSurface::StartResize(int component) {
   AttemptToStartDrag(component);
 }
 
+void ShellSurface::AddObserver(ShellSurfaceObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void ShellSurface::RemoveObserver(ShellSurfaceObserver* observer) {
+  observers_.RemoveObserver(observer);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // SurfaceDelegate overrides:
+
+void ShellSurface::OnSetFrame(SurfaceFrameType type) {
+  ShellSurfaceBase::OnSetFrame(type);
+
+  if (!widget_)
+    return;
+  widget_->GetNativeWindow()->SetProperty(
+      aura::client::kUseWindowBoundsForShadow,
+      frame_type_ != SurfaceFrameType::SHADOW);
+}
 
 void ShellSurface::OnSetParent(Surface* parent, const gfx::Point& position) {
   views::Widget* parent_widget =
@@ -316,17 +340,12 @@ void ShellSurface::InitializeWindowState(ash::WindowState* window_state) {
   MaybeMakeTransient();
 }
 
-base::Optional<gfx::Rect> ShellSurface::GetWidgetBounds() const {
+absl::optional<gfx::Rect> ShellSurface::GetWidgetBounds() const {
   // Defer if configure requests are pending.
   if (!pending_configs_.empty() || scoped_configure_)
-    return base::nullopt;
+    return absl::nullopt;
 
-  gfx::Rect visible_bounds = GetVisibleBounds();
-  gfx::Rect new_widget_bounds =
-      widget_->non_client_view()
-          ? widget_->non_client_view()->GetWindowBoundsForClientBounds(
-                visible_bounds)
-          : visible_bounds;
+  gfx::Rect new_widget_bounds = GetWidgetBoundsFromVisibleBounds();
 
   if (movement_disabled_) {
     new_widget_bounds.set_origin(origin_);
@@ -387,8 +406,11 @@ void ShellSurface::OnWindowBoundsChanged(aura::Window* window,
     return;
 
   if (window == widget_->GetNativeWindow()) {
-    if (new_bounds.size() == old_bounds.size())
+    if (new_bounds.size() == old_bounds.size()) {
+      if (!origin_change_callback_.is_null())
+        origin_change_callback_.Run(GetClientBoundsInScreen(widget_).origin());
       return;
+    }
 
     // If size changed then give the client a chance to produce new contents
     // before origin on screen is changed. Retain the old origin by reverting
@@ -411,16 +433,17 @@ void ShellSurface::OnWindowBoundsChanged(aura::Window* window,
 ////////////////////////////////////////////////////////////////////////////////
 // ash::WindowStateObserver overrides:
 
-void ShellSurface::OnPreWindowStateTypeChange(ash::WindowState* window_state,
-                                              ash::WindowStateType old_type) {
-  ash::WindowStateType new_type = window_state->GetStateType();
-  if (ash::IsMinimizedWindowStateType(old_type) ||
-      ash::IsMinimizedWindowStateType(new_type)) {
+void ShellSurface::OnPreWindowStateTypeChange(
+    ash::WindowState* window_state,
+    chromeos::WindowStateType old_type) {
+  chromeos::WindowStateType new_type = window_state->GetStateType();
+  if (chromeos::IsMinimizedWindowStateType(old_type) ||
+      chromeos::IsMinimizedWindowStateType(new_type)) {
     return;
   }
 
-  if (ash::IsMaximizedOrFullscreenOrPinnedWindowStateType(old_type) ||
-      ash::IsMaximizedOrFullscreenOrPinnedWindowStateType(new_type)) {
+  if (chromeos::IsMaximizedOrFullscreenOrPinnedWindowStateType(old_type) ||
+      chromeos::IsMaximizedOrFullscreenOrPinnedWindowStateType(new_type)) {
     if (!widget_)
       return;
     // When transitioning in/out of maximized or fullscreen mode, we need to
@@ -434,19 +457,24 @@ void ShellSurface::OnPreWindowStateTypeChange(ash::WindowState* window_state,
       ui::Compositor* compositor =
           widget_->GetNativeWindow()->layer()->GetCompositor();
       configure_compositor_lock_ = compositor->GetCompositorLock(
-          nullptr, base::TimeDelta::FromMilliseconds(
-                       kMaximizedOrFullscreenOrPinnedLockTimeoutMs));
+          nullptr,
+          base::Milliseconds(kMaximizedOrFullscreenOrPinnedLockTimeoutMs));
     } else {
-      scoped_animations_disabled_ =
-          std::make_unique<ScopedAnimationsDisabled>(this);
+      animations_disabler_ = std::make_unique<ash::ScopedAnimationDisabler>(
+          widget_->GetNativeWindow());
     }
   }
 }
 
-void ShellSurface::OnPostWindowStateTypeChange(ash::WindowState* window_state,
-                                               ash::WindowStateType old_type) {
-  ash::WindowStateType new_type = window_state->GetStateType();
-  if (ash::IsMaximizedOrFullscreenOrPinnedWindowStateType(new_type)) {
+void ShellSurface::OnPostWindowStateTypeChange(
+    ash::WindowState* window_state,
+    chromeos::WindowStateType old_type) {
+  chromeos::WindowStateType new_type = window_state->GetStateType();
+  // For exo-client using client-side decoration, window-state information is
+  // needed to toggle the maximize and restore buttons. When the window is
+  // restored, we show a maximized button; otherwise we show a restore button.
+  if (chromeos::IsMaximizedOrFullscreenOrPinnedWindowStateType(old_type) ||
+      chromeos::IsMaximizedOrFullscreenOrPinnedWindowStateType(new_type)) {
     Configure();
   }
 
@@ -456,7 +484,7 @@ void ShellSurface::OnPostWindowStateTypeChange(ash::WindowState* window_state,
   }
 
   // Re-enable animations if they were disabled in pre state change handler.
-  scoped_animations_disabled_.reset();
+  animations_disabler_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -500,7 +528,9 @@ bool ShellSurface::OnPreWidgetCommit() {
     if (host_window()->bounds().IsEmpty() &&
         root_surface()->surface_hierarchy_content_bounds().IsEmpty()) {
       Configure();
-      return false;
+
+      if (initial_show_state_ != ui::SHOW_STATE_MINIMIZED)
+        needs_layout_on_show_ = true;
     }
 
     CreateShellSurfaceWidget(initial_show_state_);
@@ -517,37 +547,39 @@ bool ShellSurface::OnPreWidgetCommit() {
   return true;
 }
 
-void ShellSurface::OnPostWidgetCommit() {}
+std::unique_ptr<views::NonClientFrameView>
+ShellSurface::CreateNonClientFrameView(views::Widget* widget) {
+  ash::WindowState* window_state =
+      ash::WindowState::Get(widget->GetNativeWindow());
+  window_state->SetDelegate(std::make_unique<CustomWindowStateDelegate>(this));
+  return CreateNonClientFrameViewInternal(widget);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // ShellSurface, private:
 
-void ShellSurface::SetParentWindow(aura::Window* parent) {
-  if (parent_) {
-    parent_->RemoveObserver(this);
+void ShellSurface::SetParentWindow(aura::Window* new_parent) {
+  if (parent()) {
+    parent()->RemoveObserver(this);
     if (widget_) {
       aura::Window* child_window = widget_->GetNativeWindow();
       wm::TransientWindowManager::GetOrCreate(child_window)
           ->set_parent_controls_visibility(false);
-      wm::RemoveTransientChild(parent_, child_window);
+      wm::RemoveTransientChild(parent(), child_window);
     }
   }
-  parent_ = parent;
-  if (parent_) {
-    parent_->AddObserver(this);
+  SetParentInternal(new_parent);
+  if (parent()) {
+    parent()->AddObserver(this);
     MaybeMakeTransient();
   }
-
-  // If |parent_| is set effects the ability to maximize the window.
-  if (widget_)
-    widget_->OnSizeConstraintsChanged();
 }
 
 void ShellSurface::MaybeMakeTransient() {
-  if (!parent_ || !widget_)
+  if (!parent() || !widget_)
     return;
   aura::Window* child_window = widget_->GetNativeWindow();
-  wm::AddTransientChild(parent_, child_window);
+  wm::AddTransientChild(parent(), child_window);
   // In the case of activatable non-popups, we also want the parent to control
   // the child's visibility.
   if (!widget_->is_top_level() || !widget_->CanActivate())
@@ -572,16 +604,19 @@ void ShellSurface::Configure(bool ends_drag) {
   // If surface is being resized, save the resize direction.
   if (window_state && window_state->is_dragged() && !ends_drag)
     resize_component = window_state->drag_details()->window_component;
-
   uint32_t serial = 0;
+
   if (!configure_callback_.is_null()) {
     if (window_state) {
       serial = configure_callback_.Run(
-          GetClientViewBounds().size(), window_state->GetStateType(),
+          GetClientBoundsInScreen(widget_), window_state->GetStateType(),
           IsResizing(), widget_->IsActive(), origin_offset);
     } else {
+      gfx::Rect bounds;
+      if (initial_bounds_)
+        bounds.set_origin(initial_bounds_->origin());
       serial =
-          configure_callback_.Run(gfx::Size(), ash::WindowStateType::kNormal,
+          configure_callback_.Run(bounds, chromeos::WindowStateType::kNormal,
                                   false, false, origin_offset);
     }
   }
@@ -600,6 +635,15 @@ void ShellSurface::Configure(bool ends_drag) {
   LOG_IF(WARNING, pending_configs_.size() > 100)
       << "Number of pending configure acks for shell surface has reached: "
       << pending_configs_.size();
+
+  for (auto& observer : observers_)
+    observer.OnConfigure(serial);
+}
+
+bool ShellSurface::GetCanResizeFromSizeConstraints() const {
+  // Both the default min and max sizes are empty and windows must be resizable
+  // in that case.
+  return (minimum_size_.IsEmpty() || minimum_size_ != maximum_size_);
 }
 
 void ShellSurface::AttemptToStartDrag(int component) {
@@ -625,11 +669,12 @@ void ShellSurface::AttemptToStartDrag(int component) {
   }
   auto end_drag = [](ShellSurface* shell_surface,
                      ash::ToplevelWindowEventHandler::DragResult result) {
-    shell_surface->EndDrag();
+    if (result != ash::ToplevelWindowEventHandler::DragResult::WINDOW_DESTROYED)
+      shell_surface->EndDrag();
   };
 
   if (gesture_target) {
-    gfx::Point location = toplevel_handler->event_location_in_gesture_target();
+    gfx::PointF location = toplevel_handler->event_location_in_gesture_target();
     aura::Window::ConvertPointToTarget(
         gesture_target, widget_->GetNativeWindow()->GetRootWindow(), &location);
     toplevel_handler->AttemptToStartDrag(
@@ -640,7 +685,7 @@ void ShellSurface::AttemptToStartDrag(int component) {
     ::wm::ConvertPointFromScreen(widget_->GetNativeWindow()->GetRootWindow(),
                                  &location);
     toplevel_handler->AttemptToStartDrag(
-        target, location, component,
+        target, gfx::PointF(location), component,
         base::BindOnce(end_drag, base::Unretained(this)));
   }
   // Notify client that resizing state has changed.

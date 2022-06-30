@@ -8,9 +8,8 @@
 #include <utility>
 
 #include "base/allocator/allocator_shim.h"
+#include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/logging.h"
-#include "base/no_destructor.h"
 #include "base/numerics/safe_math.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
@@ -21,7 +20,7 @@
 #include "components/gwp_asan/client/sampling_state.h"
 #include "components/gwp_asan/common/crash_key_name.h"
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_APPLE)
 #include <pthread.h>
 #endif
 
@@ -51,6 +50,16 @@ void* AllocFn(const AllocatorDispatch* self, size_t size, void* context) {
       return allocation;
 
   return self->next->alloc_function(self->next, size, context);
+}
+
+void* AllocUncheckedFn(const AllocatorDispatch* self,
+                       size_t size,
+                       void* context) {
+  if (UNLIKELY(sampling_state.Sample()))
+    if (void* allocation = gpa->Allocate(size))
+      return allocation;
+
+  return self->next->alloc_unchecked_function(self->next, size, context);
 }
 
 void* AllocZeroInitializedFn(const AllocatorDispatch* self,
@@ -228,6 +237,7 @@ static void AlignedFreeFn(const AllocatorDispatch* self,
 
 AllocatorDispatch g_allocator_dispatch = {
     &AllocFn,
+    &AllocUncheckedFn,
     &AllocZeroInitializedFn,
     &AllocAlignedFn,
     &ReallocFn,

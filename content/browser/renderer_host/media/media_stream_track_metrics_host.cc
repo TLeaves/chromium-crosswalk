@@ -8,11 +8,9 @@
 
 // We use a histogram with a maximum bucket of 16 hours to infinity
 // for track durations.
-#define UMA_HISTOGRAM_TIMES_16H(name, sample)                        \
-  UMA_HISTOGRAM_CUSTOM_TIMES(name, sample,                           \
-                             base::TimeDelta::FromMilliseconds(100), \
-                             base::TimeDelta::FromHours(16),         \
-                             50);
+#define UMA_HISTOGRAM_TIMES_16H(name, sample)                       \
+  UMA_HISTOGRAM_CUSTOM_TIMES(name, sample, base::Milliseconds(100), \
+                             base::Hours(16), 50);
 
 namespace content {
 
@@ -28,9 +26,9 @@ MediaStreamTrackMetricsHost::~MediaStreamTrackMetricsHost() {
   tracks_.clear();
 }
 
-void MediaStreamTrackMetricsHost::BindRequest(
-    blink::mojom::MediaStreamTrackMetricsHostRequest request) {
-  bindings_.AddBinding(this, std::move(request));
+void MediaStreamTrackMetricsHost::BindReceiver(
+    mojo::PendingReceiver<blink::mojom::MediaStreamTrackMetricsHost> receiver) {
+  receivers_.Add(this, std::move(receiver));
 }
 
 void MediaStreamTrackMetricsHost::AddTrack(uint64_t id,

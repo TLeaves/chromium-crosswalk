@@ -14,10 +14,9 @@
 #include "ash/system/network/network_icon_animation_observer.h"
 #include "ash/system/network/network_info.h"
 #include "ash/system/network/network_state_list_detailed_view.h"
-#include "base/containers/flat_map.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom-forward.h"
+#include "chromeos/services/network_config/public/mojom/network_types.mojom-forward.h"
 
 namespace views {
 class Separator;
@@ -25,14 +24,12 @@ class View;
 }  // namespace views
 
 namespace ash {
-class HoverHighlightView;
-class TrayInfoLabel;
-class TriView;
-class TrayNetworkStateModel;
 
-namespace tray {
+class HoverHighlightView;
 class NetworkSectionHeaderView;
 class MobileSectionHeaderView;
+class TrayInfoLabel;
+class TriView;
 class WifiSectionHeaderView;
 
 // A list of available networks of a given type. This class is used for all
@@ -41,6 +38,10 @@ class NetworkListView : public NetworkStateListDetailedView,
                         public network_icon::AnimationObserver {
  public:
   NetworkListView(DetailedViewDelegate* delegate, LoginStatus login);
+
+  NetworkListView(const NetworkListView&) = delete;
+  NetworkListView& operator=(const NetworkListView&) = delete;
+
   ~NetworkListView() override;
 
   // NetworkStateListDetailedView:
@@ -83,11 +84,6 @@ class NetworkListView : public NetworkStateListDetailedView,
   // not managed by policy.
   views::View* CreatePolicyView(const NetworkInfo& info);
 
-  // Creates the view of an extra icon appearing next to the network name
-  // indicating that the network is controlled by an extension. If no extension
-  // is registered for this network, returns |nullptr|.
-  views::View* CreateControlledByExtensionView(const NetworkInfo& info);
-
   // Adds or updates child views representing the network connections when
   // |is_wifi| is matching the attribute of a network connection starting at
   // |child_index|. Returns a set of guids for the added network
@@ -129,7 +125,12 @@ class NetworkListView : public NetworkStateListDetailedView,
   // otherwise false.
   bool NeedUpdateViewForNetwork(const NetworkInfo& info) const;
 
-  TrayNetworkStateModel* model_;
+  // Creates an accessibility label for given network.
+  std::u16string GenerateAccessibilityLabel(const NetworkInfo& info);
+
+  // Creates an accessibility description for the given network that includes
+  // all details that are shown in the ui.
+  std::u16string GenerateAccessibilityDescription(const NetworkInfo& info);
 
   bool needs_relayout_ = false;
 
@@ -162,11 +163,8 @@ class NetworkListView : public NetworkStateListDetailedView,
   NetworkInfoMap last_network_info_map_;
 
   base::WeakPtrFactory<NetworkListView> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkListView);
 };
 
-}  // namespace tray
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_NETWORK_NETWORK_LIST_VIEW_H_

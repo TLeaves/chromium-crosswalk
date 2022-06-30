@@ -7,9 +7,10 @@
 
 #import "base/test/ios/wait_util.h"
 #include "ios/web/public/test/element_selector.h"
-#import "ios/web/public/web_state/web_state.h"
 
 namespace web {
+class WebState;
+
 namespace test {
 
 // Enum describing loaded/blocked state of an image html element.
@@ -24,21 +25,35 @@ enum ImageStateElement {
 // Otherwise, returns false.
 bool IsWebViewContainingText(web::WebState* web_state, const std::string& text);
 
+// Returns true if there is a frame from |web_state| that contains |text|.
+// This method waits for the JavaScript message response.
+// |FindInPageJavaScriptFeature| must be configured for |web_state| in order for
+// this function to correctly return results.
+bool IsWebViewContainingTextInFrame(web::WebState* web_state,
+                                    const std::string& text);
+
 // Waits for the given web state to contain |text|. If the condition is not met
 // within |timeout| false is returned.
-bool WaitForWebViewContainingText(
+[[nodiscard]] bool WaitForWebViewContainingText(
     web::WebState* web_state,
     std::string text,
-    NSTimeInterval timeout = base::test::ios::kWaitForPageLoadTimeout)
-    WARN_UNUSED_RESULT;
+    NSTimeInterval timeout = base::test::ios::kWaitForPageLoadTimeout);
 
 // Waits for the given web state to not contain |text|. If the condition is not
 // met within |timeout| false is returned.
-bool WaitForWebViewNotContainingText(
+[[nodiscard]] bool WaitForWebViewNotContainingText(
     web::WebState* web_state,
     std::string text,
-    NSTimeInterval timeout = base::test::ios::kWaitForPageLoadTimeout)
-    WARN_UNUSED_RESULT;
+    NSTimeInterval timeout = base::test::ios::kWaitForPageLoadTimeout);
+
+// Waits for the given web state to have a frame that contains |text|. If the
+// condition is not met within |timeout| false is returned.
+// |FindInPageJavaScriptFeature| must be configured for |web_state| in order for
+// this function to correctly return results.
+[[nodiscard]] bool WaitForWebViewContainingTextInFrame(
+    web::WebState* web_state,
+    std::string text,
+    NSTimeInterval timeout = base::test::ios::kWaitForPageLoadTimeout);
 
 // Waits for a web view with the corresponding |image_id| and |image_state|, in
 // the given |web_state|.
@@ -52,14 +67,13 @@ bool IsWebViewContainingElement(web::WebState* web_state,
                                 ElementSelector* selector);
 
 // Waits for |web_state| to contain an element for |selector|.
-bool WaitForWebViewContainingElement(web::WebState* web_state,
-                                     ElementSelector* selector)
-    WARN_UNUSED_RESULT;
+[[nodiscard]] bool WaitForWebViewContainingElement(web::WebState* web_state,
+                                                   ElementSelector* selector);
 
 // Waits for |web_state| to not contain an element for |selector|.
-bool WaitForWebViewNotContainingElement(web::WebState* web_state,
-                                        ElementSelector* selector)
-    WARN_UNUSED_RESULT;
+[[nodiscard]] bool WaitForWebViewNotContainingElement(
+    web::WebState* web_state,
+    ElementSelector* selector);
 
 }  // namespace test
 }  // namespace web

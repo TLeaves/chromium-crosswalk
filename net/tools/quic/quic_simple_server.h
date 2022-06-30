@@ -10,16 +10,16 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/platform/impl/quic_chromium_clock.h"
 #include "net/quic/quic_chromium_alarm_factory.h"
 #include "net/quic/quic_chromium_connection_helper.h"
-#include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_server_config.h"
-#include "net/third_party/quiche/src/quic/core/quic_config.h"
-#include "net/third_party/quiche/src/quic/core/quic_version_manager.h"
-#include "net/third_party/quiche/src/quic/tools/quic_simple_server_backend.h"
+#include "net/third_party/quiche/src/quiche/quic/core/crypto/quic_crypto_server_config.h"
+#include "net/third_party/quiche/src/quiche/quic/core/quic_config.h"
+#include "net/third_party/quiche/src/quiche/quic/core/quic_version_manager.h"
+#include "net/third_party/quiche/src/quiche/quic/tools/quic_simple_server_backend.h"
+#include "net/third_party/quiche/src/quiche/quic/tools/quic_spdy_server_base.h"
 
 namespace net {
 
@@ -35,7 +35,7 @@ namespace test {
 class QuicSimpleServerPeer;
 }  // namespace test
 
-class QuicSimpleServer {
+class QuicSimpleServer : public quic::QuicSpdyServerBase {
  public:
   QuicSimpleServer(
       std::unique_ptr<quic::ProofSource> proof_source,
@@ -44,10 +44,18 @@ class QuicSimpleServer {
       const quic::ParsedQuicVersionVector& supported_versions,
       quic::QuicSimpleServerBackend* quic_simple_server_backend);
 
-  virtual ~QuicSimpleServer();
+  QuicSimpleServer(const QuicSimpleServer&) = delete;
+  QuicSimpleServer& operator=(const QuicSimpleServer&) = delete;
 
-  // Start listening on the specified address. Returns an error code.
-  int Listen(const IPEndPoint& address);
+  ~QuicSimpleServer() override;
+
+  // QuicSpdyServerBase methods:
+  bool CreateUDPSocketAndListen(
+      const quic::QuicSocketAddress& address) override;
+  void HandleEventsForever() override;
+
+  // Start listening on the specified address. Returns true on success.
+  bool Listen(const IPEndPoint& address);
 
   // Server deletion is imminent. Start cleaning up.
   void Shutdown();
@@ -101,11 +109,11 @@ class QuicSimpleServer {
 
   // Keeps track of whether a read is currently in flight, after which
   // OnReadComplete will be called.
-  bool read_pending_;
+  bool read_pending_ = false;
 
   // The number of iterations of the read loop that have completed synchronously
   // and without posting a new task to the message loop.
-  int synchronous_read_count_;
+  int synchronous_read_count_ = 0;
 
   // The target buffer of the current read.
   scoped_refptr<IOBufferWithSize> read_buffer_;
@@ -116,8 +124,6 @@ class QuicSimpleServer {
   quic::QuicSimpleServerBackend* quic_simple_server_backend_;
 
   base::WeakPtrFactory<QuicSimpleServer> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(QuicSimpleServer);
 };
 
 }  // namespace net

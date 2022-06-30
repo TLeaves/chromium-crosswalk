@@ -5,17 +5,18 @@
 #include "third_party/blink/renderer/platform/fonts/font.h"
 
 #include "cc/paint/paint_flags.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
+#include "third_party/blink/renderer/platform/testing/font_test_base.h"
 #include "third_party/blink/renderer/platform/testing/font_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/text/tab_size.h"
 #include "third_party/blink/renderer/platform/text/text_run.h"
 
 using blink::test::CreateTestFont;
 
 namespace blink {
 
-class FontTest : public ::testing::Test {
+class FontTest : public FontTestBase {
  public:
   Vector<int> GetExpandedRange(const String& text, bool ltr, int from, int to) {
     FontDescription::VariantLigatures ligatures(
@@ -34,6 +35,35 @@ class FontTest : public ::testing::Test {
     return Vector<int>({from, to});
   }
 };
+
+TEST_F(FontTest, IdeographicFullWidthAhem) {
+  Font font =
+      CreateTestFont("Ahem", test::PlatformTestDataPath("Ahem.woff"), 16);
+  const SimpleFontData* font_data = font.PrimaryFont();
+  ASSERT_TRUE(font_data);
+  EXPECT_FALSE(font_data->GetFontMetrics().IdeographicFullWidth().has_value());
+}
+
+TEST_F(FontTest, IdeographicFullWidthCJKFull) {
+  Font font = CreateTestFont(
+      "M PLUS 1p",
+      blink::test::BlinkWebTestsFontsTestDataPath("mplus-1p-regular.woff"), 16);
+  const SimpleFontData* font_data = font.PrimaryFont();
+  ASSERT_TRUE(font_data);
+  EXPECT_TRUE(font_data->GetFontMetrics().IdeographicFullWidth().has_value());
+  EXPECT_EQ(*font_data->GetFontMetrics().IdeographicFullWidth(), 16);
+}
+
+TEST_F(FontTest, IdeographicFullWidthCJKNarrow) {
+  Font font = CreateTestFont("CSSHWOrientationTest",
+                             blink::test::BlinkWebTestsFontsTestDataPath(
+                                 "adobe-fonts/CSSHWOrientationTest.otf"),
+                             16);
+  const SimpleFontData* font_data = font.PrimaryFont();
+  ASSERT_TRUE(font_data);
+  EXPECT_TRUE(font_data->GetFontMetrics().IdeographicFullWidth().has_value());
+  EXPECT_EQ(*font_data->GetFontMetrics().IdeographicFullWidth(), 8);
+}
 
 TEST_F(FontTest, TextIntercepts) {
   Font font =
@@ -84,6 +114,14 @@ TEST_F(FontTest, ExpandRange) {
   EXPECT_EQ(GetExpandedRange("tneiciffe", false, 4, 6), Vector<int>({4, 8}));
   EXPECT_EQ(GetExpandedRange("tneiciffe", false, 6, 7), Vector<int>({5, 8}));
   EXPECT_EQ(GetExpandedRange("tneiciffe", false, 0, 9), Vector<int>({0, 9}));
+}
+
+TEST_F(FontTest, TabWidthZero) {
+  Font font =
+      CreateTestFont("Ahem", test::PlatformTestDataPath("Ahem.woff"), 0);
+  TabSize tab_size(8);
+  EXPECT_EQ(font.TabWidth(tab_size, .0f), .0f);
+  EXPECT_EQ(font.TabWidth(tab_size, LayoutUnit()), LayoutUnit());
 }
 
 }  // namespace blink

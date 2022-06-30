@@ -9,9 +9,9 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/logging.h"
 #include "remoting/protocol/network_settings.h"
 #include "remoting/protocol/transport_context.h"
+#include "third_party/abseil-cpp/absl/strings/string_view.h"
 
 namespace remoting {
 namespace protocol {
@@ -57,8 +57,19 @@ cricket::PortAllocatorSession* PortAllocator::CreateSessionInternal(
     int component,
     const std::string& ice_username_fragment,
     const std::string& ice_password) {
-  return new PortAllocatorSession(this, content_name, component,
-                                  ice_username_fragment, ice_password);
+  return CreateSessionInternal(absl::string_view(content_name), component,
+                               absl::string_view(ice_username_fragment),
+                               absl::string_view(ice_password));
+}
+
+cricket::PortAllocatorSession* PortAllocator::CreateSessionInternal(
+    absl::string_view content_name,
+    int component,
+    absl::string_view ice_username_fragment,
+    absl::string_view ice_password) {
+  return new PortAllocatorSession(this, std::string(content_name), component,
+                                  std::string(ice_username_fragment),
+                                  std::string(ice_password));
 }
 
 PortAllocatorSession::PortAllocatorSession(PortAllocator* allocator,
@@ -71,13 +82,12 @@ PortAllocatorSession::PortAllocatorSession(PortAllocator* allocator,
                                 component,
                                 ice_ufrag,
                                 ice_pwd),
-      transport_context_(allocator->transport_context()),
-      weak_factory_(this) {}
+      transport_context_(allocator->transport_context()) {}
 
 PortAllocatorSession::~PortAllocatorSession() = default;
 
 void PortAllocatorSession::GetPortConfigurations() {
-  transport_context_->GetIceConfig(base::Bind(
+  transport_context_->GetIceConfig(base::BindOnce(
       &PortAllocatorSession::OnIceConfig, weak_factory_.GetWeakPtr()));
 }
 

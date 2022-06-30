@@ -9,9 +9,9 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/observer_list.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
-#include "base/task/post_task.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
 
@@ -28,11 +28,7 @@ class PollingProxyConfigService::Core
        const NetworkTrafficAnnotationTag& traffic_annotation)
       : get_config_func_(get_config_func),
         poll_interval_(poll_interval),
-        traffic_annotation_(traffic_annotation),
-        have_initialized_origin_runner_(false),
-        has_config_(false),
-        poll_task_outstanding_(false),
-        poll_task_queued_(false) {}
+        traffic_annotation_(traffic_annotation) {}
 
   // Called when the parent PollingProxyConfigService is destroyed
   // (observers should not be called past this point).
@@ -93,7 +89,7 @@ class PollingProxyConfigService::Core
     last_poll_time_ = base::TimeTicks::Now();
     poll_task_outstanding_ = true;
     poll_task_queued_ = false;
-    base::PostTaskWithTraits(
+    base::ThreadPool::PostTask(
         FROM_HERE,
         {base::MayBlock(), base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
         base::BindOnce(&Core::PollAsync, this, get_config_func_));
@@ -159,10 +155,10 @@ class PollingProxyConfigService::Core
   base::Lock lock_;
   scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
 
-  bool have_initialized_origin_runner_;
-  bool has_config_;
-  bool poll_task_outstanding_;
-  bool poll_task_queued_;
+  bool have_initialized_origin_runner_ = false;
+  bool has_config_ = false;
+  bool poll_task_outstanding_ = false;
+  bool poll_task_queued_ = false;
 };
 
 void PollingProxyConfigService::AddObserver(Observer* observer) {

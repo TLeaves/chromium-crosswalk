@@ -6,12 +6,12 @@
 
 #include <utility>
 
+#include "base/bind.h"
+#include "base/check.h"
 #include "base/critical_closure.h"
 #include "base/feature_list.h"
-#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/task_features.h"
-#include "base/task/thread_pool/thread_pool_clock.h"
 #include "base/time/time.h"
 
 namespace base {
@@ -38,16 +38,20 @@ void Sequence::Transaction::PushTask(Task task) {
   // Use CHECK instead of DCHECK to crash earlier. See http://crbug.com/711167
   // for details.
   CHECK(task.task);
-  DCHECK(task.queue_time.is_null());
+  DCHECK(!task.queue_time.is_null());
 
   bool should_be_queued = WillPushTask();
-  task.queue_time = ThreadPoolClock::Now();
-
   task.task = sequence()->traits_.shutdown_behavior() ==
                       TaskShutdownBehavior::BLOCK_SHUTDOWN
-                  ? MakeCriticalClosure(std::move(task.task))
+                  ? MakeCriticalClosure(
+                        task.posted_from, std::move(task.task),
+                        /*is_immediate=*/task.delayed_run_time.is_null())
                   : std::move(task.task);
 
+  if (sequence()->queue_.empty()) {
+    sequence()->ready_time_.store(task.GetDesiredExecutionTime(),
+                                  std::memory_order_relaxed);
+  }
   sequence()->queue_.push(std::move(task));
 
   // AddRef() matched by manual Release() when the sequence has no more tasks
@@ -56,9 +60,9 @@ void Sequence::Transaction::PushTask(Task task) {
     sequence()->task_runner()->AddRef();
 }
 
-TaskSource::RunIntent Sequence::WillRunTask() {
+TaskSource::RunStatus Sequence::WillRunTask() {
   // There should never be a second call to WillRunTask() before DidProcessTask
-  // since the RunIntent is always marked a saturated.
+  // since the RunStatus is always marked a saturated.
   DCHECK(!has_worker_);
 
   // It's ok to access |has_worker_| outside of a Transaction since
@@ -66,28 +70,35 @@ TaskSource::RunIntent Sequence::WillRunTask() {
   // TakeTask() and DidProcessTask() and only called if |!queue_.empty()|, which
   // means it won't race with WillPushTask()/PushTask().
   has_worker_ = true;
-  return MakeRunIntent(Saturated::kYes);
+  return RunStatus::kAllowedSaturated;
 }
 
 size_t Sequence::GetRemainingConcurrency() const {
   return 1;
 }
 
-Optional<Task> Sequence::TakeTask() {
+Task Sequence::TakeTask(TaskSource::Transaction* transaction) {
+  CheckedAutoLockMaybe auto_lock(transaction ? nullptr : &lock_);
+
   DCHECK(has_worker_);
   DCHECK(!queue_.empty());
   DCHECK(queue_.front().task);
 
   auto next_task = std::move(queue_.front());
   queue_.pop();
-  return std::move(next_task);
+  if (!queue_.empty()) {
+    ready_time_.store(queue_.front().queue_time, std::memory_order_relaxed);
+  }
+  return next_task;
 }
 
-bool Sequence::DidProcessTask(RunResult run_result) {
+bool Sequence::DidProcessTask(TaskSource::Transaction* transaction) {
+  CheckedAutoLockMaybe auto_lock(transaction ? nullptr : &lock_);
   // There should never be a call to DidProcessTask without an associated
   // WillRunTask().
   DCHECK(has_worker_);
   has_worker_ = false;
+  // See comment on TaskSource::task_runner_ for lifetime management details.
   if (queue_.empty()) {
     ReleaseTaskRunner();
     return false;
@@ -98,20 +109,25 @@ bool Sequence::DidProcessTask(RunResult run_result) {
   return true;
 }
 
-SequenceSortKey Sequence::GetSortKey() const {
-  DCHECK(!queue_.empty());
-  return SequenceSortKey(traits_.priority(), queue_.front().queue_time);
+TaskSourceSortKey Sequence::GetSortKey(
+    bool /* disable_fair_scheduling */) const {
+  return TaskSourceSortKey(priority_racy(),
+                           ready_time_.load(std::memory_order_relaxed));
 }
 
-void Sequence::Clear() {
-  bool queue_was_empty = queue_.empty();
-  while (!queue_.empty())
-    queue_.pop();
-  if (!queue_was_empty) {
-    // No member access after this point, ReleaseTaskRunner() might have deleted
-    // |this|.
+Task Sequence::Clear(TaskSource::Transaction* transaction) {
+  CheckedAutoLockMaybe auto_lock(transaction ? nullptr : &lock_);
+  // See comment on TaskSource::task_runner_ for lifetime management details.
+  if (!queue_.empty() && !has_worker_)
     ReleaseTaskRunner();
-  }
+  return Task(FROM_HERE,
+              base::BindOnce(
+                  [](base::queue<Task> queue) {
+                    while (!queue.empty())
+                      queue.pop();
+                  },
+                  std::move(queue_)),
+              TimeTicks(), TimeDelta());
 }
 
 void Sequence::ReleaseTaskRunner() {

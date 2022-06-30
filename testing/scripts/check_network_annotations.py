@@ -12,8 +12,10 @@ import json
 import os
 import sys
 
-
-import common
+# Add src/testing/ into sys.path for importing common without pylint errors.
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+from scripts import common
 
 
 def main_run(args):
@@ -26,16 +28,15 @@ def main_run(args):
   ]
   rc = common.run_command(command_line)
 
-  json.dump({
-      'valid': True,
-      'failures': ['Please refer to stdout for errors.'] if rc else [],
-  }, args.output)
+  failures = ['Please refer to stdout for errors.'] if rc else []
+  common.record_local_script_results(
+      'check_network_annotations', args.output, failures, True)
 
   return rc
 
 
 def main_compile_targets(args):
-  json.dump(['shipped_binaries'], args.output)
+  json.dump(['traffic_annotation_auditor_dependencies'], args.output)
 
 
 if __name__ == '__main__':

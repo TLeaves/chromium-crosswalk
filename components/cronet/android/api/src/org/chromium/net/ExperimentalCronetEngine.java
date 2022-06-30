@@ -4,7 +4,10 @@
 package org.chromium.net;
 
 import android.content.Context;
-import android.support.annotation.VisibleForTesting;
+import android.net.Network;
+
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 
 import java.io.IOException;
 import java.net.Proxy;
@@ -259,7 +262,7 @@ public abstract class ExperimentalCronetEngine extends CronetEngine {
      * Once logging has stopped {@link #stopNetLog}, the data will be written
      * to netlog.json in {@code dirPath}. If logging is interrupted, you can
      * stitch the files found in .inprogress subdirectory manually using:
-     * https://chromium.googlesource.com/chromium/src/+/master/net/tools/stitch_net_log_files.py.
+     * https://chromium.googlesource.com/chromium/src/+/main/net/tools/stitch_net_log_files.py.
      * The log can be viewed using a Chrome browser navigated to chrome://net-internals/#import.
      * @param dirPath the directory where the netlog.json file will be created. dirPath must
      *            already exist. NetLog files must not exist in the directory. If actively
@@ -409,4 +412,14 @@ public abstract class ExperimentalCronetEngine extends CronetEngine {
     public int getDownstreamThroughputKbps() {
         return CONNECTION_METRIC_UNKNOWN;
     }
+
+    /**
+     * Binds the engine to the specified network. All requests created through this engine will use
+     * this network. If this network disconnects all requests will fail, the exact error will
+     * depend on the stage of request processing when the network disconnects.
+     * Only available starting from Android Marshmallow.
+     *
+     * @param network the network to bind the engine to. Specify {@code null} to unbind.
+     */
+    public void bindToNetwork(@Nullable Network network) {}
 }

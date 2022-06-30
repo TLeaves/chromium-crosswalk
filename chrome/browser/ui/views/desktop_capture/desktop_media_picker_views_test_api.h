@@ -5,9 +5,16 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_DESKTOP_CAPTURE_DESKTOP_MEDIA_PICKER_VIEWS_TEST_API_H_
 #define CHROME_BROWSER_UI_VIEWS_DESKTOP_CAPTURE_DESKTOP_MEDIA_PICKER_VIEWS_TEST_API_H_
 
+#include "base/memory/raw_ptr.h"
+#include "chrome/browser/media/webrtc/desktop_media_list.h"
 #include "content/public/browser/desktop_media_id.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class DesktopMediaPickerViews;
+
+namespace ui {
+class KeyEvent;
+}  // namespace ui
 
 namespace views {
 class Checkbox;
@@ -26,15 +33,18 @@ class DesktopMediaPickerViewsTestApi {
 
   void set_picker(DesktopMediaPickerViews* picker) { picker_ = picker; }
 
+  bool AudioSupported(DesktopMediaList::Type type) const;
+
   void FocusAudioCheckbox();
   void PressMouseOnSourceAtIndex(size_t index, bool double_click = false);
-  void SelectTabForSourceType(content::DesktopMediaID::Type source_type);
+  void PressKeyOnSourceAtIndex(size_t index, const ui::KeyEvent& event);
+  void SelectTabForSourceType(DesktopMediaList::Type source_type);
   views::Checkbox* GetAudioShareCheckbox();
 
   bool HasSourceAtIndex(size_t index) const;
-  void FocusSourceAtIndex(size_t index);
+  void FocusSourceAtIndex(size_t index, bool select = true);
   void DoubleTapSourceAtIndex(size_t index);
-  base::Optional<int> GetSelectedSourceId() const;
+  absl::optional<int> GetSelectedSourceId() const;
   views::View* GetSelectedListView();
 
  private:
@@ -43,7 +53,7 @@ class DesktopMediaPickerViewsTestApi {
   const views::TableView* GetTableView() const;
   views::TableView* GetTableView();
 
-  DesktopMediaPickerViews* picker_;
+  raw_ptr<DesktopMediaPickerViews> picker_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_DESKTOP_CAPTURE_DESKTOP_MEDIA_PICKER_VIEWS_TEST_API_H_

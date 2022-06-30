@@ -4,7 +4,9 @@
 
 #include "media/cdm/cdm_context_ref_impl.h"
 
-#include "base/logging.h"
+#include <ostream>
+
+#include "base/check_op.h"
 #include "media/base/content_decryption_module.h"
 
 namespace media {

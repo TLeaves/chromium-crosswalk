@@ -31,7 +31,7 @@ enum EmeCodec : uint32_t {
   EME_CODEC_AAC = 1 << 4,
   EME_CODEC_AVC1 = 1 << 5,
   EME_CODEC_VP9_PROFILE2 = 1 << 6,  // VP9 profiles 2
-  EME_CODEC_HEVC = 1 << 7,
+  EME_CODEC_HEVC_PROFILE_MAIN = 1 << 7,
   EME_CODEC_DOLBY_VISION_AVC = 1 << 8,
   EME_CODEC_DOLBY_VISION_HEVC = 1 << 9,
   EME_CODEC_AC3 = 1 << 10,
@@ -39,6 +39,9 @@ enum EmeCodec : uint32_t {
   EME_CODEC_MPEG_H_AUDIO = 1 << 12,
   EME_CODEC_FLAC = 1 << 13,
   EME_CODEC_AV1 = 1 << 14,
+  EME_CODEC_HEVC_PROFILE_MAIN10 = 1 << 15,
+  EME_CODEC_DTS = 1 << 16,
+  EME_CODEC_DTSXP2 = 1 << 17,
 };
 
 // *_ALL values should only be used for masking, do not use them to specify
@@ -49,15 +52,18 @@ using SupportedCodecs = uint32_t;
 namespace {
 
 constexpr SupportedCodecs GetMp4AudioCodecs() {
-  SupportedCodecs codecs = EME_CODEC_FLAC;
+  SupportedCodecs codecs = EME_CODEC_OPUS | EME_CODEC_FLAC;
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
   codecs |= EME_CODEC_AAC;
-#if BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
+#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
   codecs |= EME_CODEC_AC3 | EME_CODEC_EAC3;
-#endif  // BUILDFLAG(ENABLE_AC3_EAC3_AUDIO_DEMUXING)
-#if BUILDFLAG(ENABLE_MPEG_H_AUDIO_DEMUXING)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+#if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+  codecs |= EME_CODEC_DTS | EME_CODEC_DTSXP2;
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
+#if BUILDFLAG(ENABLE_PLATFORM_MPEG_H_AUDIO)
   codecs |= EME_CODEC_MPEG_H_AUDIO;
-#endif  // BUILDFLAG(ENABLE_MPEG_H_AUDIO_DEMUXING)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_MPEG_H_AUDIO)
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
   return codecs;
 }
@@ -69,15 +75,16 @@ constexpr SupportedCodecs GetMp4VideoCodecs() {
   codecs |= EME_CODEC_AV1;
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
   codecs |= EME_CODEC_AVC1;
-#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
-  codecs |= EME_CODEC_HEVC;
-#endif  // BUILDFLAG(ENABLE_HEVC_DEMUXING)
-#if BUILDFLAG(ENABLE_DOLBY_VISION_DEMUXING)
+#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
+  codecs |= EME_CODEC_HEVC_PROFILE_MAIN;
+  codecs |= EME_CODEC_HEVC_PROFILE_MAIN10;
+#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
+#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
   codecs |= EME_CODEC_DOLBY_VISION_AVC;
-#if BUILDFLAG(ENABLE_HEVC_DEMUXING)
+#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
   codecs |= EME_CODEC_DOLBY_VISION_HEVC;
-#endif  // BUILDFLAG(ENABLE_HEVC_DEMUXING)
-#endif  // BUILDFLAG(ENABLE_DOLBY_VISION_DEMUXING)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
   return codecs;
 }
@@ -118,17 +125,6 @@ static_assert(
     "EME_CODEC_MP2T_VIDEO_ALL should be a subset of EME_CODEC_MP4_ALL");
 #endif  // BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
-
-enum class EmeSessionTypeSupport {
-  // Invalid default value.
-  INVALID,
-  // The session type is not supported.
-  NOT_SUPPORTED,
-  // The session type is supported if a distinctive identifier is available.
-  SUPPORTED_WITH_IDENTIFIER,
-  // The session type is always supported.
-  SUPPORTED,
-};
 
 // Used to declare support for distinctive identifier and persistent state.
 // These are purposefully limited to not allow one to require the other, so that
@@ -185,14 +181,19 @@ enum class EmeConfigRule {
   IDENTIFIER_AND_PERSISTENCE_REQUIRED,
 
   // The configuration option prevents use of hardware-secure codecs.
-  // This rule only has meaning on platforms that distinguish hardware-secure
-  // codecs (i.e. Android and Windows).
   HW_SECURE_CODECS_NOT_ALLOWED,
 
   // The configuration option is supported if hardware-secure codecs are used.
-  // This rule only has meaning on platforms that distinguish hardware-secure
-  // codecs (i.e. Android and Windows).
   HW_SECURE_CODECS_REQUIRED,
+
+  // The configuration option is supported on platforms where hardware-secure
+  // codecs are used and an identifier is also required (i.e. ChromeOS).
+  IDENTIFIER_AND_HW_SECURE_CODECS_REQUIRED,
+
+  // The configuration option is supported on platforms where hardware-secure
+  // codecs are used and both identifier and persistent state are required (i.e.
+  // Windows).
+  IDENTIFIER_PERSISTENCE_AND_HW_SECURE_CODECS_REQUIRED,
 
   // The configuration option is supported without conditions.
   SUPPORTED,

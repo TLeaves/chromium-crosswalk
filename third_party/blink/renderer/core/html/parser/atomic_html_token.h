@@ -28,14 +28,25 @@
 
 #include <memory>
 
-#include "base/macros.h"
+#include "base/check_op.h"
+#include "base/notreached.h"
+#include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
-#include "third_party/blink/renderer/core/html/parser/compact_html_token.h"
 #include "third_party/blink/renderer/core/html/parser/html_token.h"
 #include "third_party/blink/renderer/core/html_element_lookup_trie.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+#include "third_party/blink/renderer/platform/wtf/hash_set.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
+
+// TODO(https://crbug.com/1338583): enable on android.
+#if !BUILDFLAG(IS_ANDROID)
+#include "third_party/blink/renderer/core/html_element_attribute_name_lookup_trie.h"  // nogncheck
+#endif
 
 namespace blink {
+
+// Controls whether attribute name lookup uses LookupHTMLAttributeName().
+CORE_EXPORT extern bool g_use_html_attribute_name_lookup;
 
 class CORE_EXPORT AtomicHTMLToken {
   STACK_ALLOCATED();
@@ -108,7 +119,7 @@ class CORE_EXPORT AtomicHTMLToken {
         NOTREACHED();
         break;
       case HTMLToken::DOCTYPE:
-        name_ = AtomicString(token.GetName());
+        name_ = token.GetName().AsAtomicString();
         doctype_data_ = token.ReleaseDoctypeData();
         break;
       case HTMLToken::kEndOfFile:
@@ -120,59 +131,16 @@ class CORE_EXPORT AtomicHTMLToken {
                 lookupHTMLTag(token.GetName().data(), token.GetName().size()))
           name_ = tag_name;
         else
-          name_ = AtomicString(token.GetName());
+          name_ = token.GetName().AsAtomicString();
         InitializeAttributes(token.Attributes());
         break;
       }
       case HTMLToken::kCharacter:
       case HTMLToken::kComment:
         if (token.IsAll8BitData())
-          data_ = String::Make8BitFrom16BitSource(token.Data());
+          data_ = token.Data().AsString8();
         else
-          data_ = String(token.Data());
-        break;
-    }
-  }
-
-  explicit AtomicHTMLToken(const CompactHTMLToken& token)
-      : type_(token.GetType()) {
-    switch (type_) {
-      case HTMLToken::kUninitialized:
-        NOTREACHED();
-        break;
-      case HTMLToken::DOCTYPE:
-        name_ = AtomicString(token.Data());
-        doctype_data_ = std::make_unique<DoctypeData>();
-        doctype_data_->has_public_identifier_ = true;
-        token.PublicIdentifier().AppendTo(doctype_data_->public_identifier_);
-        doctype_data_->has_system_identifier_ = true;
-        token.SystemIdentifier().AppendTo(doctype_data_->system_identifier_);
-        doctype_data_->force_quirks_ = token.DoctypeForcesQuirks();
-        break;
-      case HTMLToken::kEndOfFile:
-        break;
-      case HTMLToken::kStartTag:
-        attributes_.ReserveInitialCapacity(token.Attributes().size());
-        for (const CompactHTMLToken::Attribute& attribute :
-             token.Attributes()) {
-          QualifiedName name(g_null_atom, AtomicString(attribute.GetName()),
-                             g_null_atom);
-          // FIXME: This is N^2 for the number of attributes.
-          if (!FindAttributeInVector(attributes_, name)) {
-            attributes_.push_back(
-                Attribute(name, AtomicString(attribute.Value())));
-          } else {
-            duplicate_attribute_ = true;
-          }
-        }
-        FALLTHROUGH;
-      case HTMLToken::kEndTag:
-        self_closing_ = token.SelfClosing();
-        name_ = AtomicString(token.Data());
-        break;
-      case HTMLToken::kCharacter:
-      case HTMLToken::kComment:
-        data_ = token.Data();
+          data_ = token.Data().AsString();
         break;
     }
   }
@@ -188,6 +156,9 @@ class CORE_EXPORT AtomicHTMLToken {
     DCHECK(UsesName());
   }
 
+  AtomicHTMLToken(const AtomicHTMLToken&) = delete;
+  AtomicHTMLToken& operator=(const AtomicHTMLToken&) = delete;
+
 #ifndef NDEBUG
   void Show() const;
 #endif
@@ -196,7 +167,6 @@ class CORE_EXPORT AtomicHTMLToken {
   HTMLToken::TokenType type_;
 
   void InitializeAttributes(const HTMLToken::AttributeList& attributes);
-  QualifiedName NameForAttribute(const HTMLToken::Attribute&) const;
 
   bool UsesName() const;
 
@@ -217,8 +187,6 @@ class CORE_EXPORT AtomicHTMLToken {
   bool duplicate_attribute_ = false;
 
   Vector<Attribute> attributes_;
-
-  DISALLOW_COPY_AND_ASSIGN(AtomicHTMLToken);
 };
 
 inline void AtomicHTMLToken::InitializeAttributes(
@@ -227,32 +195,50 @@ inline void AtomicHTMLToken::InitializeAttributes(
   if (!size)
     return;
 
-  attributes_.clear();
+  // Track which attributes have already been inserted to avoid N^2
+  // behavior with repeated linear searches when populating `attributes_`.
+  HashSet<AtomicString> added_attributes;
+  added_attributes.ReserveCapacityForSize(size);
+
+  // This is only called once, so `attributes_` should be empty.
+  DCHECK(attributes_.IsEmpty());
   attributes_.ReserveInitialCapacity(size);
   for (const auto& attribute : attributes) {
-    if (attribute.NameAsVector().IsEmpty())
+    if (attribute.NameIsEmpty())
       continue;
 
+#if DCHECK_IS_ON()
     attribute.NameRange().CheckValid();
     attribute.ValueRange().CheckValid();
+#endif
 
-    AtomicString value(attribute.ValueAsVector());
-    // attribute.ValueAsVector.data() is null for attributes with no values, but
+    QualifiedName name = g_null_name;
+#if !BUILDFLAG(IS_ANDROID)
+    if (g_use_html_attribute_name_lookup) {
+      name = LookupHTMLAttributeName(attribute.NameBuffer().data(),
+                                     attribute.NameBuffer().size());
+    }
+#endif
+    if (name == g_null_name) {
+      name = QualifiedName(g_null_atom, attribute.GetName(), g_null_atom);
+    }
+
+    if (!added_attributes.insert(name.LocalName()).is_new_entry) {
+      duplicate_attribute_ = true;
+      continue;
+    }
+
+    // The string pointer in |value| is null for attributes with no values, but
     // the null atom is used to represent absence of attributes; attributes with
     // no values have the value set to an empty atom instead.
-    if (value == g_null_atom) {
+    AtomicString value(attribute.GetValue());
+    if (value.IsNull()) {
       value = g_empty_atom;
     }
-    const QualifiedName& name = NameForAttribute(attribute);
-    // FIXME: This is N^2 for the number of attributes.
-    if (!FindAttributeInVector(attributes_, name)) {
-      attributes_.push_back(Attribute(name, value));
-    } else {
-      duplicate_attribute_ = true;
-    }
+    attributes_.UncheckedAppend(Attribute(std::move(name), std::move(value)));
   }
 }
 
 }  // namespace blink
 
-#endif
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_HTML_PARSER_ATOMIC_HTML_TOKEN_H_

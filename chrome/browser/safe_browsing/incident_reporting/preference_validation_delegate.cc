@@ -11,7 +11,7 @@
 #include "base/json/json_writer.h"
 #include "chrome/browser/safe_browsing/incident_reporting/incident_receiver.h"
 #include "chrome/browser/safe_browsing/incident_reporting/tracked_preference_incident.h"
-#include "components/safe_browsing/proto/csd.pb.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "services/preferences/public/mojom/tracked_preference_validation_delegate.mojom.h"
 
 namespace safe_browsing {
@@ -61,7 +61,7 @@ PreferenceValidationDelegate::~PreferenceValidationDelegate() {
 
 void PreferenceValidationDelegate::OnAtomicPreferenceValidation(
     const std::string& pref_path,
-    base::Optional<base::Value> value,
+    absl::optional<base::Value> value,
     ValueState value_state,
     ValueState external_validation_value_state,
     bool is_personal) {
@@ -71,9 +71,12 @@ void PreferenceValidationDelegate::OnAtomicPreferenceValidation(
     std::unique_ptr<TPIncident> incident(
         new ClientIncidentReport_IncidentData_TrackedPreferenceIncident());
     incident->set_path(pref_path);
-    if (!value || (!value->GetAsString(incident->mutable_atomic_value()) &&
-                   !base::JSONWriter::Write(
-                       std::move(*value), incident->mutable_atomic_value()))) {
+    if (!value) {
+      incident->clear_atomic_value();
+    } else if (value->is_string()) {
+      *incident->mutable_atomic_value() = value->GetString();
+    } else if (!base::JSONWriter::Write(std::move(*value),
+                                        incident->mutable_atomic_value())) {
       incident->clear_atomic_value();
     }
     incident->set_value_state(proto_value_state);

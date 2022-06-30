@@ -5,6 +5,7 @@
 #include "chrome/browser/android/contextualsearch/contextual_search_delegate.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "base/base64.h"
@@ -12,17 +13,18 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/json/json_string_value_serializer.h"
+#include "base/json/json_writer.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/android/contextualsearch/contextual_search_field_trial.h"
 #include "chrome/browser/android/contextualsearch/resolved_search_term.h"
 #include "chrome/browser/android/proto/client_discourse_context.pb.h"
+#include "chrome/browser/flags/android/chrome_feature_list.h"
 #include "chrome/browser/language/language_model_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/translate/translate_service.h"
 #include "components/contextual_search/core/browser/public.h"
 #include "components/language/core/browser/language_model.h"
@@ -36,10 +38,11 @@
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
-#include "net/base/escape.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
+#include "third_party/blink/public/mojom/frame/frame.mojom.h"
 #include "url/gurl.h"
 
 using content::RenderFrameHost;
@@ -55,7 +58,7 @@ const char kContextualSearchResponseLanguageParam[] = "lang";
 const char kContextualSearchResponseMidParam[] = "mid";
 const char kContextualSearchResponseResolvedTermParam[] = "resolved_term";
 const char kContextualSearchPreventPreload[] = "prevent_preload";
-const char kContextualSearchMentions[] = "mentions";
+const char kContextualSearchMentionsKey[] = "mentions";
 const char kContextualSearchCaption[] = "caption";
 const char kContextualSearchThumbnail[] = "thumbnail";
 const char kContextualSearchAction[] = "action";
@@ -63,6 +66,7 @@ const char kContextualSearchCategory[] = "category";
 const char kContextualSearchCardTag[] = "card_tag";
 const char kContextualSearchSearchUrlFull[] = "search_url_full";
 const char kContextualSearchSearchUrlPreload[] = "search_url_preload";
+const char kRelatedSearchesSuggestions[] = "suggestions";
 
 const char kActionCategoryAddress[] = "ADDRESS";
 const char kActionCategoryEmail[] = "EMAIL";
@@ -72,12 +76,13 @@ const char kActionCategoryWebsite[] = "WEBSITE";
 
 const char kContextualSearchServerEndpoint[] = "_/contextualsearch?";
 const int kContextualSearchRequestVersion = 2;
-const int kContextualSearchMaxSelection = 100;
-const char kXssiEscape[] = ")]}'\n";
-const char kDiscourseContextHeaderPrefix[] = "X-Additional-Discourse-Context: ";
-const char kDoPreventPreloadValue[] = "1";
+// Deprecated: kContextualSearchSingleRequest = 3;
+const int kRelatedSearchesVersion = 4;
 
-const int kResponseCodeUninitialized = -1;
+const int kContextualSearchMaxSelection = 1000;
+const char kXssiEscape[] = ")]}'\n";
+const char kDiscourseContextHeaderName[] = "X-Additional-Discourse-Context";
+const char kDoPreventPreloadValue[] = "1";
 
 }  // namespace
 
@@ -85,16 +90,13 @@ const int kResponseCodeUninitialized = -1;
 ContextualSearchDelegate::ContextualSearchDelegate(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     TemplateURLService* template_url_service,
-    const ContextualSearchDelegate::SearchTermResolutionCallback&
-        search_term_callback,
-    const ContextualSearchDelegate::SurroundingTextCallback&
-        surrounding_text_callback)
+    ContextualSearchDelegate::SearchTermResolutionCallback search_term_callback,
+    ContextualSearchDelegate::SurroundingTextCallback surrounding_text_callback)
     : url_loader_factory_(std::move(url_loader_factory)),
       template_url_service_(template_url_service),
-      search_term_callback_(search_term_callback),
-      surrounding_text_callback_(surrounding_text_callback) {
-  field_trial_.reset(new ContextualSearchFieldTrial());
-}
+      field_trial_(std::make_unique<ContextualSearchFieldTrial>()),
+      search_term_callback_(std::move(search_term_callback)),
+      surrounding_text_callback_(std::move(surrounding_text_callback)) {}
 
 ContextualSearchDelegate::~ContextualSearchDelegate() {
 }
@@ -103,9 +105,10 @@ void ContextualSearchDelegate::GatherAndSaveSurroundingText(
     base::WeakPtr<ContextualSearchContext> contextual_search_context,
     content::WebContents* web_contents) {
   DCHECK(web_contents);
-  RenderFrameHost::TextSurroundingSelectionCallback callback = base::BindOnce(
-      &ContextualSearchDelegate::OnTextSurroundingSelectionAvailable,
-      AsWeakPtr());
+  blink::mojom::LocalFrame::GetTextSurroundingSelectionCallback callback =
+      base::BindOnce(
+          &ContextualSearchDelegate::OnTextSurroundingSelectionAvailable,
+          AsWeakPtr());
   context_ = contextual_search_context;
   if (context_ == nullptr)
     return;
@@ -119,13 +122,8 @@ void ContextualSearchDelegate::GatherAndSaveSurroundingText(
     focused_frame->RequestTextSurroundingSelection(std::move(callback),
                                                    surroundingTextSize);
   } else {
-    std::move(callback).Run(base::string16(), 0, 0);
+    std::move(callback).Run(std::u16string(), 0, 0);
   }
-}
-
-void ContextualSearchDelegate::SetActiveContext(
-    base::WeakPtr<ContextualSearchContext> contextual_search_context) {
-  context_ = contextual_search_context;
 }
 
 void ContextualSearchDelegate::StartSearchTermResolutionRequest(
@@ -143,12 +141,10 @@ void ContextualSearchDelegate::StartSearchTermResolutionRequest(
   url_loader_.reset();
 
   // Decide if the URL should be sent with the context.
-  GURL page_url(web_contents->GetURL());
-  if (context_->CanSendBasePageUrl() &&
-      CanSendPageURL(page_url, ProfileManager::GetActiveUserProfile(),
-                     template_url_service_)) {
-    context_->SetBasePageUrl(page_url);
-  }
+  if (context_->CanSendBasePageUrl())
+    context_->SetBasePageUrl(web_contents->GetLastCommittedURL());
+
+  // Issue the resolve request.
   ResolveSearchTermFromContext();
 }
 
@@ -162,11 +158,41 @@ void ContextualSearchDelegate::ResolveSearchTermFromContext() {
 
   // Populates the discourse context and adds it to the HTTP header of the
   // search term resolution request.
-  resource_request->headers.AddHeadersFromString(
-      GetDiscourseContext(*context_));
+  resource_request->headers.CopyFrom(GetDiscourseContext(*context_));
 
   // Disable cookies for this request.
-  resource_request->allow_credentials = false;
+  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+
+  // Semantic details for this "Resolve" request:
+  net::NetworkTrafficAnnotationTag traffic_annotation =
+      net::DefineNetworkTrafficAnnotation("contextual_search_resolve",
+                                          R"(
+          semantics {
+            sender: "Contextual Search"
+            description:
+              "Chromium can determine the best search term to apply for any "
+               "section of plain text for almost any page.  This sends page "
+               "data to Google and the response identifies what to search for "
+               "plus additional actionable information."
+            trigger:
+              "Triggered by an unhandled tap or touch and hold gesture on "
+              "plain text on most pages."
+            data:
+              "The URL and some page content from the current tab."
+            destination: GOOGLE_OWNED_SERVICE
+          }
+          policy {
+            cookies_allowed: NO
+            setting:
+              "This feature can be disabled by turning off 'Touch to Search' in "
+              "Chrome for Android settings."
+            chrome_policy {
+              ContextualSearchEnabled {
+                  policy_options {mode: MANDATORY}
+                  ContextualSearchEnabled: false
+              }
+            }
+          })");
 
   // Add Chrome experiment state to the request headers.
   // Reset will delete any previous loader, and we won't get any callback.
@@ -175,7 +201,7 @@ void ContextualSearchDelegate::ResolveSearchTermFromContext() {
           std::move(resource_request),
           variations::InIncognito::kNo,  // Impossible to be incognito at this
                                          // point.
-          NO_TRAFFIC_ANNOTATION_YET);
+          traffic_annotation);
 
   url_loader_->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
       url_loader_factory_.get(),
@@ -188,13 +214,13 @@ void ContextualSearchDelegate::OnUrlLoadComplete(
   if (!context_)
     return;
 
-  int response_code = kResponseCodeUninitialized;
+  int response_code = ResolvedSearchTerm::kResponseCodeUninitialized;
   if (url_loader_->ResponseInfo() && url_loader_->ResponseInfo()->headers) {
     response_code = url_loader_->ResponseInfo()->headers->response_code();
   }
 
-  std::unique_ptr<ResolvedSearchTerm> resolved_search_term(
-      new ResolvedSearchTerm(response_code));
+  std::unique_ptr<ResolvedSearchTerm> resolved_search_term =
+      std::make_unique<ResolvedSearchTerm>(response_code);
   if (response_body && response_code == net::HTTP_OK) {
     resolved_search_term =
         GetResolvedSearchTermFromJson(response_code, *response_body);
@@ -217,20 +243,21 @@ ContextualSearchDelegate::GetResolvedSearchTermFromJson(
   int start_adjust = 0;
   int end_adjust = 0;
   std::string context_language;
-  std::string thumbnail_url = "";
-  std::string caption = "";
-  std::string quick_action_uri = "";
+  std::string thumbnail_url;
+  std::string caption;
+  std::string quick_action_uri;
   QuickActionCategory quick_action_category = QUICK_ACTION_CATEGORY_NONE;
-  int64_t logged_event_id = 0;
-  std::string search_url_full = "";
-  std::string search_url_preload = "";
+  std::string search_url_full;
+  std::string search_url_preload;
   int coca_card_tag = 0;
+  std::string related_searches_json;
 
   DecodeSearchTermFromJsonResponse(
       json_string, &search_term, &display_text, &alternate_term, &mid,
       &prevent_preload, &mention_start, &mention_end, &context_language,
       &thumbnail_url, &caption, &quick_action_uri, &quick_action_category,
-      &logged_event_id, &search_url_full, &search_url_preload, &coca_card_tag);
+      &search_url_full, &search_url_preload, &coca_card_tag,
+      &related_searches_json);
   if (mention_start != 0 || mention_end != 0) {
     // Sanity check that our selection is non-zero and it is less than
     // 100 characters as that would make contextual search bar hide.
@@ -247,13 +274,14 @@ ContextualSearchDelegate::GetResolvedSearchTermFromJson(
       end_adjust = mention_end - context_->GetEndOffset();
     }
   }
-  bool is_invalid = response_code == kResponseCodeUninitialized;
-  return std::unique_ptr<ResolvedSearchTerm>(new ResolvedSearchTerm(
+  bool is_invalid =
+      response_code == ResolvedSearchTerm::kResponseCodeUninitialized;
+  return std::make_unique<ResolvedSearchTerm>(
       is_invalid, response_code, search_term, display_text, alternate_term, mid,
       prevent_preload == kDoPreventPreloadValue, start_adjust, end_adjust,
       context_language, thumbnail_url, caption, quick_action_uri,
-      quick_action_category, logged_event_id, search_url_full,
-      search_url_preload, coca_card_tag));
+      quick_action_category, search_url_full, search_url_preload, coca_card_tag,
+      related_searches_json);
 }
 
 std::string ContextualSearchDelegate::BuildRequestUrl(
@@ -267,36 +295,39 @@ std::string ContextualSearchDelegate::BuildRequestUrl(
       template_url_service_->GetDefaultSearchProvider();
 
   TemplateURLRef::SearchTermsArgs search_terms_args =
-      TemplateURLRef::SearchTermsArgs(base::string16());
+      TemplateURLRef::SearchTermsArgs(std::u16string());
 
   // Set the Coca-integration version.
-  // This is based on our current active feature, or an override param from a
-  // field trial, possibly augmented by using simplified server logic.
+  // This is based on our current active feature.
   int contextual_cards_version =
-      contextual_search::kContextualCardsUrlActionsIntegration;
-  if (base::FeatureList::IsEnabled(
-                 chrome::android::kContextualSearchDefinitions)) {
-    contextual_cards_version =
         contextual_search::kContextualCardsDefinitionsIntegration;
+  if (base::FeatureList::IsEnabled(
+          chrome::android::kContextualSearchTranslations)) {
+    contextual_cards_version =
+        contextual_search::kContextualCardsTranslationsIntegration;
+  }
+  // Mixin the debug setting.
+  if (base::FeatureList::IsEnabled(chrome::android::kContextualSearchDebug)) {
+    contextual_cards_version +=
+        contextual_search::kContextualCardsServerDebugMixin;
   }
   // Let the field-trial override.
   if (field_trial_->GetContextualCardsVersion() != 0) {
     contextual_cards_version = field_trial_->GetContextualCardsVersion();
   }
-  // Add the simplified-server mixin, if enabled.
-  if (base::FeatureList::IsEnabled(
-          chrome::android::kContextualSearchSimplifiedServer) &&
-      contextual_cards_version <
-          contextual_search::kContextualCardsSimplifiedServerMixin) {
-    contextual_cards_version =
-        contextual_cards_version +
-        contextual_search::kContextualCardsSimplifiedServerMixin;
-  }
+
+  int mainFunctionVersion = kContextualSearchRequestVersion;
+  if (context_->GetRelatedSearches())
+    mainFunctionVersion = kRelatedSearchesVersion;
 
   TemplateURLRef::SearchTermsArgs::ContextualSearchParams params(
-      kContextualSearchRequestVersion, contextual_cards_version,
-      context->GetHomeCountry(), context->GetPreviousEventId(),
-      context->GetPreviousEventResults());
+      mainFunctionVersion, contextual_cards_version, context->GetHomeCountry(),
+      context->GetPreviousEventId(), context->GetPreviousEventResults(),
+      context->GetExactResolve(),
+      context->GetTranslationLanguages().detected_language,
+      context->GetTranslationLanguages().target_language,
+      context->GetTranslationLanguages().fluent_languages,
+      context->GetRelatedSearchesStamp());
 
   search_terms_args.contextual_search_params = params;
 
@@ -321,7 +352,7 @@ std::string ContextualSearchDelegate::BuildRequestUrl(
 }
 
 void ContextualSearchDelegate::OnTextSurroundingSelectionAvailable(
-    const base::string16& surrounding_text,
+    const std::u16string& surrounding_text,
     uint32_t start_offset,
     uint32_t end_offset) {
   if (context_ == nullptr)
@@ -330,7 +361,7 @@ void ContextualSearchDelegate::OnTextSurroundingSelectionAvailable(
   // Sometimes the surroundings are 0, 0, '', so run the callback with empty
   // data in that case. See https://crbug.com/393100.
   if (start_offset == 0 && end_offset == 0 && surrounding_text.length() == 0) {
-    surrounding_text_callback_.Run(std::string(), base::string16(), 0, 0);
+    surrounding_text_callback_.Run(std::string(), std::u16string(), 0, 0);
     return;
   }
 
@@ -350,7 +381,7 @@ void ContextualSearchDelegate::OnTextSurroundingSelectionAvailable(
   size_t selection_start = start_offset;
   size_t selection_end = end_offset;
   int sample_padding_each_side = sample_surrounding_size / 2;
-  base::string16 sample_surrounding_text =
+  std::u16string sample_surrounding_text =
       SampleSurroundingText(surrounding_text, sample_padding_each_side,
                             &selection_start, &selection_end);
   DCHECK(selection_start <= selection_end);
@@ -359,7 +390,7 @@ void ContextualSearchDelegate::OnTextSurroundingSelectionAvailable(
                                  selection_end);
 }
 
-std::string ContextualSearchDelegate::GetDiscourseContext(
+const net::HttpRequestHeaders ContextualSearchDelegate::GetDiscourseContext(
     const ContextualSearchContext& context) {
   discourse_context::ClientDiscourseContext proto;
   discourse_context::Display* display = proto.add_display();
@@ -382,69 +413,10 @@ std::string ContextualSearchDelegate::GetDiscourseContext(
   // The server memoizer expects a web-safe encoding.
   std::replace(encoded_context.begin(), encoded_context.end(), '+', '-');
   std::replace(encoded_context.begin(), encoded_context.end(), '/', '_');
-  return kDiscourseContextHeaderPrefix + encoded_context;
-}
 
-bool ContextualSearchDelegate::CanSendPageURL(
-    const GURL& current_page_url,
-    Profile* profile,
-    TemplateURLService* template_url_service) {
-  // Check whether there is a Finch parameter preventing us from sending the
-  // page URL.
-  if (field_trial_->IsSendBasePageURLDisabled())
-    return false;
-
-  // Ensure that the default search provider is Google.
-  const TemplateURL* default_search_provider =
-      template_url_service->GetDefaultSearchProvider();
-  bool is_default_search_provider_google =
-      default_search_provider &&
-      default_search_provider->url_ref().HasGoogleBaseURLs(
-          template_url_service->search_terms_data());
-  if (!is_default_search_provider_google)
-    return false;
-
-  // Only allow HTTP URLs or HTTPS URLs.
-  if (current_page_url.scheme() != url::kHttpScheme &&
-      (current_page_url.scheme() != url::kHttpsScheme))
-    return false;
-
-  syncer::SyncService* sync_service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-  if (!sync_service)
-    return false;
-
-  // Check whether the user has enabled anonymous URL-keyed data collection
-  // from the unified consent service.
-  std::unique_ptr<UrlKeyedDataCollectionConsentHelper>
-      anonymized_unified_consent_url_helper =
-          UrlKeyedDataCollectionConsentHelper::
-              NewAnonymizedDataCollectionConsentHelper(
-                  ProfileManager::GetActiveUserProfile()->GetPrefs(),
-                  sync_service);
-  // If they have, then allow sending of the URL.
-  return anonymized_unified_consent_url_helper->IsEnabled();
-}
-
-// Gets the target language from the translate service using the user's profile.
-std::string ContextualSearchDelegate::GetTargetLanguage() {
-  Profile* profile = ProfileManager::GetActiveUserProfile();
-  LanguageModel* language_model =
-      LanguageModelManagerFactory::GetForBrowserContext(profile)
-          ->GetPrimaryModel();
-  DCHECK(language_model);
-  PrefService* pref_service = profile->GetPrefs();
-  std::string result =
-      TranslateService::GetTargetLanguage(pref_service, language_model);
-  DCHECK(!result.empty());
-  return result;
-}
-
-// Returns the accept languages preference string.
-std::string ContextualSearchDelegate::GetAcceptLanguages() {
-  Profile* profile = ProfileManager::GetActiveUserProfile();
-  PrefService* pref_service = profile->GetPrefs();
-  return pref_service->GetString(language::prefs::kAcceptLanguages);
+  net::HttpRequestHeaders headers;
+  headers.SetHeader(kDiscourseContextHeaderName, encoded_context);
+  return headers;
 }
 
 // Decodes the given response from the search term resolution request and sets
@@ -463,10 +435,10 @@ void ContextualSearchDelegate::DecodeSearchTermFromJsonResponse(
     std::string* caption,
     std::string* quick_action_uri,
     QuickActionCategory* quick_action_category,
-    int64_t* logged_event_id,
     std::string* search_url_full,
     std::string* search_url_preload,
-    int* coca_card_tag) {
+    int* coca_card_tag,
+    std::string* related_searches_json) {
   bool contains_xssi_escape =
       base::StartsWith(response, kXssiEscape, base::CompareCase::SENSITIVE);
   const std::string& proper_json =
@@ -493,10 +465,13 @@ void ContextualSearchDelegate::DecodeSearchTermFromJsonResponse(
 
   // Extract mentions for selection expansion.
   if (!field_trial_->IsDecodeMentionsDisabled()) {
-    base::ListValue* mentions_list = nullptr;
-    dict->GetList(kContextualSearchMentions, &mentions_list);
-    if (mentions_list && mentions_list->GetSize() >= 2)
-      ExtractMentionsStartEnd(*mentions_list, mention_start, mention_end);
+    base::Value* mentions_list =
+        dict->FindListKey(kContextualSearchMentionsKey);
+    // Note that because we've deserialized the json and it's not used later, we
+    // can just take the list without worrying about putting it back.
+    if (mentions_list && mentions_list->GetListDeprecated().size() >= 2)
+      ExtractMentionsStartEnd(std::move(*mentions_list).TakeListDeprecated(),
+                              mention_start, mention_end);
   }
 
   // If either the selected text or the resolved term is not the search term,
@@ -546,7 +521,10 @@ void ContextualSearchDelegate::DecodeSearchTermFromJsonResponse(
   // Contextual Cards V5+ integration can provide the primary card tag, so
   // clients can tell what kind of card they have received.
   // TODO(donnd): make sure this works with a non-integer or missing value!
-  dict->GetInteger(kContextualSearchCardTag, coca_card_tag);
+  absl::optional<int> maybe_coca_card_tag =
+      dict->FindIntKey(kContextualSearchCardTag);
+  if (coca_card_tag && maybe_coca_card_tag)
+    *coca_card_tag = *maybe_coca_card_tag;
 
   // Any Contextual Cards integration.
   // For testing purposes check if there was a diagnostic from Contextual
@@ -561,33 +539,32 @@ void ContextualSearchDelegate::DecodeSearchTermFromJsonResponse(
     DVLOG(0) << contextual_cards_diagnostic;
   }
 
-  // Get the Event ID to use for sending event outcomes back to the server.
-  std::string logged_event_id_string;
-  dict->GetString("logged_event_id", &logged_event_id_string);
-  if (!logged_event_id_string.empty()) {
-    *logged_event_id = std::stoll(logged_event_id_string, nullptr);
-  }
+  // Extract an arbitrary Related Searches payload as JSON and return to Java
+  // for decoding.
+  // TODO(donnd): remove soon (once the server is updated);
+  if (base::Value* rsearches_json_value =
+          dict->FindKey(kRelatedSearchesSuggestions))
+    base::JSONWriter::Write(*rsearches_json_value, related_searches_json);
 }
 
 // Extract the Start/End of the mentions in the surrounding text
 // for selection-expansion.
 void ContextualSearchDelegate::ExtractMentionsStartEnd(
-    const base::ListValue& mentions_list,
+    const std::vector<base::Value>& mentions_list,
     int* startResult,
     int* endResult) {
-  int int_value;
-  if (mentions_list.GetInteger(0, &int_value))
-    *startResult = std::max(0, int_value);
-  if (mentions_list.GetInteger(1, &int_value))
-    *endResult = std::max(0, int_value);
+  if (mentions_list.size() >= 1 && mentions_list[0].is_int())
+    *startResult = std::max(0, mentions_list[0].GetInt());
+  if (mentions_list.size() >= 2 && mentions_list[1].is_int())
+    *endResult = std::max(0, mentions_list[1].GetInt());
 }
 
-base::string16 ContextualSearchDelegate::SampleSurroundingText(
-    const base::string16& surrounding_text,
+std::u16string ContextualSearchDelegate::SampleSurroundingText(
+    const std::u16string& surrounding_text,
     int padding_each_side,
     size_t* start,
     size_t* end) {
-  base::string16 result_text = surrounding_text;
+  std::u16string result_text = surrounding_text;
   size_t start_offset = *start;
   size_t end_offset = *end;
   size_t padding_each_side_pinned =

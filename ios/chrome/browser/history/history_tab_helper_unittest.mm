@@ -8,15 +8,15 @@
 #include "base/callback.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/bind_test_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/bind.h"
+#include "base/test/task_environment.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
 #include "ios/chrome/browser/history/history_service_factory.h"
 #include "ios/web/public/navigation/navigation_item.h"
-#include "ios/web/public/test/fakes/test_web_state.h"
+#include "ios/web/public/test/fakes/fake_web_state.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -30,8 +30,10 @@ class HistoryTabHelperTest : public PlatformTest {
  public:
   void SetUp() override {
     TestChromeBrowserState::Builder test_cbs_builder;
+    test_cbs_builder.AddTestingFactory(
+        ios::HistoryServiceFactory::GetInstance(),
+        ios::HistoryServiceFactory::GetDefaultFactory());
     chrome_browser_state_ = test_cbs_builder.Build();
-    ASSERT_TRUE(chrome_browser_state_->CreateHistoryService(true));
 
     web_state_.SetBrowserState(chrome_browser_state_.get());
     HistoryTabHelper::CreateForWebState(&web_state_);
@@ -60,15 +62,16 @@ class HistoryTabHelperTest : public PlatformTest {
     history::HistoryService* service =
         ios::HistoryServiceFactory::GetForBrowserState(
             chrome_browser_state_.get(), ServiceAccessType::EXPLICIT_ACCESS);
-    service->AddPage(
-        url, base::Time::Now(), NULL, 0, GURL(), history::RedirectList(),
-        ui::PAGE_TRANSITION_MANUAL_SUBFRAME, history::SOURCE_BROWSED, false);
+    service->AddPage(url, base::Time::Now(), NULL, 0, GURL(),
+                     history::RedirectList(),
+                     ui::PAGE_TRANSITION_MANUAL_SUBFRAME,
+                     history::SOURCE_BROWSED, false, false);
   }
 
  protected:
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  base::test::TaskEnvironment task_environment_;
   std::unique_ptr<TestChromeBrowserState> chrome_browser_state_;
-  web::TestWebState web_state_;
+  web::FakeWebState web_state_;
   base::CancelableTaskTracker tracker_;
 
   // Cached data from the last call to |QueryURL()|.
@@ -177,7 +180,7 @@ TEST_F(HistoryTabHelperTest, EmptyTitleOverwritesPreviousTitle) {
   EXPECT_EQ(base::UTF8ToUTF16(test_title), latest_row_result_.title());
 
   // Set the empty title and make sure the title is updated.
-  item->SetTitle(base::string16());
+  item->SetTitle(std::u16string());
   helper->UpdateHistoryPageTitle(*item);
   QueryURL(test_url);
   EXPECT_NE(base::UTF8ToUTF16(test_title), latest_row_result_.title());
@@ -201,4 +204,24 @@ TEST_F(HistoryTabHelperTest, TestNTPNotAdded) {
   AddVisitForURL(ntp_url);
   QueryURL(ntp_url);
   EXPECT_NE(ntp_url, latest_row_result_.url());
+}
+
+// Tests that a file:// URL isn't added to history.
+TEST_F(HistoryTabHelperTest, TestFileNotAdded) {
+  HistoryTabHelper* helper = HistoryTabHelper::FromWebState(&web_state_);
+  ASSERT_TRUE(helper);
+
+  std::unique_ptr<web::NavigationItem> item = web::NavigationItem::Create();
+  GURL test_url("https://www.google.com/");
+  item->SetVirtualURL(test_url);
+  AddVisitForURL(test_url);
+  QueryURL(test_url);
+  EXPECT_EQ(test_url, latest_row_result_.url());
+
+  item = web::NavigationItem::Create();
+  GURL file_url("file://path/to/file");
+  item->SetVirtualURL(file_url);
+  AddVisitForURL(file_url);
+  QueryURL(file_url);
+  EXPECT_NE(file_url, latest_row_result_.url());
 }

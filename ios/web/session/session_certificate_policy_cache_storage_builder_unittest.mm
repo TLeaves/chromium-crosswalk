@@ -5,7 +5,8 @@
 #import "ios/web/session/session_certificate_policy_cache_storage_builder.h"
 
 #import "ios/web/public/session/crw_session_certificate_policy_cache_storage.h"
-#include "ios/web/public/test/test_web_thread_bundle.h"
+#include "ios/web/public/test/fakes/fake_browser_state.h"
+#include "ios/web/public/test/web_task_environment.h"
 #import "ios/web/session/session_certificate_policy_cache_impl.h"
 #include "net/cert/x509_certificate.h"
 #include "net/test/cert_test_util.h"
@@ -24,17 +25,17 @@ using SessionCertificatePolicyCacheStorageBuilderTest = PlatformTest;
 // populates the storage with the correct data.
 TEST_F(SessionCertificatePolicyCacheStorageBuilderTest, BuildStorage) {
   // Create a cache and populate it with an allowed cert.
-  web::TestWebThreadBundle thread_bundle;
-  web::SessionCertificatePolicyCacheImpl cache;
+  web::WebTaskEnvironment task_environment;
+  web::FakeBrowserState browser_state;
+  web::SessionCertificatePolicyCacheImpl cache(&browser_state);
   scoped_refptr<net::X509Certificate> cert =
       net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
   std::string host("test.com");
   net::CertStatus status = net::CERT_STATUS_REVOKED;
   cache.RegisterAllowedCertificate(cert, host, status);
   // Build the cert policy cache storage and verify that the data was copied.
-  web::SessionCertificatePolicyCacheStorageBuilder builder;
   CRWSessionCertificatePolicyCacheStorage* cache_storage =
-      builder.BuildStorage(&cache);
+      web::SessionCertificatePolicyCacheStorageBuilder::BuildStorage(cache);
   EXPECT_EQ(1U, cache_storage.certificateStorages.count);
   CRWSessionCertificateStorage* cert_storage =
       [cache_storage.certificateStorages anyObject];
@@ -60,8 +61,9 @@ TEST_F(SessionCertificatePolicyCacheStorageBuilderTest,
       [[CRWSessionCertificatePolicyCacheStorage alloc] init];
   [cache_storage setCertificateStorages:[NSSet setWithObject:cert_storage]];
   // Build the cert policy cache and verify its contents.
-  web::SessionCertificatePolicyCacheStorageBuilder builder;
+  web::FakeBrowserState browser_state;
   std::unique_ptr<web::SessionCertificatePolicyCacheImpl> cache =
-      builder.BuildSessionCertificatePolicyCache(cache_storage);
+      web::SessionCertificatePolicyCacheStorageBuilder::
+          BuildSessionCertificatePolicyCache(cache_storage, &browser_state);
   EXPECT_NSEQ([cache_storage certificateStorages], cache -> GetAllowedCerts());
 }

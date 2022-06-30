@@ -6,14 +6,14 @@
 #define EXTENSIONS_BROWSER_API_ASYNC_API_FUNCTION_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "extensions/browser/extension_function.h"
 
 namespace extensions {
 
 // AsyncApiFunction provides convenient thread management for APIs that need to
 // do essentially all their work on a thread other than the UI thread.
-class AsyncApiFunction : public UIThreadExtensionFunction {
+class AsyncApiFunction : public ExtensionFunction {
  protected:
   AsyncApiFunction();
   ~AsyncApiFunction() override;
@@ -36,7 +36,7 @@ class AsyncApiFunction : public UIThreadExtensionFunction {
   // Respond. Guaranteed to happen on UI thread.
   virtual bool Respond() = 0;
 
-  // UIThreadExtensionFunction:
+  // ExtensionFunction:
   ResponseAction Run() final;
 
  protected:

@@ -8,11 +8,17 @@
 # Base name of the package.
 PACKAGE="google-chrome"
 
+# Base name of the snap package
+SNAPNAME="google-chrome"
+
 # Filename of the main executable (for generating launcher scripts, etc.)
 PROGNAME=chrome
 
 # Base directory for package installation.
 INSTALLDIR=/opt/google/chrome
+
+# Directory for device policy enrollments.
+ENROLLMENTDIR=/etc/opt/chrome/policies/enrollment
 
 # Display string for desktop menu/icon.
 MENUNAME="Google Chrome"

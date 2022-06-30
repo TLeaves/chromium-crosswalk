@@ -4,7 +4,8 @@
 
 #include "components/keyed_service/core/simple_key_map.h"
 
-#include "base/logging.h"
+#include "base/check.h"
+#include "base/no_destructor.h"
 
 SimpleKeyMap::SimpleKeyMap() = default;
 

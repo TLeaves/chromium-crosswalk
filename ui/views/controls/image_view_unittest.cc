@@ -4,16 +4,24 @@
 
 #include "ui/views/controls/image_view.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "base/i18n/rtl.h"
+#include "base/memory/raw_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_node_data.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/border.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
@@ -40,6 +48,9 @@ class ImageViewTest : public ViewsTestBase,
  public:
   ImageViewTest() = default;
 
+  ImageViewTest(const ImageViewTest&) = delete;
+  ImageViewTest& operator=(const ImageViewTest&) = delete;
+
   // ViewsTestBase:
   void SetUp() override {
     ViewsTestBase::SetUp();
@@ -48,17 +59,15 @@ class ImageViewTest : public ViewsTestBase,
         CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
     params.bounds = gfx::Rect(200, 200);
     params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    widget_.Init(params);
-    View* container = new View();
+    widget_.Init(std::move(params));
+    auto container = std::make_unique<View>();
     // Make sure children can take up exactly as much space as they require.
     BoxLayout::Orientation orientation =
         GetParam() == Axis::kHorizontal ? BoxLayout::Orientation::kHorizontal
                                         : BoxLayout::Orientation::kVertical;
     container->SetLayoutManager(std::make_unique<BoxLayout>(orientation));
-    widget_.SetContentsView(container);
-
-    image_view_ = new ImageView();
-    container->AddChildView(image_view_);
+    image_view_ = container->AddChildView(std::make_unique<ImageView>());
+    widget_.SetContentsView(std::move(container));
 
     widget_.Show();
   }
@@ -79,10 +88,8 @@ class ImageViewTest : public ViewsTestBase,
   Widget* widget() { return &widget_; }
 
  private:
-  ImageView* image_view_ = nullptr;
+  raw_ptr<ImageView> image_view_ = nullptr;
   Widget widget_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageViewTest);
 };
 
 // Test the image origin of the internal ImageSkia is correct when it is
@@ -104,7 +111,7 @@ TEST_P(ImageViewTest, CenterAlignment) {
 
   // Test insets are always respected in LTR and RTL.
   constexpr int kInset = 5;
-  image_view()->SetBorder(CreateEmptyBorder(gfx::Insets(kInset)));
+  image_view()->SetBorder(CreateEmptyBorder(kInset));
   widget()->GetContentsView()->Layout();
   EXPECT_EQ(kInset, CurrentImageOriginForParam());
 
@@ -115,9 +122,8 @@ TEST_P(ImageViewTest, CenterAlignment) {
   // Check this still holds true when the insets are asymmetrical.
   constexpr int kLeadingInset = 4;
   constexpr int kTrailingInset = 6;
-  image_view()->SetBorder(CreateEmptyBorder(
-      gfx::Insets(/*top=*/kLeadingInset, /*left=*/kLeadingInset,
-                  /*bottom=*/kTrailingInset, /*right=*/kTrailingInset)));
+  image_view()->SetBorder(CreateEmptyBorder(gfx::Insets::TLBR(
+      kLeadingInset, kLeadingInset, kTrailingInset, kTrailingInset)));
   widget()->GetContentsView()->Layout();
   EXPECT_EQ(kLeadingInset, CurrentImageOriginForParam());
 
@@ -141,7 +147,22 @@ TEST_P(ImageViewTest, ImageOriginForCustomViewBounds) {
   EXPECT_EQ(image_view_bounds, image_view()->bounds());
 }
 
-INSTANTIATE_TEST_SUITE_P(,
+// Verifies setting the accessible name will be call NotifyAccessibilityEvent.
+TEST_P(ImageViewTest, SetAccessibleNameNotifiesAccessibilityEvent) {
+  std::u16string test_tooltip_text = u"Test Tooltip Text";
+  test::AXEventCounter counter(views::AXEventManager::Get());
+  EXPECT_EQ(0, counter.GetCount(ax::mojom::Event::kTextChanged));
+  image_view()->SetAccessibleName(test_tooltip_text);
+  EXPECT_EQ(1, counter.GetCount(ax::mojom::Event::kTextChanged));
+  EXPECT_EQ(test_tooltip_text, image_view()->GetAccessibleName());
+  ui::AXNodeData data;
+  image_view()->GetAccessibleNodeData(&data);
+  const std::string& name =
+      data.GetStringAttribute(ax::mojom::StringAttribute::kName);
+  EXPECT_EQ(test_tooltip_text, base::ASCIIToUTF16(name));
+}
+
+INSTANTIATE_TEST_SUITE_P(All,
                          ImageViewTest,
                          ::testing::Values(Axis::kHorizontal, Axis::kVertical));
 

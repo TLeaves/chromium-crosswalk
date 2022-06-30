@@ -7,7 +7,8 @@
 
 #include <cstddef>
 
-#include "base/macros.h"
+#include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "remoting/protocol/channel_dispatcher_base.h"
 #include "remoting/protocol/client_stub.h"
 #include "remoting/protocol/clipboard_stub.h"
@@ -26,6 +27,10 @@ class HostControlDispatcher : public ChannelDispatcherBase,
                               public ClientStub {
  public:
   HostControlDispatcher();
+
+  HostControlDispatcher(const HostControlDispatcher&) = delete;
+  HostControlDispatcher& operator=(const HostControlDispatcher&) = delete;
+
   ~HostControlDispatcher() override;
 
   // ClientStub implementation.
@@ -33,12 +38,16 @@ class HostControlDispatcher : public ChannelDispatcherBase,
   void SetPairingResponse(const PairingResponse& pairing_response) override;
   void DeliverHostMessage(const ExtensionMessage& message) override;
   void SetVideoLayout(const VideoLayout& layout) override;
+  void SetTransportInfo(const TransportInfo& transport_info) override;
 
   // ClipboardStub implementation for sending clipboard data to client.
   void InjectClipboardEvent(const ClipboardEvent& event) override;
 
   // CursorShapeStub implementation for sending cursor shape to client.
   void SetCursorShape(const CursorShapeInfo& cursor_shape) override;
+
+  // KeyboardLayoutStub implementation for sending keyboard layout to client.
+  void SetKeyboardLayout(const KeyboardLayout& layout) override;
 
   // Sets the ClipboardStub that will be called for each incoming clipboard
   // message. |clipboard_stub| must outlive this object.
@@ -62,13 +71,11 @@ class HostControlDispatcher : public ChannelDispatcherBase,
  private:
   void OnIncomingMessage(std::unique_ptr<CompoundBuffer> buffer) override;
 
-  ClipboardStub* clipboard_stub_ = nullptr;
-  HostStub* host_stub_ = nullptr;
+  raw_ptr<ClipboardStub> clipboard_stub_ = nullptr;
+  raw_ptr<HostStub> host_stub_ = nullptr;
   // 64 KiB is the default message size expected to be supported in absence of
   // a higher value negotiated via SDP.
   std::size_t max_message_size_ = 64 * 1024;
-
-  DISALLOW_COPY_AND_ASSIGN(HostControlDispatcher);
 };
 
 }  // namespace protocol

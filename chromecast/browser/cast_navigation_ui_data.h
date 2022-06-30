@@ -7,7 +7,6 @@
 
 #include <string>
 
-#include "base/macros.h"
 #include "content/public/browser/navigation_ui_data.h"
 
 namespace content {
@@ -19,12 +18,16 @@ namespace shell {
 
 class CastNavigationUIData : public content::NavigationUIData {
  public:
-  static void SetSessionIdForWebContents(content::WebContents* web_contents,
-                                         const std::string& session_id);
+  static void SetAppPropertiesForWebContents(content::WebContents* web_contents,
+                                             const std::string& session_id,
+                                             bool is_audio_app);
   static std::string GetSessionIdForWebContents(
       content::WebContents* web_contents);
 
   explicit CastNavigationUIData(const std::string& session_id);
+
+  CastNavigationUIData(const CastNavigationUIData&) = delete;
+  CastNavigationUIData& operator=(const CastNavigationUIData&) = delete;
 
   const std::string& session_id() const { return session_id_; }
 
@@ -32,8 +35,6 @@ class CastNavigationUIData : public content::NavigationUIData {
 
  private:
   std::string session_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(CastNavigationUIData);
 };
 
 }  // namespace shell

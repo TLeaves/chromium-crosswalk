@@ -6,6 +6,8 @@ package org.chromium.chrome.browser.firstrun;
 
 import android.os.Bundle;
 
+import org.chromium.base.supplier.OneshotSupplier;
+
 /**
  * Defines the host interface for First Run Experience pages.
  */
@@ -18,8 +20,9 @@ public interface FirstRunPageDelegate {
     /**
      * Advances the First Run Experience to the next page.
      * Successfully finishes FRE if the current page is the last page.
+     * @return Whether advancing to the next page succeeded.
      */
-    void advanceToNextPage();
+    boolean advanceToNextPage();
 
     /**
      * Unsuccessfully aborts the First Run Experience.
@@ -34,17 +37,14 @@ public interface FirstRunPageDelegate {
     void completeFirstRunExperience();
 
     /**
-     * Notifies that the user refused to sign in (e.g. "NO, THANKS").
+     * Exit the First Run Experience without marking the flow complete. This will finish the first
+     * run activity and start the main activity without setting any of the preferences tracking
+     * whether first run has been completed.
+     *
+     * Exposing this function is intended for use in scenarios where FRE is partially or completely
+     * skipped. (e.g. in accordance with Enterprise polices)
      */
-    void refuseSignIn();
-
-    /**
-     * Notifies that the user accepted to be signed in.
-     * @param accountName An account to be signed in to.
-     * @param isDefaultAccount Whether this account is the default choice for the user.
-     * @param openSettings Whether the settings page should be opened after signing in.
-     */
-    void acceptSignIn(String accountName, boolean isDefaultAccount, boolean openSettings);
+    void exitFirstRun();
 
     /**
      * @return Whether the user has accepted Chrome Terms of Service.
@@ -52,8 +52,14 @@ public interface FirstRunPageDelegate {
     boolean didAcceptTermsOfService();
 
     /**
+     * Returns whether chrome is launched as a custom tab.
+     */
+    boolean isLaunchedFromCct();
+
+    /**
      * Notifies all interested parties that the user has accepted Chrome Terms of Service.
-     * Must be called only after native has been initialized.
+     * Must be called only after the delegate has fully initialized.
+     * Does not automatically advance to the next page, call {@link #advanceToNextPage()} directly.
      * @param allowCrashUpload True if the user allows to upload crash dumps and collect stats.
      */
     void acceptTermsOfService(boolean allowCrashUpload);
@@ -63,4 +69,27 @@ public interface FirstRunPageDelegate {
      * @param url Resource id for the URL of the web page.
      */
     void showInfoPage(int url);
+
+    /**
+     * Records the FRE progress histogram MobileFre.Progress.*.
+     * @param state FRE state to record.
+     */
+    void recordFreProgressHistogram(@MobileFreProgress int state);
+
+    /** Records MobileFre.FromLaunch.NativeAndPoliciesLoaded histogram. **/
+    void recordNativePolicyAndChildStatusLoadedHistogram();
+
+    /** Records MobileFre.FromLaunch.NativeInitialized histogram. **/
+    void recordNativeInitializedHistogram();
+
+    /**
+     * The supplier that supplies whether reading policy value is necessary.
+     * See {@link PolicyLoadListener} for details.
+     */
+    OneshotSupplier<Boolean> getPolicyLoadListener();
+
+    /**
+     * Returns the supplier that supplies child account status.
+     */
+    OneshotSupplier<Boolean> getChildAccountStatusSupplier();
 }

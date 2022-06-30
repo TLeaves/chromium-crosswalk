@@ -4,10 +4,11 @@
 
 package org.chromium.chrome.browser.ssl;
 
-import android.support.annotation.IntDef;
 import android.support.test.InstrumentationRegistry;
-import android.support.test.filters.MediumTest;
 import android.util.Base64;
+
+import androidx.annotation.IntDef;
+import androidx.test.filters.MediumTest;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -17,18 +18,17 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.test.params.ParameterizedCommandLineFlags;
+import org.chromium.base.test.params.ParameterizedCommandLineFlags.Switches;
 import org.chromium.base.test.util.CommandLineFlags;
-import org.chromium.base.test.util.parameter.CommandLineParameter;
-import org.chromium.chrome.browser.ChromeFeatureList;
-import org.chromium.chrome.browser.ChromeSwitches;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
+import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.browser.TabTitleObserver;
-import org.chromium.content_public.browser.WebContents;
-import org.chromium.content_public.browser.test.util.Criteria;
-import org.chromium.content_public.browser.test.util.CriteriaHelper;
+import org.chromium.components.security_interstitials.CaptivePortalHelper;
 import org.chromium.net.X509Util;
 import org.chromium.net.test.EmbeddedTestServer;
 import org.chromium.net.test.ServerCertificate;
@@ -36,13 +36,17 @@ import org.chromium.net.test.util.CertTestUtil;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.concurrent.Callable;
 
 /** Tests for the Captive portal interstitial. */
 @RunWith(ChromeJUnit4ClassRunner.class)
 @MediumTest
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
-@CommandLineParameter({"", "enable-features=" + ChromeFeatureList.CAPTIVE_PORTAL_CERTIFICATE_LIST})
+// clang-format off
+@ParameterizedCommandLineFlags({
+  @Switches(),
+  @Switches("enable-features=" + ChromeFeatureList.CAPTIVE_PORTAL_CERTIFICATE_LIST),
+})
+// clang-format on
 public class CaptivePortalTest {
     private static final String CAPTIVE_PORTAL_INTERSTITIAL_TITLE_PREFIX = "Connect to";
     private static final String SSL_INTERSTITIAL_TITLE = "Privacy error";
@@ -56,7 +60,8 @@ public class CaptivePortalTest {
             UMAEvent.WWW_MISMATCH_URL_AVAILABLE, UMAEvent.WWW_MISMATCH_URL_NOT_AVAILABLE,
             UMAEvent.SHOW_BAD_CLOCK, UMAEvent.CAPTIVE_PORTAL_CERT_FOUND,
             UMAEvent.WWW_MISMATCH_FOUND_IN_SAN, UMAEvent.SHOW_MITM_SOFTWARE_INTERSTITIAL,
-            UMAEvent.OS_REPORTS_CAPTIVE_PORTAL})
+            UMAEvent.OS_REPORTS_CAPTIVE_PORTAL, UMAEvent.SHOW_BLOCKED_INTERCEPTION_INTERSTITIAL,
+            UMAEvent.SHOW_LEGACY_TLS_INTERSTITIAL})
     @Retention(RetentionPolicy.SOURCE)
     private @interface UMAEvent {
         int HANDLE_ALL = 0;
@@ -72,6 +77,8 @@ public class CaptivePortalTest {
         int WWW_MISMATCH_FOUND_IN_SAN = 10;
         int SHOW_MITM_SOFTWARE_INTERSTITIAL = 11;
         int OS_REPORTS_CAPTIVE_PORTAL = 12;
+        int SHOW_BLOCKED_INTERCEPTION_INTERSTITIAL = 13;
+        int SHOW_LEGACY_TLS_INTERSTITIAL = 14; // Deprecated in M98.
     }
 
     @Rule
@@ -80,7 +87,7 @@ public class CaptivePortalTest {
     private EmbeddedTestServer mServer;
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         mActivityTestRule.startMainActivityFromLauncher();
         mServer = EmbeddedTestServer.createAndStartHTTPSServer(
                 InstrumentationRegistry.getContext(), ServerCertificate.CERT_MISMATCHED_NAME);
@@ -90,17 +97,8 @@ public class CaptivePortalTest {
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         mServer.stopAndDestroyServer();
-    }
-
-    private void waitForInterstitial(final WebContents webContents, final boolean shouldBeShown) {
-        CriteriaHelper.pollUiThread(Criteria.equals(shouldBeShown, new Callable<Boolean>() {
-            @Override
-            public Boolean call() {
-                return webContents.isShowingInterstitialPage();
-            }
-        }));
     }
 
     /** Navigate the tab to an interstitial with a name mismatch error and check if this
@@ -118,8 +116,9 @@ public class CaptivePortalTest {
             }
         }
                 .waitForTitleUpdate(INTERSTITIAL_TITLE_UPDATE_TIMEOUT_SECONDS);
-
-        Assert.assertEquals(0, tab.getTitle().indexOf(CAPTIVE_PORTAL_INTERSTITIAL_TITLE_PREFIX));
+        Assert.assertEquals(0,
+                ChromeTabUtils.getTitleOnUiThread(tab).indexOf(
+                        CAPTIVE_PORTAL_INTERSTITIAL_TITLE_PREFIX));
     }
 
     @Test

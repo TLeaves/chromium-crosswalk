@@ -1,6 +1,5 @@
-kinuko@chromium.org
-pwnall@chromium.org
-tzik@chromium.org
+# Primary
+asully@chromium.org
 
-# TEAM: storage-dev@chromium.org
-# COMPONENT: Blink>Storage>FileSystem
+# Secondary
+ayui@chromium.org

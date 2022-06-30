@@ -11,16 +11,26 @@ namespace content {
 
 BrowserAccessibilityAuraLinux* ToBrowserAccessibilityAuraLinux(
     BrowserAccessibility* obj) {
-  DCHECK(!obj || obj->IsNative());
   return static_cast<BrowserAccessibilityAuraLinux*>(obj);
 }
 
 // static
-BrowserAccessibility* BrowserAccessibility::Create() {
-  return new BrowserAccessibilityAuraLinux();
+std::unique_ptr<BrowserAccessibility> BrowserAccessibility::Create(
+    BrowserAccessibilityManager* manager,
+    ui::AXNode* node) {
+  BrowserAccessibility* wrapper = manager->GetFromAXNode(node);
+  bool is_focused_node = wrapper && wrapper == manager->GetLastFocusedNode();
+  auto platform_node =
+      std::make_unique<BrowserAccessibilityAuraLinux>(manager, node);
+  if (is_focused_node)
+    platform_node->GetNode()->SetAsCurrentlyFocusedNode();
+  return platform_node;
 }
 
-BrowserAccessibilityAuraLinux::BrowserAccessibilityAuraLinux() {
+BrowserAccessibilityAuraLinux::BrowserAccessibilityAuraLinux(
+    BrowserAccessibilityManager* manager,
+    ui::AXNode* node)
+    : BrowserAccessibility(manager, node) {
   node_ = static_cast<ui::AXPlatformNodeAuraLinux*>(
       ui::AXPlatformNode::Create(this));
 }
@@ -28,6 +38,7 @@ BrowserAccessibilityAuraLinux::BrowserAccessibilityAuraLinux() {
 BrowserAccessibilityAuraLinux::~BrowserAccessibilityAuraLinux() {
   DCHECK(node_);
   node_->Destroy();
+  node_ = nullptr;
 }
 
 ui::AXPlatformNodeAuraLinux* BrowserAccessibilityAuraLinux::GetNode() const {
@@ -50,27 +61,17 @@ void BrowserAccessibilityAuraLinux::OnDataChanged() {
   node_->EnsureAtkObjectIsValid();
 }
 
-bool BrowserAccessibilityAuraLinux::IsNative() const {
-  return true;
+ui::AXPlatformNode* BrowserAccessibilityAuraLinux::GetAXPlatformNode() const {
+  return GetNode();
 }
 
-base::string16 BrowserAccessibilityAuraLinux::GetText() const {
-  return GetHypertext();
-}
-
-base::string16 BrowserAccessibilityAuraLinux::GetHypertext() const {
+std::u16string BrowserAccessibilityAuraLinux::GetHypertext() const {
   return GetNode()->AXPlatformNodeAuraLinux::GetHypertext();
 }
 
-ui::AXPlatformNode* BrowserAccessibilityAuraLinux::GetFromNodeID(int32_t id) {
-  if (!instance_active())
-    return nullptr;
-
-  BrowserAccessibility* accessibility = manager_->GetFromID(id);
-  if (!accessibility)
-    return nullptr;
-
-  return ToBrowserAccessibilityAuraLinux(accessibility)->GetNode();
+ui::TextAttributeList BrowserAccessibilityAuraLinux::ComputeTextAttributes()
+    const {
+  return GetNode()->ComputeTextAttributes();
 }
 
 }  // namespace content

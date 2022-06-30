@@ -7,6 +7,7 @@ from __future__ import print_function
 import pipes
 import subprocess
 import sys
+from six.moves import input  # pylint: disable=redefined-builtin
 
 
 COLOR_ANSI_CODE_MAP = {
@@ -107,7 +108,7 @@ def Ask(question, answers=None, default=None):
   # 'neg' would be accepted.
   inputs = {}
   common_prefixes = set()
-  for ans, retval in answers.iteritems():
+  for ans, retval in answers.items():
     for i in range(len(ans)):
       inp = ans[:i+1]
       if inp in inputs:
@@ -126,11 +127,13 @@ def Ask(question, answers=None, default=None):
 
   while True:
     print(Colored(question + prompt, 'cyan'), end=' ')
-    choice = raw_input().strip().lower()
+    choice = input().strip()
     if default is not None and choice == '':
       return inputs[default]
     elif choice in inputs:
       return inputs[choice]
+    elif choice.lower() in inputs:
+      return inputs[choice.lower()]
     else:
       choices = sorted(['"%s"' % a for a in sorted(answers.keys())])
       Error('Please respond with %s or %s.' % (
@@ -140,7 +143,7 @@ def Ask(question, answers=None, default=None):
 def Prompt(question, accept_empty=False):
   while True:
     print(Colored(question, color='cyan'))
-    answer = raw_input().strip()
+    answer = input().strip()
     if answer or accept_empty:
       return answer
     Error('Please enter non-empty answer')

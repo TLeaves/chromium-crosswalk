@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_REMOTE_COCOA_APP_SHIM_VIEWS_SCROLLBAR_BRIDGE_H_
 #define COMPONENTS_REMOTE_COCOA_APP_SHIM_VIEWS_SCROLLBAR_BRIDGE_H_
 
+#include "base/memory/raw_ptr.h"
+
 #import <Cocoa/Cocoa.h>
 
 #import "base/mac/scoped_nsobject.h"
@@ -23,7 +25,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT ViewsScrollbarBridgeDelegate {
 REMOTE_COCOA_APP_SHIM_EXPORT
 @interface ViewsScrollbarBridge : NSObject {
  @private
-  ViewsScrollbarBridgeDelegate* delegate_;  // Weak. Owns this.
+  raw_ptr<ViewsScrollbarBridgeDelegate> _delegate;  // Weak. Owns this.
 }
 
 // Initializes with the given delegate and registers for notifications on
@@ -38,4 +40,4 @@ REMOTE_COCOA_APP_SHIM_EXPORT
 
 @end
 
-#endif
+#endif  // COMPONENTS_REMOTE_COCOA_APP_SHIM_VIEWS_SCROLLBAR_BRIDGE_H_

@@ -8,13 +8,14 @@
 #include "components/security_state/core/security_state.h"
 #include "third_party/skia/include/core/SkColor.h"
 
+namespace ui {
+class ColorProvider;
+}
+
 // A part of the omnibox (location bar, location bar decoration, or dropdown).
 enum class OmniboxPart {
   LOCATION_BAR_BACKGROUND,
   LOCATION_BAR_CLEAR_ALL,
-  LOCATION_BAR_IME_AUTOCOMPLETE_BACKGROUND,
-  LOCATION_BAR_IME_AUTOCOMPLETE_TEXT,
-  LOCATION_BAR_SECURITY_CHIP,
   LOCATION_BAR_SELECTED_KEYWORD,
   LOCATION_BAR_TEXT_DEFAULT,
   LOCATION_BAR_TEXT_DIMMED,
@@ -24,34 +25,30 @@ enum class OmniboxPart {
   RESULTS_ICON,
   RESULTS_TEXT_DEFAULT,
   RESULTS_TEXT_DIMMED,
+  RESULTS_TEXT_NEGATIVE,
+  RESULTS_TEXT_POSITIVE,
+  RESULTS_TEXT_SECONDARY,
   RESULTS_TEXT_URL,
+  RESULTS_BUTTON_BORDER,
+  RESULTS_BUTTON_INK_DROP,
 };
-
-// The tint of the omnibox theme. E.g. Incognito may use a DARK tint.
-enum class OmniboxTint { DARK, LIGHT };
 
 // An optional state for a given |OmniboxPart|.
 enum class OmniboxPartState {
   NORMAL,
   HOVERED,
   SELECTED,
-  HOVERED_AND_SELECTED,
-
-  // Applicable to LOCATION_BAR_SECURITY_CHIP only.
-  CHIP_DEFAULT,
-  CHIP_DANGEROUS,
-  CHIP_SECURE
 };
 
 // Returns the color for the given |part| and |tint|. An optional |state| can be
 // provided for OmniboxParts that support stateful colors.
-SkColor GetOmniboxColor(OmniboxPart part,
-                        OmniboxTint tint,
+SkColor GetOmniboxColor(const ui::ColorProvider* color_provider,
+                        OmniboxPart part,
                         OmniboxPartState state = OmniboxPartState::NORMAL);
 
 // Returns the color of the security chip given |tint| and |security_level|.
 SkColor GetOmniboxSecurityChipColor(
-    OmniboxTint tint,
+    const ui::ColorProvider* color_provider,
     security_state::SecurityLevel security_level);
 
 float GetOmniboxStateOpacity(OmniboxPartState state);

@@ -7,20 +7,23 @@
 #include <memory>
 #include <string>
 
-#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_isolation_key.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_auth_challenge_tokenizer.h"
+#include "net/http/http_auth_preferences.h"
 #include "net/http/http_request_info.h"
 #include "net/log/net_log_with_source.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/gtest_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/scheme_host_port.h"
 
+using net::test::IsError;
 using net::test::IsOk;
 
 namespace net {
@@ -39,15 +42,16 @@ TEST(HttpAuthHandlerBasicTest, GenerateAuthToken) {
     // Empty username and empty password.
     { "", "", "Basic Og==" },
   };
-  GURL origin("http://www.example.com");
+  url::SchemeHostPort scheme_host_port(GURL("http://www.example.com"));
   HttpAuthHandlerBasic::Factory factory;
-  for (size_t i = 0; i < base::size(tests); ++i) {
+  for (size_t i = 0; i < std::size(tests); ++i) {
     std::string challenge = "Basic realm=\"Atlantis\"";
     SSLInfo null_ssl_info;
     auto host_resolver = std::make_unique<MockHostResolver>();
     std::unique_ptr<HttpAuthHandler> basic;
     EXPECT_EQ(OK, factory.CreateAuthHandlerFromString(
-                      challenge, HttpAuth::AUTH_SERVER, null_ssl_info, origin,
+                      challenge, HttpAuth::AUTH_SERVER, null_ssl_info,
+                      NetworkIsolationKey(), scheme_host_port,
                       NetLogWithSource(), host_resolver.get(), &basic));
     AuthCredentials credentials(base::ASCIIToUTF16(tests[i].username),
                                 base::ASCIIToUTF16(tests[i].password));
@@ -96,16 +100,17 @@ TEST(HttpAuthHandlerBasicTest, HandleAnotherChallenge) {
     }
   };
 
-  GURL origin("http://www.example.com");
+  url::SchemeHostPort scheme_host_port(GURL("http://www.example.com"));
   HttpAuthHandlerBasic::Factory factory;
   SSLInfo null_ssl_info;
   auto host_resolver = std::make_unique<MockHostResolver>();
   std::unique_ptr<HttpAuthHandler> basic;
   EXPECT_EQ(OK, factory.CreateAuthHandlerFromString(
                     tests[0].challenge, HttpAuth::AUTH_SERVER, null_ssl_info,
-                    origin, NetLogWithSource(), host_resolver.get(), &basic));
+                    NetworkIsolationKey(), scheme_host_port, NetLogWithSource(),
+                    host_resolver.get(), &basic));
 
-  for (size_t i = 0; i < base::size(tests); ++i) {
+  for (size_t i = 0; i < std::size(tests); ++i) {
     std::string challenge(tests[i].challenge);
     HttpAuthChallengeTokenizer tok(challenge.begin(),
                                    challenge.end());
@@ -197,19 +202,50 @@ TEST(HttpAuthHandlerBasicTest, InitFromChallenge) {
     },
   };
   HttpAuthHandlerBasic::Factory factory;
-  GURL origin("http://www.example.com");
-  for (size_t i = 0; i < base::size(tests); ++i) {
+  url::SchemeHostPort scheme_host_port(GURL("http://www.example.com"));
+  for (size_t i = 0; i < std::size(tests); ++i) {
     std::string challenge = tests[i].challenge;
     SSLInfo null_ssl_info;
     auto host_resolver = std::make_unique<MockHostResolver>();
     std::unique_ptr<HttpAuthHandler> basic;
     int rv = factory.CreateAuthHandlerFromString(
-        challenge, HttpAuth::AUTH_SERVER, null_ssl_info, origin,
-        NetLogWithSource(), host_resolver.get(), &basic);
+        challenge, HttpAuth::AUTH_SERVER, null_ssl_info, NetworkIsolationKey(),
+        scheme_host_port, NetLogWithSource(), host_resolver.get(), &basic);
     EXPECT_EQ(tests[i].expected_rv, rv);
     if (rv == OK)
       EXPECT_EQ(tests[i].expected_realm, basic->realm());
   }
+}
+
+// Test that when Basic is configured to forbid HTTP, attempting to create a
+// Basic auth handler for a HTTP context is rejected.
+TEST(HttpAuthHandlerBasicTest, BasicAuthRequiresHTTPS) {
+  url::SchemeHostPort nonsecure_scheme_host_port(
+      GURL("http://www.example.com"));
+  HttpAuthHandlerBasic::Factory factory;
+  HttpAuthPreferences http_auth_preferences;
+  http_auth_preferences.set_basic_over_http_enabled(false);
+  factory.set_http_auth_preferences(&http_auth_preferences);
+
+  std::string challenge = "Basic realm=\"Atlantis\"";
+  SSLInfo null_ssl_info;
+  auto host_resolver = std::make_unique<MockHostResolver>();
+  std::unique_ptr<HttpAuthHandler> basic;
+
+  // Ensure that HTTP is disallowed.
+  EXPECT_THAT(factory.CreateAuthHandlerFromString(
+                  challenge, HttpAuth::AUTH_SERVER, null_ssl_info,
+                  NetworkIsolationKey(), nonsecure_scheme_host_port,
+                  NetLogWithSource(), host_resolver.get(), &basic),
+              IsError(ERR_UNSUPPORTED_AUTH_SCHEME));
+
+  // Ensure that HTTPS is allowed.
+  url::SchemeHostPort secure_scheme_host_port(GURL("https://www.example.com"));
+  EXPECT_THAT(factory.CreateAuthHandlerFromString(
+                  challenge, HttpAuth::AUTH_SERVER, null_ssl_info,
+                  NetworkIsolationKey(), secure_scheme_host_port,
+                  NetLogWithSource(), host_resolver.get(), &basic),
+              IsOk());
 }
 
 }  // namespace net

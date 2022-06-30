@@ -9,8 +9,8 @@
 
 #include <memory>
 
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
@@ -58,8 +58,7 @@ class MultiThreadedTest : public testing::Test {
 
     for (int i = 0; i < num_threads_; ++i) {
       threads.push_back(blink::Thread::CreateThread(
-          ThreadCreationParams(WebThreadType::kTestThread)
-              .SetSupportsGC(true)));
+          ThreadCreationParams(ThreadType::kTestThread).SetSupportsGC(true)));
       waits.push_back(std::make_unique<base::WaitableEvent>());
     }
 

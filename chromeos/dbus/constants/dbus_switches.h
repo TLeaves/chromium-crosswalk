@@ -13,17 +13,32 @@ namespace switches {
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kAttestationServer[];
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
+extern const char kBiodFake[];
+COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
+extern const char kCrosDisksFake[];
+COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kDbusStub[];
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kFakeOobeConfiguration[];
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kShillStub[];
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
+extern const char kHermesFake[];
+COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kSmsTestMessages[];
 COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
 extern const char kSystemDevMode[];
+COMPONENT_EXPORT(CHROMEOS_DBUS_CONSTANTS)
+extern const char kRegisterMaxDarkSuspendDelay[];
 
 }  // namespace switches
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the migration is finished.
+namespace ash {
+namespace switches {
+using ::chromeos::switches::kFakeOobeConfiguration;
+}
+}  // namespace ash
 
 #endif  // CHROMEOS_DBUS_CONSTANTS_DBUS_SWITCHES_H_

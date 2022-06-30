@@ -4,10 +4,10 @@
 
 #include "chrome/browser/apps/platform_apps/api/sync_file_system/sync_file_system_api_helpers.h"
 
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/values.h"
-#include "storage/browser/fileapi/file_system_url.h"
-#include "storage/common/fileapi/file_system_util.h"
+#include "storage/browser/file_system/file_system_url.h"
+#include "storage/common/file_system/file_system_util.h"
 
 namespace chrome_apps {
 namespace api {
@@ -127,13 +127,13 @@ std::unique_ptr<base::DictionaryValue> CreateDictionaryValueForFileSystemEntry(
   }
 
   auto dict = std::make_unique<base::DictionaryValue>();
-  dict->SetString("fileSystemType",
-                  storage::GetFileSystemTypeString(url.mount_type()));
-  dict->SetString("fileSystemName", storage::GetFileSystemName(
-                                        url.origin().GetURL(), url.type()));
-  dict->SetString("rootUrl", root_url);
-  dict->SetString("filePath", file_path);
-  dict->SetBoolean("isDirectory",
+  dict->SetStringKey("fileSystemType",
+                     storage::GetFileSystemTypeString(url.mount_type()));
+  dict->SetStringKey("fileSystemName", storage::GetFileSystemName(
+                                           url.origin().GetURL(), url.type()));
+  dict->SetStringKey("rootUrl", root_url);
+  dict->SetStringKey("filePath", file_path);
+  dict->SetBoolKey("isDirectory",
                    (file_type == ::sync_file_system::SYNC_FILE_TYPE_DIRECTORY));
 
   return dict;

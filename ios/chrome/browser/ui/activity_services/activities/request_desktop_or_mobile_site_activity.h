@@ -7,18 +7,19 @@
 
 #import <UIKit/UIKit.h>
 
-#include "ios/web/public/user_agent.h"
+#include "ios/web/common/user_agent.h"
 
-@protocol BrowserCommands;
+@protocol BrowserCoordinatorCommands;
+class WebNavigationBrowserAgent;
 
 // Activity to request the Desktop or Mobile version of the page.
 @interface RequestDesktopOrMobileSiteActivity : UIActivity
 
-// Identifier for the activity.
-+ (NSString*)activityIdentifier;
-
-- (instancetype)initWithDispatcher:(id<BrowserCommands>)dispatcher
-                         userAgent:(web::UserAgentType)userAgent
+// Initializes an activity to change between Mobile versus Desktop user agent,
+// with the current `userAgent` and `handler` to execute the action.
+- (instancetype)initWithUserAgent:(web::UserAgentType)userAgent
+                          handler:(id<BrowserCoordinatorCommands>)handler
+                  navigationAgent:(WebNavigationBrowserAgent*)agent
     NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 

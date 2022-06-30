@@ -6,9 +6,7 @@
 #define CONTENT_RENDERER_IN_PROCESS_RENDERER_THREAD_H_
 
 #include <memory>
-#include <string>
 
-#include "base/macros.h"
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
 #include "content/common/in_process_child_thread_params.h"
@@ -20,7 +18,12 @@ class RenderProcess;
 // single-process mode.  It's not used in multi-process mode.
 class InProcessRendererThread : public base::Thread {
  public:
-  explicit InProcessRendererThread(const InProcessChildThreadParams& params);
+  InProcessRendererThread(const InProcessChildThreadParams& params,
+                          int32_t renderer_client_id);
+
+  InProcessRendererThread(const InProcessRendererThread&) = delete;
+  InProcessRendererThread& operator=(const InProcessRendererThread&) = delete;
+
   ~InProcessRendererThread() override;
 
  protected:
@@ -28,14 +31,14 @@ class InProcessRendererThread : public base::Thread {
   void CleanUp() override;
 
  private:
-  InProcessChildThreadParams params_;
+  const InProcessChildThreadParams params_;
+  const int32_t renderer_client_id_;
   std::unique_ptr<RenderProcess> render_process_;
-
-  DISALLOW_COPY_AND_ASSIGN(InProcessRendererThread);
 };
 
 CONTENT_EXPORT base::Thread* CreateInProcessRendererThread(
-    const InProcessChildThreadParams& params);
+    const InProcessChildThreadParams& params,
+    int32_t renderer_client_id);
 
 }  // namespace content
 

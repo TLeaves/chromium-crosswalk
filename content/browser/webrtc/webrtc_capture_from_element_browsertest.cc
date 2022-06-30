@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "content/browser/webrtc/webrtc_content_browsertest_base.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/shell/common/shell_switches.h"
 #include "media/base/media_switches.h"
 #include "media/base/test_data_util.h"
 #include "media/mojo/buildflags.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
 #include "base/system/sys_info.h"
 #endif
@@ -23,8 +23,7 @@
 // process and hence does not support capture: https://crbug.com/641559.
 #define MAYBE_CaptureFromMediaElement DISABLED_CaptureFromMediaElement
 #else
-// crbug.com/769903: Disabling due to TSAN error.
-#define MAYBE_CaptureFromMediaElement DISABLED_CaptureFromMediaElement
+#define MAYBE_CaptureFromMediaElement CaptureFromMediaElement
 #endif
 
 namespace {
@@ -59,6 +58,12 @@ class WebRtcCaptureFromElementBrowserTest
       public testing::WithParamInterface<struct FileAndTypeParameters> {
  public:
   WebRtcCaptureFromElementBrowserTest() {}
+
+  WebRtcCaptureFromElementBrowserTest(
+      const WebRtcCaptureFromElementBrowserTest&) = delete;
+  WebRtcCaptureFromElementBrowserTest& operator=(
+      const WebRtcCaptureFromElementBrowserTest&) = delete;
+
   ~WebRtcCaptureFromElementBrowserTest() override {}
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -75,9 +80,6 @@ class WebRtcCaptureFromElementBrowserTest
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kExposeInternalsForTesting);
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(WebRtcCaptureFromElementBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
@@ -86,9 +88,16 @@ IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
                   kCanvasCaptureColorTestHtmlFile);
 }
 
+// TODO(https://crbug.com/1334876): Flaky.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#define MAYBE_VerifyCanvasWebGLCaptureColor \
+  DISABLED_VerifyCanvasWebGLCaptureColor
+#else
+#define MAYBE_VerifyCanvasWebGLCaptureColor VerifyCanvasWebGLCaptureColor
+#endif
 IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
-                       VerifyCanvasWebGLCaptureColor) {
-#if !defined(OS_MACOSX)
+                       MAYBE_VerifyCanvasWebGLCaptureColor) {
+#if !BUILDFLAG(IS_MAC)
   // TODO(crbug.com/706009): Make this test pass on mac.  Behavior is not buggy
   // (verified manually) on mac, but for some reason this test fails on the mac
   // bot.
@@ -102,44 +111,37 @@ IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
   MakeTypicalCall("testCanvasCapture(draw2d);", kCanvasCaptureTestHtmlFile);
 }
 
+// TODO(https://crbug.com/1335032): Flaky.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+#define MAYBE_VerifyCanvasCaptureWebGLFrames \
+  DISABLED_VerifyCanvasCaptureWebGLFrames
+#else
+#define MAYBE_VerifyCanvasCaptureWebGLFrames VerifyCanvasCaptureWebGLFrames
+#endif
 IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
-                       VerifyCanvasCaptureWebGLFrames) {
+                       MAYBE_VerifyCanvasCaptureWebGLFrames) {
   MakeTypicalCall("testCanvasCapture(drawWebGL);", kCanvasCaptureTestHtmlFile);
 }
 
-#if defined(OS_WIN)
 // https://crbug.com/869723
 // Flaky on Windows 10 with Viz (i.e. in viz_content_browsertests).
-#define MAYBE_VerifyCanvasCaptureOffscreenCanvasFrames \
-  DISABLED_VerifyCanvasCaptureOffscreenCanvasFrames
-#else
-#define MAYBE_VerifyCanvasCaptureOffscreenCanvasFrames \
-  VerifyCanvasCaptureOffscreenCanvasFrames
-#endif
+// https://crbug.com/989759
+// Flaky on other platforms due to frame delivery for offscreen canvases.
 IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
-                       MAYBE_VerifyCanvasCaptureOffscreenCanvasFrames) {
+                       DISABLED_VerifyCanvasCaptureOffscreenCanvasFrames) {
   MakeTypicalCall("testCanvasCapture(drawOffscreenCanvas);",
                   kCanvasCaptureTestHtmlFile);
 }
 
+// TODO(crbug.com/1334909): Fix and re-enable.
 IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
-                       VerifyCanvasCaptureBitmapRendererFrames) {
+                       DISABLED_VerifyCanvasCaptureBitmapRendererFrames) {
   MakeTypicalCall("testCanvasCapture(drawBitmapRenderer);",
                   kCanvasCaptureTestHtmlFile);
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcCaptureFromElementBrowserTest,
                        MAYBE_CaptureFromMediaElement) {
-#if defined(OS_ANDROID)
-  // TODO(mcasas): flaky on Lollipop Low-End devices, investigate and reconnect
-  // https://crbug.com/626299
-  if (base::SysInfo::IsLowEndDevice() &&
-      base::android::BuildInfo::GetInstance()->sdk_int() <
-          base::android::SDK_VERSION_MARSHMALLOW) {
-    return;
-  }
-#endif
-
   MakeTypicalCall(JsReplace("testCaptureFromMediaElement($1, $2, $3, $4)",
                             GetParam().filename, GetParam().has_video,
                             GetParam().has_audio, GetParam().use_audio_tag),
@@ -161,7 +163,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcCaptureFromElementBrowserTest,
                   kCanvasCaptureColorTestHtmlFile);
 }
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          WebRtcCaptureFromElementBrowserTest,
                          testing::ValuesIn(kFileAndTypeParameters));
 }  // namespace content

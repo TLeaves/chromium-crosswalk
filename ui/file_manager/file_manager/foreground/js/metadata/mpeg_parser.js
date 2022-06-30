@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {MetadataParserLogger} from '../../../externs/metadata_worker_window.js';
+
+import {ByteReader} from './byte_reader.js';
+import {MetadataParser} from './metadata_parser.js';
+
 /** @final */
-class MpegParser extends MetadataParser {
+export class MpegParser extends MetadataParser {
   /**
    * @param {!MetadataParserLogger} parent Parent object.
    */
@@ -30,11 +35,12 @@ class MpegParser extends MetadataParser {
     const size = br.readScalar(4, false, opt_end);
 
     if (size < MpegParser.HEADER_SIZE) {
-      throw 'atom too short (' + size + ') @' + pos;
+      throw new Error('atom too short (' + size + ') @' + pos);
     }
 
     if (opt_end && pos + size > opt_end) {
-      throw 'atom too long (' + size + '>' + (opt_end - pos) + ') @' + pos;
+      throw new Error(
+          'atom too long (' + size + '>' + (opt_end - pos) + ') @' + pos);
     }
 
     return size;
@@ -206,7 +212,8 @@ class MpegParser extends MetadataParser {
     for (let offset = parentAtom.start; offset != parentAtom.end;) {
       if (count++ > 100) {
         // Most likely we are looping through a corrupt file.
-        throw 'too many child atoms in ' + parentAtom.name + ' @' + offset;
+        throw new Error(
+            'too many child atoms in ' + parentAtom.name + ' @' + offset);
       }
 
       br.seek(offset);
@@ -271,8 +278,9 @@ class MpegParser extends MetadataParser {
       // Check the available data size. It should be either exactly
       // what we requested or HEADER_SIZE bytes less (for the last atom).
       if (bufLength != atomEnd && bufLength != size) {
-        throw 'Read failure @' + filePos + ', ' +
-            'requested ' + size + ', read ' + bufLength;
+        throw new Error(
+            'Read failure @' + filePos + ', ' +
+            'requested ' + size + ', read ' + bufLength);
       }
 
       // Process the top level atom.

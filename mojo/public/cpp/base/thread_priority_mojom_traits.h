@@ -8,10 +8,14 @@
 #include "base/component_export.h"
 #include "mojo/public/mojom/base/thread_priority.mojom-shared.h"
 
+namespace base {
+enum class ThreadPriority;
+}
+
 namespace mojo {
 
 template <>
-struct COMPONENT_EXPORT(MOJO_BASE_MOJOM)
+struct COMPONENT_EXPORT(MOJO_BASE_TRAITS)
     EnumTraits<mojo_base::mojom::ThreadPriority, base::ThreadPriority> {
   static mojo_base::mojom::ThreadPriority ToMojom(
       base::ThreadPriority thread_priority);

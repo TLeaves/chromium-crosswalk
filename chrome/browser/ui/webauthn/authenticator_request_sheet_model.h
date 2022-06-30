@@ -6,9 +6,8 @@
 #define CHROME_BROWSER_UI_WEBAUTHN_AUTHENTICATOR_REQUEST_SHEET_MODEL_H_
 
 #include <memory>
+#include <string>
 
-#include "base/optional.h"
-#include "base/strings/string16.h"
 
 namespace gfx {
 struct VectorIcon;
@@ -46,25 +45,30 @@ class AuthenticatorRequestSheetModel {
 
   virtual bool IsActivityIndicatorVisible() const = 0;
   virtual bool IsBackButtonVisible() const = 0;
+  virtual bool IsCloseButtonVisible() const;
 
   virtual bool IsCancelButtonVisible() const = 0;
-  virtual base::string16 GetCancelButtonLabel() const = 0;
+  virtual std::u16string GetCancelButtonLabel() const = 0;
 
   virtual bool IsAcceptButtonVisible() const = 0;
   virtual bool IsAcceptButtonEnabled() const = 0;
-  virtual base::string16 GetAcceptButtonLabel() const = 0;
+  virtual std::u16string GetAcceptButtonLabel() const = 0;
+
+  virtual bool IsManageDevicesButtonVisible() const;
 
   virtual const gfx::VectorIcon& GetStepIllustration(
       ImageColorScheme color_scheme) const = 0;
-  virtual base::string16 GetStepTitle() const = 0;
-  virtual base::string16 GetStepDescription() const = 0;
-  virtual base::Optional<base::string16> GetAdditionalDescription() const = 0;
+  virtual std::u16string GetStepTitle() const = 0;
+  virtual std::u16string GetStepDescription() const = 0;
+  virtual std::u16string GetAdditionalDescription() const;
+  virtual std::u16string GetError() const;
 
-  virtual ui::MenuModel* GetOtherTransportsMenuModel() = 0;
+  virtual ui::MenuModel* GetOtherMechanismsMenuModel();
 
   virtual void OnBack() = 0;
   virtual void OnAccept() = 0;
   virtual void OnCancel() = 0;
+  virtual void OnManageDevices();
 };
 
 #endif  // CHROME_BROWSER_UI_WEBAUTHN_AUTHENTICATOR_REQUEST_SHEET_MODEL_H_

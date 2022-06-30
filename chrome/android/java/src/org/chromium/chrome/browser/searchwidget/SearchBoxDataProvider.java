@@ -4,28 +4,33 @@
 
 package org.chromium.chrome.browser.searchwidget;
 
-import android.content.res.Resources;
-import android.support.annotation.ColorInt;
-import android.support.annotation.ColorRes;
+import android.content.Context;
+
+import androidx.annotation.ColorInt;
+import androidx.annotation.ColorRes;
 
 import org.chromium.base.library_loader.LibraryLoader;
-import org.chromium.chrome.browser.ntp.NewTabPage;
+import org.chromium.chrome.browser.omnibox.LocationBarDataProvider;
+import org.chromium.chrome.browser.omnibox.NewTabPageDelegate;
 import org.chromium.chrome.browser.omnibox.UrlBarData;
-import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
-import org.chromium.chrome.browser.util.ColorUtils;
+import org.chromium.chrome.browser.ui.searchactivityutils.SearchActivityPreferencesManager;
+import org.chromium.components.browser_ui.styles.ChromeColors;
+import org.chromium.components.metrics.OmniboxEventProtos.OmniboxEventProto.PageClassification;
 import org.chromium.components.security_state.ConnectionSecurityLevel;
 
-class SearchBoxDataProvider implements ToolbarDataProvider {
+class SearchBoxDataProvider implements LocationBarDataProvider {
     private final @ColorInt int mPrimaryColor;
+    private boolean mIsFromQuickActionSearchWidget;
     private Tab mTab;
 
     /**
-     * @param resources The {@link Resources} for accessing colors.
+     * @param context The {@link Context} for accessing colors.
+     * @param isFromQuickActionSearchWidget
      */
-    SearchBoxDataProvider(Resources resources) {
-        mPrimaryColor = ColorUtils.getPrimaryBackgroundColor(resources, isIncognito());
+    SearchBoxDataProvider(Context context) {
+        mIsFromQuickActionSearchWidget = false;
+        mPrimaryColor = ChromeColors.getPrimaryBackgroundColor(context, isIncognito());
     }
 
     /**
@@ -44,24 +49,12 @@ class SearchBoxDataProvider implements ToolbarDataProvider {
 
     @Override
     public boolean isIncognito() {
-        if (mTab == null) return false;
-        return mTab.isIncognito();
+        return false;
     }
 
     @Override
     public boolean isInOverviewAndShowingOmnibox() {
         return false;
-    }
-
-    @Override
-    public boolean shouldShowLocationBarInOverviewMode() {
-        return false;
-    }
-
-    @Override
-    public Profile getProfile() {
-        if (mTab == null) return null;
-        return mTab.getProfile();
     }
 
     @Override
@@ -90,13 +83,24 @@ class SearchBoxDataProvider implements ToolbarDataProvider {
     }
 
     @Override
-    public NewTabPage getNewTabPageForCurrentTab() {
-        return null;
+    public NewTabPageDelegate getNewTabPageDelegate() {
+        return NewTabPageDelegate.EMPTY;
     }
 
     @Override
+    public boolean isLoading() {
+        return false;
+    }
+
+    @Override
+    public void addObserver(Observer observer) {}
+
+    @Override
+    public void removeObserver(Observer observer) {}
+
+    @Override
     public String getCurrentUrl() {
-        return SearchWidgetProvider.getDefaultSearchEngineUrl();
+        return SearchActivityPreferencesManager.getCurrent().searchEngineUrl;
     }
 
     @Override
@@ -105,13 +109,17 @@ class SearchBoxDataProvider implements ToolbarDataProvider {
     }
 
     @Override
-    public boolean isPreview() {
-        return false;
+    public int getSecurityLevel() {
+        return ConnectionSecurityLevel.NONE;
     }
 
     @Override
-    public int getSecurityLevel() {
-        return ConnectionSecurityLevel.NONE;
+    public int getPageClassification(boolean isFocusedFromFakebox) {
+        if (mIsFromQuickActionSearchWidget) {
+            return PageClassification.ANDROID_SHORTCUTS_WIDGET_VALUE;
+        } else {
+            return PageClassification.ANDROID_SEARCH_WIDGET_VALUE;
+        }
     }
 
     @Override
@@ -125,6 +133,11 @@ class SearchBoxDataProvider implements ToolbarDataProvider {
     }
 
     @Override
-    public void updateSearchEngineStatusIcon(boolean shouldShowSearchEngineLogo,
-            boolean isSearchEngineGoogle, String searchEngineUrl) {}
+    public int getSecurityIconContentDescriptionResourceId() {
+        return 0;
+    }
+
+    void setIsFromQuickActionSearchWidget(boolean isFromQuickActionsWidget) {
+        mIsFromQuickActionSearchWidget = isFromQuickActionsWidget;
+    }
 }

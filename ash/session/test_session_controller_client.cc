@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <string>
 
+#include "ash/login/login_screen_controller.h"
 #include "ash/login_status.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/session/test_pref_service_provider.h"
 #include "ash/shell.h"
+#include "ash/wallpaper/wallpaper_controller_impl.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
@@ -134,24 +136,37 @@ void TestSessionControllerClient::CreatePredefinedUserSessions(int count) {
 void TestSessionControllerClient::AddUserSession(
     const std::string& display_email,
     user_manager::UserType user_type,
-    bool enable_settings,
     bool provide_pref_service,
     bool is_new_profile,
-    const base::Optional<base::Token>& service_instance_group) {
+    const std::string& given_name) {
   auto account_id = AccountId::FromUserEmail(
       use_lower_case_user_id_ ? GetUserIdFromEmail(display_email)
                               : display_email);
+  AddUserSession(account_id, display_email, user_type, provide_pref_service,
+                 is_new_profile, given_name);
+}
+
+void TestSessionControllerClient::AddUserSession(
+    const AccountId& account_id,
+    const std::string& display_email,
+    user_manager::UserType user_type,
+    bool provide_pref_service,
+    bool is_new_profile,
+    const std::string& given_name) {
+  // Set is_ephemeral in user_info to true if the user type is guest or public
+  // account.
+  bool is_ephemeral = user_type == user_manager::USER_TYPE_GUEST ||
+                      user_type == user_manager::USER_TYPE_PUBLIC_ACCOUNT;
+
   UserSession session;
   session.session_id = ++fake_session_id_;
   session.user_info.type = user_type;
   session.user_info.account_id = account_id;
-  session.user_info.service_instance_group = service_instance_group;
   session.user_info.display_name = "Über tray Über tray Über tray Über tray";
   session.user_info.display_email = display_email;
-  session.user_info.is_ephemeral = false;
+  session.user_info.is_ephemeral = is_ephemeral;
   session.user_info.is_new_profile = is_new_profile;
-  session.should_enable_settings = enable_settings;
-  session.should_show_notification_tray = true;
+  session.user_info.given_name = given_name;
   controller_->UpdateUserSession(std::move(session));
 
   if (provide_pref_service && prefs_provider_ &&
@@ -193,11 +208,19 @@ void TestSessionControllerClient::SetUserPrefService(
     std::unique_ptr<PrefService> pref_service) {
   DCHECK(!controller_->GetUserPrefServiceForUser(account_id));
   prefs_provider_->SetUserPrefs(account_id, std::move(pref_service));
-  controller_->OnProfilePrefServiceInitialized(
-      account_id, prefs_provider_->GetUserPrefs(account_id));
+  if (controller_->IsActiveUserSessionStarted()) {
+    controller_->OnProfilePrefServiceInitialized(
+        account_id, prefs_provider_->GetUserPrefs(account_id));
+  }
 }
 
 void TestSessionControllerClient::RequestLockScreen() {
+  if (should_show_lock_screen_) {
+    // The lock screen can't be shown without a wallpaper.
+    Shell::Get()->wallpaper_controller()->ShowDefaultWallpaperForTesting();
+    Shell::Get()->login_screen_controller()->ShowLockScreen();
+  }
+
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(&TestSessionControllerClient::SetSessionState,
                                 weak_ptr_factory_.GetWeakPtr(),
@@ -207,6 +230,10 @@ void TestSessionControllerClient::RequestLockScreen() {
 void TestSessionControllerClient::RequestSignOut() {
   Reset();
   ++request_sign_out_count_;
+}
+
+void TestSessionControllerClient::AttemptRestartChrome() {
+  ++attempt_restart_chrome_count_;
 }
 
 void TestSessionControllerClient::SwitchActiveUser(
@@ -259,13 +286,15 @@ void TestSessionControllerClient::CycleActiveUser(
 }
 
 void TestSessionControllerClient::ShowMultiProfileLogin() {
+  SetSessionState(session_manager::SessionState::LOGIN_SECONDARY);
+
   views::Widget::InitParams params;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(0, 0, 400, 300);
   params.context = Shell::GetPrimaryRootWindow();
 
   multi_profile_login_widget_ = std::make_unique<views::Widget>();
-  multi_profile_login_widget_->Init(params);
+  multi_profile_login_widget_->Init(std::move(params));
   multi_profile_login_widget_->Show();
 }
 
@@ -278,6 +307,10 @@ PrefService* TestSessionControllerClient::GetSigninScreenPrefService() {
 PrefService* TestSessionControllerClient::GetUserPrefService(
     const AccountId& account_id) {
   return prefs_provider_ ? prefs_provider_->GetUserPrefs(account_id) : nullptr;
+}
+
+bool TestSessionControllerClient::IsEnterpriseManaged() const {
+  return is_enterprise_managed_;
 }
 
 void TestSessionControllerClient::DoSwitchUser(const AccountId& account_id,

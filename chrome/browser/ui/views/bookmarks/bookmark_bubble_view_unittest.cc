@@ -9,15 +9,20 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/macros.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/browser/ui/sync/bubble_sync_promo_delegate.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/views/chrome_test_widget.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
+#include "ui/views/test/widget_test.h"
+#include "ui/views/widget/unique_widget_ptr.h"
 
 using bookmarks::BookmarkModel;
 
@@ -33,64 +38,81 @@ class BookmarkBubbleViewTest : public BrowserWithTestWindowTest {
   // and IO tasks on separate threads.
   BookmarkBubbleViewTest()
       : BrowserWithTestWindowTest(
-            content::TestBrowserThreadBundle::REAL_IO_THREAD) {}
+            content::BrowserTaskEnvironment::REAL_IO_THREAD) {}
+
+  BookmarkBubbleViewTest(const BookmarkBubbleViewTest&) = delete;
+  BookmarkBubbleViewTest& operator=(const BookmarkBubbleViewTest&) = delete;
 
   // testing::Test:
   void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
 
-    profile()->CreateBookmarkModel(true);
+    anchor_widget_ =
+        views::UniqueWidgetPtr(std::make_unique<ChromeTestWidget>());
+    views::Widget::InitParams widget_params;
+    widget_params.context = GetContext();
+    anchor_widget_->Init(std::move(widget_params));
+
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForBrowserContext(profile());
     bookmarks::test::WaitForBookmarkModelToLoad(bookmark_model);
 
-    bookmarks::AddIfNotBookmarked(
-        bookmark_model, GURL(kTestBookmarkURL), base::string16());
+    bookmarks::AddIfNotBookmarked(bookmark_model, GURL(kTestBookmarkURL),
+                                  std::u16string());
   }
 
   void TearDown() override {
     // Make sure the bubble is destroyed before the profile to avoid a crash.
-    bubble_.reset();
+    views::test::WidgetDestroyedWaiter destroyed_waiter(
+        BookmarkBubbleView::bookmark_bubble()->GetWidget());
+    BookmarkBubbleView::bookmark_bubble()->GetWidget()->Close();
+    destroyed_waiter.Wait();
+
+    anchor_widget_.reset();
 
     BrowserWithTestWindowTest::TearDown();
+  }
+
+  TestingProfile::TestingFactories GetTestingFactories() override {
+    TestingProfile::TestingFactories factories = {
+        {BookmarkModelFactory::GetInstance(),
+         BookmarkModelFactory::GetDefaultFactory()}};
+    IdentityTestEnvironmentProfileAdaptor::
+        AppendIdentityTestEnvironmentFactories(&factories);
+    return factories;
   }
 
  protected:
   // Creates a bookmark bubble view.
   void CreateBubbleView() {
-    std::unique_ptr<BubbleSyncPromoDelegate> delegate;
-    bubble_.reset(new BookmarkBubbleView(NULL, NULL, std::move(delegate),
-                                         profile(), GURL(kTestBookmarkURL),
-                                         true));
-    bubble_->Init();
+    // Create a fake anchor view for the bubble.
+    BookmarkBubbleView::ShowBubble(anchor_widget_->GetContentsView(), nullptr,
+                                   nullptr, nullptr, profile(),
+                                   GURL(kTestBookmarkURL), true);
   }
-
-  std::unique_ptr<views::View> CreateFootnoteView() {
-    return bubble_->CreateFootnoteView();
-  }
-
-  std::unique_ptr<BookmarkBubbleView> bubble_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(BookmarkBubbleViewTest);
+  views::UniqueWidgetPtr anchor_widget_;
 };
 
 // Verifies that the sync promo is not displayed for a signed in user.
 TEST_F(BookmarkBubbleViewTest, SyncPromoSignedIn) {
   signin::MakePrimaryAccountAvailable(
-      IdentityManagerFactory::GetForProfile(profile()), "fake_username");
+      IdentityManagerFactory::GetForProfile(profile()),
+      "fake_username@gmail.com", signin::ConsentLevel::kSync);
   CreateBubbleView();
-  std::unique_ptr<views::View> footnote = CreateFootnoteView();
-  EXPECT_FALSE(footnote);
+  EXPECT_FALSE(
+      BookmarkBubbleView::bookmark_bubble()->GetFootnoteViewForTesting());
 }
 
 // Verifies that the sync promo is displayed for a user that is not signed in.
 TEST_F(BookmarkBubbleViewTest, SyncPromoNotSignedIn) {
   CreateBubbleView();
-  std::unique_ptr<views::View> footnote = CreateFootnoteView();
-#if defined(OS_CHROMEOS)
+  views::View* footnote =
+      BookmarkBubbleView::bookmark_bubble()->GetFootnoteViewForTesting();
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   EXPECT_FALSE(footnote);
-#else  // !defined(OS_CHROMEOS)
+#else  // !BUILDFLAG(IS_CHROMEOS_ASH)
   EXPECT_TRUE(footnote);
 #endif
 }

@@ -4,13 +4,17 @@
 
 package com.android.webview.chromium;
 
+import android.annotation.SuppressLint;
 import android.os.Build;
+import android.webkit.WebSettings;
 import android.webkit.WebSettings.LayoutAlgorithm;
 import android.webkit.WebSettings.PluginState;
 import android.webkit.WebSettings.RenderPriority;
 import android.webkit.WebSettings.ZoomDensity;
 
+import org.chromium.android_webview.AwDarkMode;
 import org.chromium.android_webview.AwSettings;
+import org.chromium.base.Log;
 
 /**
  * Type adaptation layer between {@link android.webkit.WebSettings} and
@@ -18,6 +22,7 @@ import org.chromium.android_webview.AwSettings;
  */
 @SuppressWarnings({"deprecation", "NoSynchronizedMethodCheck"})
 public class ContentSettingsAdapter extends android.webkit.WebSettings {
+    private static final String TAG = "WebSettings";
     private AwSettings mAwSettings;
     private PluginState mPluginState = PluginState.OFF;
 
@@ -436,12 +441,12 @@ public class ContentSettingsAdapter extends android.webkit.WebSettings {
 
     @Override
     public synchronized void setAppCacheEnabled(boolean flag) {
-        mAwSettings.setAppCacheEnabled(flag);
+        // Intentional no-op.
     }
 
     @Override
     public synchronized void setAppCachePath(String appCachePath) {
-        mAwSettings.setAppCachePath(appCachePath);
+        // Intentional no-op.
     }
 
     @Override
@@ -604,5 +609,46 @@ public class ContentSettingsAdapter extends android.webkit.WebSettings {
     public boolean getVideoOverlayForEmbeddedEncryptedVideoEnabled() {
         // Always false, see http://crbug.com/616583
         return false;
+    }
+
+    @Override
+    @SuppressLint("Override")
+    public void setForceDark(int forceDarkMode) {
+        if (AwDarkMode.isSimplifiedDarkModeEnabled()) {
+            Log.w(TAG, "setForceDark() is a no-op in an app with targetSdkVersion>=T");
+            return;
+        }
+        switch (forceDarkMode) {
+            case WebSettings.FORCE_DARK_OFF:
+                getAwSettings().setForceDarkMode(AwSettings.FORCE_DARK_OFF);
+                break;
+            case WebSettings.FORCE_DARK_AUTO:
+                getAwSettings().setForceDarkMode(AwSettings.FORCE_DARK_AUTO);
+                break;
+            case WebSettings.FORCE_DARK_ON:
+                getAwSettings().setForceDarkMode(AwSettings.FORCE_DARK_ON);
+                break;
+            default:
+                throw new IllegalArgumentException(
+                        "Force dark mode is not one of FORCE_DARK_(ON|OFF|AUTO)");
+        }
+    }
+
+    @Override
+    @SuppressLint("Override")
+    public int getForceDark() {
+        if (AwDarkMode.isSimplifiedDarkModeEnabled()) {
+            Log.w(TAG, "getForceDark() is a no-op in an app with targetSdkVersion>=T");
+            return WebSettings.FORCE_DARK_AUTO;
+        }
+        switch (getAwSettings().getForceDarkMode()) {
+            case AwSettings.FORCE_DARK_OFF:
+                return WebSettings.FORCE_DARK_OFF;
+            case AwSettings.FORCE_DARK_AUTO:
+                return WebSettings.FORCE_DARK_AUTO;
+            case AwSettings.FORCE_DARK_ON:
+                return WebSettings.FORCE_DARK_ON;
+        }
+        return WebSettings.FORCE_DARK_AUTO;
     }
 }

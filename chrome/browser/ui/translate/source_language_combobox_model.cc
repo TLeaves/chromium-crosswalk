@@ -5,31 +5,24 @@
 #include "chrome/browser/ui/translate/source_language_combobox_model.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ui/translate/translate_bubble_model.h"
-#include "components/strings/grit/components_strings.h"
+#include "chrome/browser/ui/translate/translate_language_list_model.h"
 
 SourceLanguageComboboxModel::SourceLanguageComboboxModel(
     int default_index,
-    TranslateBubbleModel* model)
+    TranslateLanguageListModel* model)
     : default_index_(default_index < 0 ? 0 : default_index), model_(model) {
   // view::Combobox can't treate an negative index, but |default_index| can be
   // negative when, for example, the page's language can't be detected.
 }
 
-SourceLanguageComboboxModel::~SourceLanguageComboboxModel() {}
+SourceLanguageComboboxModel::~SourceLanguageComboboxModel() = default;
 
-// Adds "Unknown" to top of dropdown menu.
 int SourceLanguageComboboxModel::GetItemCount() const {
-  return model_->GetNumberOfLanguages() + 1;
+  return model_->GetNumberOfSourceLanguages();
 }
-// Indexing increased by one due to additional option "Unknown".
-base::string16 SourceLanguageComboboxModel::GetItemAt(int index) {
-  if (index == 0) {
-    return base::string16(
-        l10n_util::GetStringUTF16(IDS_TRANSLATE_UNKNOWN_SOURCE_LANGUAGE));
-  } else {
-    return model_->GetLanguageNameAt(index - 1);
-  }
+
+std::u16string SourceLanguageComboboxModel::GetItemAt(int index) const {
+  return model_->GetSourceLanguageNameAt(index);
 }
 
 int SourceLanguageComboboxModel::GetDefaultIndex() const {

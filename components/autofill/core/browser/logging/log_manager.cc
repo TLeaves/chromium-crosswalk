@@ -4,7 +4,7 @@
 
 #include "components/autofill/core/browser/logging/log_manager.h"
 
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "components/autofill/core/browser/logging/log_router.h"
 
 namespace autofill {
@@ -13,7 +13,11 @@ namespace {
 
 class LogManagerImpl : public LogManager {
  public:
-  LogManagerImpl(LogRouter* log_router, base::Closure notification_callback);
+  LogManagerImpl(LogRouter* log_router,
+                 base::RepeatingClosure notification_callback);
+
+  LogManagerImpl(const LogManagerImpl&) = delete;
+  LogManagerImpl& operator=(const LogManagerImpl&) = delete;
 
   ~LogManagerImpl() override;
 
@@ -27,7 +31,7 @@ class LogManagerImpl : public LogManager {
 
  private:
   // A LogRouter instance obtained on construction. May be null.
-  LogRouter* const log_router_;
+  const raw_ptr<LogRouter> log_router_;
 
   // True if |this| is registered with some LogRouter which can accept logs.
   bool can_use_log_router_;
@@ -35,16 +39,14 @@ class LogManagerImpl : public LogManager {
   bool is_suspended_ = false;
 
   // Called every time the logging activity status changes.
-  base::Closure notification_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(LogManagerImpl);
+  base::RepeatingClosure notification_callback_;
 };
 
 LogManagerImpl::LogManagerImpl(LogRouter* log_router,
-                               base::Closure notification_callback)
+                               base::RepeatingClosure notification_callback)
     : log_router_(log_router),
       can_use_log_router_(log_router_ && log_router_->RegisterManager(this)),
-      notification_callback_(notification_callback) {}
+      notification_callback_(std::move(notification_callback)) {}
 
 LogManagerImpl::~LogManagerImpl() {
   if (log_router_)
@@ -100,8 +102,14 @@ LogBufferSubmitter LogManagerImpl::Log() {
 // static
 std::unique_ptr<LogManager> LogManager::Create(
     LogRouter* log_router,
-    base::Closure notification_callback) {
-  return std::make_unique<LogManagerImpl>(log_router, notification_callback);
+    base::RepeatingClosure notification_callback) {
+  return std::make_unique<LogManagerImpl>(log_router,
+                                          std::move(notification_callback));
+}
+
+// static
+LogBufferSubmitter LogManager::DevNull() {
+  return LogBufferSubmitter(nullptr, false);
 }
 
 }  // namespace autofill

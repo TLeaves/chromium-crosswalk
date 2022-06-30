@@ -8,7 +8,6 @@
 #include <windows.h>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "ui/gfx/gfx_export.h"
 
 namespace gfx {
@@ -21,9 +20,13 @@ class SingletonHwnd;
 // use a SingletonHwndHotKeyObserver instead for each hot key.
 class GFX_EXPORT SingletonHwndObserver {
  public:
-  typedef base::Callback<void(HWND, UINT, WPARAM, LPARAM)> WndProc;
+  using WndProc = base::RepeatingCallback<void(HWND, UINT, WPARAM, LPARAM)>;
 
   explicit SingletonHwndObserver(const WndProc& wnd_proc);
+
+  SingletonHwndObserver(const SingletonHwndObserver&) = delete;
+  SingletonHwndObserver& operator=(const SingletonHwndObserver&) = delete;
+
   ~SingletonHwndObserver();
 
  private:
@@ -33,8 +36,6 @@ class GFX_EXPORT SingletonHwndObserver {
   void OnWndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 
   WndProc wnd_proc_;
-
-  DISALLOW_COPY_AND_ASSIGN(SingletonHwndObserver);
 };
 
 }  // namespace gfx

@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/browser/webauth/authenticator_mojom_traits.h"
+#include "third_party/blink/public/mojom/authenticator_mojom_traits.h"
 
 #include <vector>
 
-#include "base/optional.h"
 #include "device/fido/authenticator_selection_criteria.h"
 #include "device/fido/cable/cable_discovery_data.h"
 #include "device/fido/fido_constants.h"
@@ -17,6 +16,7 @@
 #include "device/fido/public_key_credential_user_entity.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom.h"
 #include "url/gurl.h"
 #include "url/mojom/url_gurl_mojom_traits.h"
@@ -26,28 +26,29 @@ namespace mojo {
 using device::AuthenticatorAttachment;
 using device::AuthenticatorSelectionCriteria;
 using device::CableDiscoveryData;
+using device::CableEidArray;
+using device::CableSessionPreKeyArray;
 using device::CoseAlgorithmIdentifier;
 using device::CredentialType;
-using device::EidArray;
 using device::FidoTransportProtocol;
 using device::PublicKeyCredentialDescriptor;
 using device::PublicKeyCredentialParams;
 using device::PublicKeyCredentialRpEntity;
 using device::PublicKeyCredentialUserEntity;
-using device::SessionPreKeyArray;
+using device::ResidentKeyRequirement;
 using device::UserVerificationRequirement;
 
 const std::vector<uint8_t> kDescriptorId = {'d', 'e', 's', 'c'};
 constexpr char kRpId[] = "google.com";
 constexpr char kRpName[] = "Google";
 constexpr char kTestURL[] = "https://gstatic.com/fakeurl2.png";
-constexpr EidArray kClientEid = {{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-                                  0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13,
-                                  0x14, 0x15}};
-constexpr EidArray kAuthenticatorEid = {{0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-                                         0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-                                         0x01, 0x01, 0x01, 0x01}};
-constexpr SessionPreKeyArray kSessionPreKey = {
+constexpr CableEidArray kClientEid = {{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+                                       0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13,
+                                       0x14, 0x15}};
+constexpr CableEidArray kAuthenticatorEid = {
+    {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+     0x01, 0x01, 0x01, 0x01}};
+constexpr CableSessionPreKeyArray kSessionPreKey = {
     {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
@@ -59,7 +60,7 @@ void AssertSerializeAndDeserializeSucceeds(std::vector<UserType> test_cases) {
   for (auto original : test_cases) {
     UserType copied;
     EXPECT_TRUE(
-        mojo::test::SerializeAndDeserialize<MojomType>(&original, &copied));
+        mojo::test::SerializeAndDeserialize<MojomType>(original, copied));
     EXPECT_EQ(original, copied);
   }
 }
@@ -70,7 +71,7 @@ void AssertSerializeAndDeserializeSucceeds(std::vector<UserType> test_cases) {
 TEST(AuthenticatorMojomTraitsTest, SerializeCredentialParams) {
   std::vector<PublicKeyCredentialParams::CredentialInfo> success_cases = {
       {CredentialType::kPublicKey,
-       base::strict_cast<int>(CoseAlgorithmIdentifier::kCoseEs256)}};
+       base::strict_cast<int>(CoseAlgorithmIdentifier::kEs256)}};
 
   AssertSerializeAndDeserializeSucceeds<
       blink::mojom::PublicKeyCredentialParameters,
@@ -83,17 +84,15 @@ TEST(AuthenticatorMojomTraitsTest, SerializeCredentialDescriptors) {
       PublicKeyCredentialDescriptor(CredentialType::kPublicKey, kDescriptorId),
       PublicKeyCredentialDescriptor(CredentialType::kPublicKey, kDescriptorId),
       PublicKeyCredentialDescriptor(CredentialType::kPublicKey, kDescriptorId)};
-  success_cases[1].GetTransportsForTesting().emplace(
-      FidoTransportProtocol::kInternal);
-  success_cases[2].GetTransportsForTesting().emplace(
-      FidoTransportProtocol::kInternal);
-  success_cases[2].GetTransportsForTesting().emplace(
+  success_cases[1].transports.emplace(FidoTransportProtocol::kInternal);
+  success_cases[2].transports.emplace(FidoTransportProtocol::kInternal);
+  success_cases[2].transports.emplace(
       FidoTransportProtocol::kUsbHumanInterfaceDevice);
-  success_cases[2].GetTransportsForTesting().emplace(
+  success_cases[2].transports.emplace(
       FidoTransportProtocol::kNearFieldCommunication);
-  success_cases[2].GetTransportsForTesting().emplace(
+  success_cases[2].transports.emplace(
       FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
-  success_cases[2].GetTransportsForTesting().emplace(
+  success_cases[2].transports.emplace(
       FidoTransportProtocol::kBluetoothLowEnergy);
 
   AssertSerializeAndDeserializeSucceeds<
@@ -104,12 +103,18 @@ TEST(AuthenticatorMojomTraitsTest, SerializeCredentialDescriptors) {
 // Verify serialization and deserialization of AuthenticatorSelectionCriteria.
 TEST(AuthenticatorMojomTraitsTest, SerializeAuthenticatorSelectionCriteria) {
   std::vector<AuthenticatorSelectionCriteria> success_cases = {
-      AuthenticatorSelectionCriteria(AuthenticatorAttachment::kAny, true,
+      AuthenticatorSelectionCriteria(AuthenticatorAttachment::kAny,
+                                     ResidentKeyRequirement::kRequired,
                                      UserVerificationRequirement::kRequired),
-      AuthenticatorSelectionCriteria(AuthenticatorAttachment::kPlatform, false,
+      AuthenticatorSelectionCriteria(AuthenticatorAttachment::kPlatform,
+                                     ResidentKeyRequirement::kPreferred,
+                                     UserVerificationRequirement::kPreferred),
+      AuthenticatorSelectionCriteria(AuthenticatorAttachment::kPlatform,
+                                     ResidentKeyRequirement::kDiscouraged,
                                      UserVerificationRequirement::kPreferred),
       AuthenticatorSelectionCriteria(
-          AuthenticatorAttachment::kCrossPlatform, true,
+          AuthenticatorAttachment::kCrossPlatform,
+          ResidentKeyRequirement::kRequired,
           UserVerificationRequirement::kDiscouraged)};
 
   AssertSerializeAndDeserializeSucceeds<
@@ -123,12 +128,12 @@ TEST(AuthenticatorMojomTraitsTest, SerializePublicKeyCredentialRpEntity) {
       PublicKeyCredentialRpEntity(std::string(kRpId)),
       PublicKeyCredentialRpEntity(std::string(kRpId))};
   // TODO(kenrb): There is a mismatch between the types, where
-  // device::PublicKeyCredentialRpEntity can have base::nullopt for
+  // device::PublicKeyCredentialRpEntity can have absl::nullopt for
   // the name but the mapped mojom type is not optional. This should
-  // be corrected at some point. We can't currently test base::nullopt
+  // be corrected at some point. We can't currently test absl::nullopt
   // because it won't serialize.
   success_cases[0].name = std::string(kRpName);
-  success_cases[0].icon_url = base::nullopt;
+  success_cases[0].icon_url = absl::nullopt;
   success_cases[1].name = std::string(kRpName);
   success_cases[1].icon_url = GURL(kTestURL);
 
@@ -146,7 +151,7 @@ TEST(AuthenticatorMojomTraitsTest, SerializePublicKeyCredentialUserEntity) {
   // PublicKeyCredentialRpEntity::name above.
   success_cases[0].name = std::string(kRpName);
   success_cases[0].display_name = std::string(kRpName);
-  success_cases[0].icon_url = base::nullopt;
+  success_cases[0].icon_url = absl::nullopt;
   success_cases[1].name = std::string(kRpName);
   success_cases[1].display_name = std::string(kRpName);
   success_cases[1].icon_url = GURL(kTestURL);
@@ -159,7 +164,8 @@ TEST(AuthenticatorMojomTraitsTest, SerializePublicKeyCredentialUserEntity) {
 // Verify serialization and deserialization of CableDiscoveryData.
 TEST(AuthenticatorMojomTraitsTest, SerializeCableDiscoveryData) {
   std::vector<CableDiscoveryData> success_cases = {
-      CableDiscoveryData(0, kClientEid, kAuthenticatorEid, kSessionPreKey)};
+      CableDiscoveryData(CableDiscoveryData::Version::V1, kClientEid,
+                         kAuthenticatorEid, kSessionPreKey)};
 
   AssertSerializeAndDeserializeSucceeds<blink::mojom::CableAuthentication,
                                         CableDiscoveryData>(success_cases);

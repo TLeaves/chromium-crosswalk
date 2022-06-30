@@ -8,8 +8,6 @@
 #include <string>
 #include <utility>
 
-#include "base/macros.h"
-
 namespace notifications {
 
 // The database entry that contains a notification icon, deserialized from the
@@ -21,16 +19,12 @@ struct IconEntry {
   using IconData = std::string;
 
   IconEntry();
+  IconEntry(const IconEntry&) = delete;
+  IconEntry& operator=(const IconEntry&) = delete;
   IconEntry(IconEntry&& other);
-
-  // Unique identifier for the icon database entry.
-  std::string uuid;
 
   // Raw data of the icon.
   IconData data;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(IconEntry);
 };
 
 }  // namespace notifications

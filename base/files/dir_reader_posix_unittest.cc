@@ -11,12 +11,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "base/check.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/logging.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include "base/os_compat_android.h"
 #endif
 

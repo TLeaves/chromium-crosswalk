@@ -8,6 +8,8 @@
 
 #include <utility>
 
+#include "base/check.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -19,9 +21,9 @@
 
 namespace ios {
 
-namespace {
+const char kNTPPromoFinchExperiment[] = "IOSDefaultBrowerNTPPromotion";
 
-const char kNTPPromoFinchExperiment[] = "IOSNTPPromotion";
+namespace {
 
 // The name of the preference that stores the promotion object.
 const char kPrefPromoObject[] = "ios.ntppromo";
@@ -108,17 +110,17 @@ void NotificationPromo::InitFromJson(base::Value promo) {
     promo_payload_ = payload->Clone();
   }
 
-  base::Optional<int> max_views = promo.FindIntKey("max_views");
+  absl::optional<int> max_views = promo.FindIntKey("max_views");
   if (max_views.has_value())
     max_views_ = max_views.value();
   DVLOG(1) << "max_views_ " << max_views_;
 
-  base::Optional<int> max_seconds = promo.FindIntKey("max_seconds");
+  absl::optional<int> max_seconds = promo.FindIntKey("max_seconds");
   if (max_seconds.has_value())
     max_seconds_ = max_seconds.value();
   DVLOG(1) << "max_seconds_ " << max_seconds_;
 
-  base::Optional<int> promo_id = promo.FindIntKey("promo_id");
+  absl::optional<int> promo_id = promo.FindIntKey("promo_id");
   if (promo_id.has_value())
     promo_id_ = promo_id.value();
   DVLOG(1) << "promo_id_ " << promo_id_;
@@ -148,14 +150,14 @@ void NotificationPromo::WritePrefs(int promo_id,
                                    double first_view_time,
                                    int views,
                                    bool closed) {
-  auto ntp_promo = std::make_unique<base::DictionaryValue>();
-  ntp_promo->SetDouble(kPrefPromoFirstViewTime, first_view_time);
-  ntp_promo->SetInteger(kPrefPromoViews, views);
-  ntp_promo->SetBoolean(kPrefPromoClosed, closed);
+  base::Value ntp_promo{base::Value::Type::DICTIONARY};
+  ntp_promo.SetDoubleKey(kPrefPromoFirstViewTime, first_view_time);
+  ntp_promo.SetIntKey(kPrefPromoViews, views);
+  ntp_promo.SetBoolKey(kPrefPromoClosed, closed);
 
-  base::DictionaryValue promo_dict;
+  base::Value promo_dict{base::Value::Type::DICTIONARY};
   promo_dict.MergeDictionary(local_state_->GetDictionary(kPrefPromoObject));
-  promo_dict.Set(base::NumberToString(promo_id), std::move(ntp_promo));
+  promo_dict.SetKey(base::NumberToString(promo_id), std::move(ntp_promo));
   local_state_->Set(kPrefPromoObject, promo_dict);
   DVLOG(1) << "WritePrefs " << promo_dict;
 }
@@ -165,19 +167,21 @@ void NotificationPromo::InitFromPrefs() {
   if (promo_id_ == -1)
     return;
 
-  const base::DictionaryValue* promo_dict =
-      local_state_->GetDictionary(kPrefPromoObject);
+  const base::Value* promo_dict = local_state_->GetDictionary(kPrefPromoObject);
   if (!promo_dict)
     return;
 
-  const base::DictionaryValue* ntp_promo = NULL;
-  promo_dict->GetDictionary(base::NumberToString(promo_id_), &ntp_promo);
+  const base::Value* ntp_promo =
+      promo_dict->FindDictKey(base::NumberToString(promo_id_));
   if (!ntp_promo)
     return;
 
-  ntp_promo->GetDouble(kPrefPromoFirstViewTime, &first_view_time_);
-  ntp_promo->GetInteger(kPrefPromoViews, &views_);
-  ntp_promo->GetBoolean(kPrefPromoClosed, &closed_);
+  first_view_time_ = ntp_promo->FindDoubleKey(kPrefPromoFirstViewTime)
+                         .value_or(first_view_time_);
+  absl::optional<int> maybe_views = ntp_promo->FindIntKey(kPrefPromoViews);
+  if (maybe_views.has_value())
+    views_ = maybe_views.value();
+  closed_ = ntp_promo->FindBoolPath(kPrefPromoClosed).value_or(closed_);
 }
 
 bool NotificationPromo::CanShow() const {
@@ -210,8 +214,8 @@ bool NotificationPromo::ExceedsMaxSeconds() const {
   if (max_seconds_ == 0 || first_view_time_ == 0)
     return false;
 
-  const base::Time last_view_time = base::Time::FromDoubleT(first_view_time_) +
-                                    base::TimeDelta::FromSeconds(max_seconds_);
+  const base::Time last_view_time =
+      base::Time::FromDoubleT(first_view_time_) + base::Seconds(max_seconds_);
   return last_view_time < base::Time::Now();
 }
 

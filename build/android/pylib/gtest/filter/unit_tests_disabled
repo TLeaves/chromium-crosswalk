@@ -19,9 +19,6 @@ AutofillTableTest.UpdateAutofillProfile
 AutofillProfileTest.*
 CreditCardTest.SetInfoExpirationMonth
 
-# crbug.com/139398
-DownloadItemModelTest.InterruptTooltip
-
 # Tests crashing in the APK
 # l10n_util.cc(655)] Check failed: std::string::npos != pos
 DownloadItemModelTest.InterruptStatus
@@ -50,7 +47,6 @@ ProtocolHandlerRegistryTest.TestOSRegistrationFailure
 SQLiteServerBoundCertStoreTest.TestUpgradeV1
 SQLiteServerBoundCertStoreTest.TestUpgradeV2
 
-ProfileSyncComponentsFactoryImplTest.*
 PermissionsTest.GetWarningMessages_Plugins
 ImageOperations.ResizeShouldAverageColors
 

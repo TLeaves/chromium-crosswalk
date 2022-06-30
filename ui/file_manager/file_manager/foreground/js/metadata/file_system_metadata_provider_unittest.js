@@ -2,6 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
+
+import {reportPromise} from '../../../common/js/test_error_reporting.js';
+
+import {FileSystemMetadataProvider} from './file_system_metadata_provider.js';
+import {MetadataRequest} from './metadata_request.js';
+
 /** @const {!Entry} */
 const entryA = /** @type {!Entry} */ ({
   toURL: function() {
@@ -24,7 +31,7 @@ const entryB = /** @type {!Entry} */ ({
   }
 });
 
-function testFileSystemMetadataProviderBasic(callback) {
+export function testFileSystemMetadataProviderBasic(callback) {
   const provider = new FileSystemMetadataProvider();
   const names = [
     'modificationTime', 'size', 'contentMimeType', 'present', 'availableOffline'
@@ -53,7 +60,7 @@ function testFileSystemMetadataProviderBasic(callback) {
       callback);
 }
 
-function testFileSystemMetadataProviderPartialRequest(callback) {
+export function testFileSystemMetadataProviderPartialRequest(callback) {
   const provider = new FileSystemMetadataProvider();
   reportPromise(
       provider.get([new MetadataRequest(entryA, ['modificationTime', 'size'])])

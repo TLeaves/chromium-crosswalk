@@ -10,10 +10,46 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "components/sync/base/unique_position.h"
+#include "components/sync/protocol/app_list_specifics.pb.h"
+#include "components/sync/protocol/app_setting_specifics.pb.h"
+#include "components/sync/protocol/app_specifics.pb.h"
+#include "components/sync/protocol/arc_package_specifics.pb.h"
+#include "components/sync/protocol/autofill_offer_specifics.pb.h"
+#include "components/sync/protocol/autofill_specifics.pb.h"
+#include "components/sync/protocol/bookmark_specifics.pb.h"
+#include "components/sync/protocol/dictionary_specifics.pb.h"
+#include "components/sync/protocol/entity_specifics.pb.h"
+#include "components/sync/protocol/extension_setting_specifics.pb.h"
+#include "components/sync/protocol/extension_specifics.pb.h"
+#include "components/sync/protocol/history_delete_directive_specifics.pb.h"
+#include "components/sync/protocol/history_specifics.pb.h"
+#include "components/sync/protocol/nigori_specifics.pb.h"
+#include "components/sync/protocol/os_preference_specifics.pb.h"
+#include "components/sync/protocol/os_priority_preference_specifics.pb.h"
+#include "components/sync/protocol/password_specifics.pb.h"
+#include "components/sync/protocol/preference_specifics.pb.h"
+#include "components/sync/protocol/printer_specifics.pb.h"
+#include "components/sync/protocol/printers_authorization_server_specifics.pb.h"
+#include "components/sync/protocol/priority_preference_specifics.pb.h"
 #include "components/sync/protocol/proto_visitors.h"
+#include "components/sync/protocol/reading_list_specifics.pb.h"
+#include "components/sync/protocol/search_engine_specifics.pb.h"
+#include "components/sync/protocol/send_tab_to_self_specifics.pb.h"
+#include "components/sync/protocol/session_specifics.pb.h"
+#include "components/sync/protocol/sharing_message_specifics.pb.h"
+#include "components/sync/protocol/sync.pb.h"
+#include "components/sync/protocol/sync_entity.pb.h"
+#include "components/sync/protocol/theme_specifics.pb.h"
+#include "components/sync/protocol/typed_url_specifics.pb.h"
+#include "components/sync/protocol/user_consent_specifics.pb.h"
+#include "components/sync/protocol/user_event_specifics.pb.h"
+#include "components/sync/protocol/web_app_specifics.pb.h"
+#include "components/sync/protocol/webauthn_credential_specifics.pb.h"
+#include "components/sync/protocol/workspace_desk_specifics.pb.h"
 
 namespace syncer {
 
@@ -75,8 +111,8 @@ namespace {
 //
 //    std::unique_ptr<base::DictionaryValue> ToValue(
 //        const sync_pb::GreenProto& proto) const {
-//      auto value = ToValueImpl(proto);
-//      value->SetString("secret", "<clobbered>");
+//      std::unique_ptr<base::DictionaryValue> value = ToValueImpl(proto);
+//      value->SetStringKey("secret", "<clobbered>");
 //      return value;
 //    }
 //
@@ -90,10 +126,9 @@ namespace {
 //
 class ToValueVisitor {
  public:
-  ToValueVisitor(bool include_specifics = true,
-                 base::DictionaryValue* value = nullptr)
-    : value_(value)
-    , include_specifics_(include_specifics) {}
+  explicit ToValueVisitor(bool include_specifics = true,
+                          base::DictionaryValue* value = nullptr)
+      : value_(value), include_specifics_(include_specifics) {}
 
   template <class P>
   void VisitBytes(const P& parent_proto,
@@ -114,7 +149,7 @@ class ToValueVisitor {
     if (!repeated_field.empty()) {
       std::unique_ptr<base::ListValue> list(new base::ListValue());
       for (const auto& field : repeated_field) {
-        list->Append(ToValue(field));
+        list->Append(base::Value::FromUniquePtrValue(ToValue(field)));
       }
       value_->Set(field_name, std::move(list));
     }
@@ -127,7 +162,7 @@ class ToValueVisitor {
     if (!repeated_field.empty()) {
       std::unique_ptr<base::ListValue> list(new base::ListValue());
       for (const auto& field : repeated_field) {
-        list->Append(ToValue(field));
+        list->Append(base::Value::FromUniquePtrValue(ToValue(field)));
       }
       value_->Set(field_name, std::move(list));
     }
@@ -145,23 +180,6 @@ class ToValueVisitor {
 
   // Customizations
 
-  // ExperimentsSpecifics flags
-  #define IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(Name) \
-    void Visit(const sync_pb::ExperimentsSpecifics&, \
-               const char* field_name, \
-               const sync_pb::Name& field) { \
-      if (field.has_enabled()) { \
-        Visit(field, field_name, field.enabled()); \
-      } \
-    }
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(KeystoreEncryptionFlags)
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(HistoryDeleteDirectives)
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(AutofillCullingFlags)
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(PreCommitUpdateAvoidanceFlags)
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(GcmChannelFlags)
-  IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD(GcmInvalidationsFlags)
-  #undef IMPLEMENT_VISIT_EXPERIMENT_ENABLED_FIELD
-
   // EntitySpecifics
   template <class P>
   void Visit(const P& parent_proto,
@@ -172,50 +190,22 @@ class ToValueVisitor {
     }
   }
 
-  // EnhancedBookmarksFlags
-  template <class P>
-  void Visit(const P& parent_proto,
-             const char* field_name,
-             const sync_pb::EnhancedBookmarksFlags& field) {
-    // Obsolete, don't visit
-  }
-
-  // WalletSyncFlags
-  template <class P>
-  void Visit(const P& parent_proto,
-             const char* field_name,
-             const sync_pb::WalletSyncFlags& field) {
-    // Obsolete, don't visit
-  }
-
-  // PasswordSpecifics
-  std::unique_ptr<base::DictionaryValue> ToValue(
-      const sync_pb::PasswordSpecifics& proto) const {
-    auto value = ToValueImpl(proto);
-    value->Remove("client_only_encrypted_data", nullptr);
-    return value;
-  }
-
-  // PasswordSpecificsData
-  std::unique_ptr<base::DictionaryValue> ToValue(
-      const sync_pb::PasswordSpecificsData& proto) const {
-    auto value = ToValueImpl(proto);
-    value->SetString("password_value", "<redacted>");
-    return value;
-  }
-
   // AutofillWalletSpecifics
   std::unique_ptr<base::DictionaryValue> ToValue(
       const sync_pb::AutofillWalletSpecifics& proto) const {
-    auto value = ToValueImpl(proto);
+    std::unique_ptr<base::DictionaryValue> value = ToValueImpl(proto);
     if (proto.type() != sync_pb::AutofillWalletSpecifics::POSTAL_ADDRESS) {
-      value->Remove("address", nullptr);
+      value->RemoveKey("address");
     }
     if (proto.type() != sync_pb::AutofillWalletSpecifics::MASKED_CREDIT_CARD) {
-      value->Remove("masked_card", nullptr);
+      value->RemoveKey("masked_card");
     }
     if (proto.type() != sync_pb::AutofillWalletSpecifics::CUSTOMER_DATA) {
-      value->Remove("customer_data", nullptr);
+      value->RemoveKey("customer_data");
+    }
+    if (proto.type() !=
+        sync_pb::AutofillWalletSpecifics::CREDIT_CARD_CLOUD_TOKEN_DATA) {
+      value->RemoveKey("cloud_token_data");
     }
     return value;
   }
@@ -280,38 +270,34 @@ class ToValueVisitor {
     value_->Set(field_name, ToValue(field));
   }
 
-  base::DictionaryValue* value_;
+  raw_ptr<base::DictionaryValue> value_;
   bool include_specifics_;
 };
 
 }  // namespace
 
-#define IMPLEMENT_PROTO_TO_VALUE(Proto) \
+#define IMPLEMENT_PROTO_TO_VALUE(Proto)                  \
   std::unique_ptr<base::DictionaryValue> Proto##ToValue( \
-      const sync_pb::Proto& proto) { \
-    return ToValueVisitor().ToValue(proto); \
+      const sync_pb::Proto& proto) {                     \
+    return ToValueVisitor().ToValue(proto);              \
   }
 
-#define IMPLEMENT_PROTO_TO_VALUE_INCLUDE_SPECIFICS(Proto) \
-  std::unique_ptr<base::DictionaryValue> Proto##ToValue( \
-      const sync_pb::Proto& proto, \
-      bool include_specifics) { \
+#define IMPLEMENT_PROTO_TO_VALUE_INCLUDE_SPECIFICS(Proto)    \
+  std::unique_ptr<base::DictionaryValue> Proto##ToValue(     \
+      const sync_pb::Proto& proto, bool include_specifics) { \
     return ToValueVisitor(include_specifics).ToValue(proto); \
   }
 
 IMPLEMENT_PROTO_TO_VALUE(AppListSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(AppNotification)
-IMPLEMENT_PROTO_TO_VALUE(AppNotificationSettings)
 IMPLEMENT_PROTO_TO_VALUE(AppSettingSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(AppSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(ArcPackageSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(ArticleSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(AutofillOfferSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(AutofillProfileSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(AutofillSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(AutofillWalletSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(BookmarkSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(ClientConfigParams)
-IMPLEMENT_PROTO_TO_VALUE(DatatypeAssociationStats)
 IMPLEMENT_PROTO_TO_VALUE(DebugEventInfo)
 IMPLEMENT_PROTO_TO_VALUE(DebugInfo)
 IMPLEMENT_PROTO_TO_VALUE(DeviceInfoSpecifics)
@@ -319,27 +305,24 @@ IMPLEMENT_PROTO_TO_VALUE(DictionarySpecifics)
 IMPLEMENT_PROTO_TO_VALUE(EncryptedData)
 IMPLEMENT_PROTO_TO_VALUE(EntityMetadata)
 IMPLEMENT_PROTO_TO_VALUE(EntitySpecifics)
-IMPLEMENT_PROTO_TO_VALUE(ExperimentsSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(ExtensionSettingSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(ExtensionSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(FaviconImageSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(FaviconTrackingSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(GlobalIdDirective)
 IMPLEMENT_PROTO_TO_VALUE(HistoryDeleteDirectiveSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(HistorySpecifics)
 IMPLEMENT_PROTO_TO_VALUE(LinkedAppIconInfo)
 IMPLEMENT_PROTO_TO_VALUE(ManagedUserSettingSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(ManagedUserSharedSettingSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(ManagedUserSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(ManagedUserWhitelistSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(MountainShareSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(NavigationRedirect)
 IMPLEMENT_PROTO_TO_VALUE(NigoriSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(OsPreferenceSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(OsPriorityPreferenceSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(PasswordSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(PasswordSpecificsData)
 IMPLEMENT_PROTO_TO_VALUE(PaymentsCustomerData)
 IMPLEMENT_PROTO_TO_VALUE(PreferenceSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(PrinterPPDReference)
 IMPLEMENT_PROTO_TO_VALUE(PrinterSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(PrintersAuthorizationServerSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(PriorityPreferenceSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(ReadingListSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(SearchEngineSpecifics)
@@ -349,9 +332,8 @@ IMPLEMENT_PROTO_TO_VALUE(SessionHeader)
 IMPLEMENT_PROTO_TO_VALUE(SessionSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(SessionTab)
 IMPLEMENT_PROTO_TO_VALUE(SessionWindow)
+IMPLEMENT_PROTO_TO_VALUE(SharingMessageSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(SyncCycleCompletedEventInfo)
-IMPLEMENT_PROTO_TO_VALUE(SyncedNotificationAppInfoSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(SyncedNotificationSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(TabNavigation)
 IMPLEMENT_PROTO_TO_VALUE(ThemeSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(TimeRangeDirective)
@@ -359,12 +341,13 @@ IMPLEMENT_PROTO_TO_VALUE(TypedUrlSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(UrlDirective)
 IMPLEMENT_PROTO_TO_VALUE(UserConsentSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(UserEventSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(WalletCreditCardCloudTokenData)
 IMPLEMENT_PROTO_TO_VALUE(WalletMaskedCreditCard)
 IMPLEMENT_PROTO_TO_VALUE(WalletMetadataSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(WalletPostalAddress)
 IMPLEMENT_PROTO_TO_VALUE(WebAppSpecifics)
 IMPLEMENT_PROTO_TO_VALUE(WifiConfigurationSpecifics)
-IMPLEMENT_PROTO_TO_VALUE(WifiCredentialSpecifics)
+IMPLEMENT_PROTO_TO_VALUE(WorkspaceDeskSpecifics)
 
 IMPLEMENT_PROTO_TO_VALUE_INCLUDE_SPECIFICS(ClientToServerMessage)
 IMPLEMENT_PROTO_TO_VALUE_INCLUDE_SPECIFICS(ClientToServerResponse)

@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 #include "base/callback.h"
-#include "base/macros.h"
+#include "base/memory/raw_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
@@ -34,7 +34,11 @@ namespace protocol {
 //  - Limit CPU usage to 50%.
 class CaptureScheduler : public VideoFeedbackStub {
  public:
-  explicit CaptureScheduler(const base::Closure& capture_closure);
+  explicit CaptureScheduler(const base::RepeatingClosure& capture_closure);
+
+  CaptureScheduler(const CaptureScheduler&) = delete;
+  CaptureScheduler& operator=(const CaptureScheduler&) = delete;
+
   ~CaptureScheduler() override;
 
   // Starts the scheduler.
@@ -76,9 +80,9 @@ class CaptureScheduler : public VideoFeedbackStub {
   // new frame.
   void CaptureNextFrame();
 
-  base::Closure capture_closure_;
+  base::RepeatingClosure capture_closure_;
 
-  const base::TickClock* tick_clock_;
+  raw_ptr<const base::TickClock> tick_clock_;
 
   // Timer used to schedule CaptureNextFrame().
   std::unique_ptr<base::OneShotTimer> capture_timer_;
@@ -109,8 +113,6 @@ class CaptureScheduler : public VideoFeedbackStub {
   uint32_t next_frame_id_;
 
   base::ThreadChecker thread_checker_;
-
-  DISALLOW_COPY_AND_ASSIGN(CaptureScheduler);
 };
 
 }  // namespace protocol

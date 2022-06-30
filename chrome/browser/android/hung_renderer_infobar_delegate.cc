@@ -7,8 +7,9 @@
 #include "base/callback.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/android/android_theme_resources.h"
-#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/infobars/android/confirm_infobar.h"
+#include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/result_codes.h"
@@ -16,35 +17,23 @@
 
 // static
 void HungRendererInfoBarDelegate::Create(
-    InfoBarService* infobar_service,
+    infobars::ContentInfoBarManager* infobar_manager,
     content::RenderProcessHost* render_process_host) {
   DCHECK(render_process_host);
-  infobar_service->AddInfoBar(infobar_service->CreateConfirmInfoBar(
+  infobar_manager->AddInfoBar(std::make_unique<infobars::ConfirmInfoBar>(
       std::unique_ptr<ConfirmInfoBarDelegate>(
           new HungRendererInfoBarDelegate(render_process_host))));
 }
 
-void HungRendererInfoBarDelegate::OnRendererResponsive() {
-  LogEvent(RENDERER_BECAME_RESPONSIVE);
-}
-
 HungRendererInfoBarDelegate::HungRendererInfoBarDelegate(
     content::RenderProcessHost* render_process_host)
-    : render_process_host_(render_process_host),
-      terminal_event_logged_for_uma_(false) {}
+    : render_process_host_(render_process_host) {}
 
-HungRendererInfoBarDelegate::~HungRendererInfoBarDelegate() {
-  if (!terminal_event_logged_for_uma_)
-    LogEvent(TAB_CLOSED);
-}
+HungRendererInfoBarDelegate::~HungRendererInfoBarDelegate() = default;
 
 infobars::InfoBarDelegate::InfoBarIdentifier
 HungRendererInfoBarDelegate::GetIdentifier() const {
   return HUNG_RENDERER_INFOBAR_DELEGATE_ANDROID;
-}
-
-void HungRendererInfoBarDelegate::InfoBarDismissed() {
-  LogEvent(CLOSE_CLICKED);
 }
 
 HungRendererInfoBarDelegate*
@@ -56,11 +45,11 @@ int HungRendererInfoBarDelegate::GetIconId() const {
   return IDR_ANDROID_INFOBAR_FROZEN_TAB;
 }
 
-base::string16 HungRendererInfoBarDelegate::GetMessageText() const {
+std::u16string HungRendererInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_INFOBAR);
 }
 
-base::string16 HungRendererInfoBarDelegate::GetButtonLabel(
+std::u16string HungRendererInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16(
       (button == BUTTON_OK) ? IDS_BROWSER_HANGMONITOR_RENDERER_INFOBAR_END
@@ -68,19 +57,10 @@ base::string16 HungRendererInfoBarDelegate::GetButtonLabel(
 }
 
 bool HungRendererInfoBarDelegate::Accept() {
-  LogEvent(KILL_CLICKED);
   render_process_host_->Shutdown(content::RESULT_CODE_HUNG);
   return true;
 }
 
 bool HungRendererInfoBarDelegate::Cancel() {
-  LogEvent(WAIT_CLICKED);
   return true;
-}
-
-void HungRendererInfoBarDelegate::LogEvent(Event event) {
-  DCHECK(!terminal_event_logged_for_uma_);
-  terminal_event_logged_for_uma_ = true;
-  UMA_HISTOGRAM_ENUMERATION("Renderer.Hung.MobileInfoBar.UserEvent", event,
-                            EVENT_COUNT);
 }

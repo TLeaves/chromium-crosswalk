@@ -7,30 +7,48 @@
 
 #include "base/component_export.h"
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
+
+namespace url {
+class Origin;
+}
 
 namespace device {
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
+// Controls whether on Windows, U2F/CTAP2 requests are forwarded to the
+// native WebAuthentication API, where available.
 COMPONENT_EXPORT(DEVICE_FIDO)
 extern const base::Feature kWebAuthUseNativeWinApi;
-#endif  // defined(OS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
-// Enable support for PIN-based user-verification.
+// Support the caBLE extension in assertion requests from any origin.
 COMPONENT_EXPORT(DEVICE_FIDO)
-extern const base::Feature kWebAuthPINSupport;
+extern const base::Feature kWebAuthCableExtensionAnywhere;
 
-// Enable support for resident keys.
+// Enable discoverable credentials on caBLE authenticators.
 COMPONENT_EXPORT(DEVICE_FIDO)
-extern const base::Feature kWebAuthResidentKeys;
+extern const base::Feature kWebAuthCableDisco;
 
-// Enable biometric enrollment in the security keys settings UI.
+#if BUILDFLAG(IS_CHROMEOS)
+// Enable a ChromeOS platform authenticator
 COMPONENT_EXPORT(DEVICE_FIDO)
-extern const base::Feature kWebAuthBiometricEnrollment;
-//
-// Enable credential management in the security keys settings UI.
+extern const base::Feature kWebAuthCrosPlatformAuthenticator;
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 COMPONENT_EXPORT(DEVICE_FIDO)
-extern const base::Feature kWebAuthCredentialManagement;
+extern const base::Feature kU2fPermissionPrompt;
+
+// Feature flag for the Google-internal
+// `WebAuthenticationAllowGoogleCorpRemoteRequestProxying` enterprise policy.
+COMPONENT_EXPORT(DEVICE_FIDO)
+extern const base::Feature kWebAuthnGoogleCorpRemoteDesktopClientPrivilege;
+
+// Enable some experimental UI changes
+COMPONENT_EXPORT(DEVICE_FIDO)
+extern const base::Feature kWebAuthPasskeysUI;
 
 }  // namespace device
 

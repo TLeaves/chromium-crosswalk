@@ -8,14 +8,21 @@
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/task/post_task.h"
 #include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
+#include "build/build_config.h"
+#include "chrome/browser/file_util_service.h"
 #include "chrome/common/safe_browsing/archive_analyzer_results.h"
+#include "chrome/common/safe_browsing/document_analyzer_results.h"
 #include "chrome/common/safe_browsing/download_type_util.h"
-#include "chrome/common/safe_browsing/file_type_policies.h"
-#include "components/safe_browsing/features.h"
+#include "components/safe_browsing/content/common/file_type_policies.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/system_connector.h"
+#include "url/gurl.h"
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+#include "chrome/browser/safe_browsing/download_protection/document_analysis_service.h"
+#endif
 
 namespace safe_browsing {
 
@@ -33,27 +40,19 @@ void CopyArchivedBinaries(
   int limit = FileTypePolicies::GetInstance()->GetMaxArchivedBinariesToReport();
 
   dest_binaries->Clear();
-  for (int i = 0; i < limit && i < src_binaries.size(); i++) {
-    *dest_binaries->Add() = src_binaries[i];
+  for (int i = 0; dest_binaries->size() < limit && i < src_binaries.size();
+       i++) {
+    if (src_binaries[i].is_executable() || src_binaries[i].is_archive()) {
+      *dest_binaries->Add() = src_binaries[i];
+    }
   }
-}
-
-void RecordArchivedArchiveFileExtensionType(const base::FilePath& file) {
-  base::UmaHistogramSparse(
-      "SBClientDownload.ArchivedArchiveExtensions",
-      FileTypePolicies::GetInstance()->UmaValueForFile(file));
 }
 
 FileAnalyzer::Results ExtractFileFeatures(
     scoped_refptr<BinaryFeatureExtractor> binary_feature_extractor,
     base::FilePath file_path) {
   FileAnalyzer::Results results;
-  base::TimeTicks start_time = base::TimeTicks::Now();
   binary_feature_extractor->CheckSignature(file_path, &results.signature_info);
-  bool is_signed = (results.signature_info.certificate_chain_size() > 0);
-  UMA_HISTOGRAM_BOOLEAN("SBClientDownload.SignedBinaryDownload", is_signed);
-  UMA_HISTOGRAM_TIMES("SBClientDownload.ExtractSignatureFeaturesTime",
-                      base::TimeTicks::Now() - start_time);
 
   if (!binary_feature_extractor->ExtractImageFeatures(
           file_path, BinaryFeatureExtractor::kDefaultOptions,
@@ -86,28 +85,33 @@ void FileAnalyzer::Start(const base::FilePath& target_path,
   target_path_ = target_path;
   tmp_path_ = tmp_path;
   callback_ = std::move(callback);
+  start_time_ = base::Time::Now();
 
   results_.type = download_type_util::GetDownloadType(target_path_);
 
   DownloadFileType::InspectionType inspection_type =
       FileTypePolicies::GetInstance()
-          ->PolicyForFile(target_path_)
+          ->PolicyForFile(target_path_, GURL{}, nullptr)
           .inspection_type();
 
   if (inspection_type == DownloadFileType::ZIP) {
     StartExtractZipFeatures();
   } else if (inspection_type == DownloadFileType::RAR) {
     StartExtractRarFeatures();
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
   } else if (inspection_type == DownloadFileType::DMG) {
     StartExtractDmgFeatures();
 #endif
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  } else if (inspection_type == DownloadFileType::OFFICE_DOCUMENT) {
+    StartExtractDocumentFeatures();
+#endif
   } else {
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
     // Checks for existence of "koly" signature even if file doesn't have
     // archive-type extension, then calls ExtractFileOrDmgFeatures() with
     // result.
-    base::PostTaskWithTraitsAndReplyWithResult(
+    base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
         base::BindOnce(DiskImageTypeSnifferMac::IsAppleDiskImage, tmp_path_),
         base::BindOnce(&FileAnalyzer::ExtractFileOrDmgFeatures,
@@ -121,7 +125,7 @@ void FileAnalyzer::Start(const base::FilePath& target_path,
 void FileAnalyzer::StartExtractFileFeatures() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  base::PostTaskWithTraitsAndReplyWithResult(
+  base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
@@ -132,27 +136,29 @@ void FileAnalyzer::StartExtractFileFeatures() {
 }
 
 void FileAnalyzer::OnFileAnalysisFinished(FileAnalyzer::Results results) {
+  LogAnalysisDurationWithAndWithoutSuffix("Executable");
   results.type = download_type_util::GetDownloadType(target_path_);
-  results.archive_is_valid = ArchiveValid::UNSET;
   std::move(callback_).Run(results);
 }
 
 void FileAnalyzer::StartExtractZipFeatures() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  zip_analysis_start_time_ = base::TimeTicks::Now();
   // We give the zip analyzer a weak pointer to this object.  Since the
   // analyzer is refcounted, it might outlive the request.
   zip_analyzer_ = new SandboxedZipAnalyzer(
       tmp_path_,
-      base::BindRepeating(&FileAnalyzer::OnZipAnalysisFinished,
-                          weakptr_factory_.GetWeakPtr()),
-      content::GetSystemConnector());
+      base::BindOnce(&FileAnalyzer::OnZipAnalysisFinished,
+                     weakptr_factory_.GetWeakPtr()),
+      LaunchFileUtilService());
   zip_analyzer_->Start();
 }
 
 void FileAnalyzer::OnZipAnalysisFinished(
     const ArchiveAnalyzerResults& archive_results) {
+  base::UmaHistogramEnumeration("SBClientDownload.ZipArchiveAnalysisResult",
+                                archive_results.analysis_result);
+  LogAnalysisDurationWithAndWithoutSuffix("Zip");
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Even if !results.success, some of the zip may have been parsed.
@@ -164,33 +170,6 @@ void FileAnalyzer::OnZipAnalysisFinished(
   results_.archived_archive = archive_results.has_archive;
   CopyArchivedBinaries(archive_results.archived_binary,
                        &results_.archived_binaries);
-
-  // Log metrics for ZIP analysis
-  if (results_.archived_executable) {
-    UMA_HISTOGRAM_COUNTS_1M("SBClientDownload.ZipFileArchivedBinariesCount",
-                            archive_results.archived_binary.size());
-  }
-  UMA_HISTOGRAM_BOOLEAN("SBClientDownload.ZipFileSuccess",
-                        archive_results.success);
-  UMA_HISTOGRAM_BOOLEAN("SBClientDownload.ZipFileHasExecutable",
-                        archive_results.has_executable);
-  UMA_HISTOGRAM_BOOLEAN(
-      "SBClientDownload.ZipFileHasArchiveButNoExecutable",
-      archive_results.has_archive && !archive_results.has_executable);
-  UMA_HISTOGRAM_MEDIUM_TIMES("SBClientDownload.ExtractZipFeaturesTimeMedium",
-                             base::TimeTicks::Now() - zip_analysis_start_time_);
-  for (const auto& file_name : archive_results.archived_archive_filenames)
-    RecordArchivedArchiveFileExtensionType(file_name);
-
-  int64_t uma_file_type =
-      FileTypePolicies::GetInstance()->UmaValueForFile(target_path_);
-  if (archive_results.success) {
-    base::UmaHistogramSparse("SBClientDownload.ZipFileSuccessByType",
-                             uma_file_type);
-  } else {
-    base::UmaHistogramSparse("SBClientDownload.ZipFileFailureByType",
-                             uma_file_type);
-  }
 
   if (!results_.archived_executable) {
     if (archive_results.has_archive) {
@@ -213,20 +192,22 @@ void FileAnalyzer::OnZipAnalysisFinished(
 void FileAnalyzer::StartExtractRarFeatures() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  rar_analysis_start_time_ = base::TimeTicks::Now();
   // We give the rar analyzer a weak pointer to this object.  Since the
   // analyzer is refcounted, it might outlive the request.
   rar_analyzer_ = new SandboxedRarAnalyzer(
       tmp_path_,
-      base::BindRepeating(&FileAnalyzer::OnRarAnalysisFinished,
-                          weakptr_factory_.GetWeakPtr()),
-      content::GetSystemConnector());
+      base::BindOnce(&FileAnalyzer::OnRarAnalysisFinished,
+                     weakptr_factory_.GetWeakPtr()),
+      LaunchFileUtilService());
   rar_analyzer_->Start();
 }
 
 void FileAnalyzer::OnRarAnalysisFinished(
     const ArchiveAnalyzerResults& archive_results) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  base::UmaHistogramEnumeration("SBClientDownload.RarArchiveAnalysisResult",
+                                archive_results.analysis_result);
+  LogAnalysisDurationWithAndWithoutSuffix("Rar");
 
   results_.archive_is_valid =
       (archive_results.success ? ArchiveValid::VALID : ArchiveValid::INVALID);
@@ -234,23 +215,6 @@ void FileAnalyzer::OnRarAnalysisFinished(
   results_.archived_archive = archive_results.has_archive;
   CopyArchivedBinaries(archive_results.archived_binary,
                        &results_.archived_binaries);
-
-  // Log metrics for Rar Analysis
-  if (results_.archived_executable) {
-    UMA_HISTOGRAM_COUNTS_100("SBClientDownload.RarFileArchivedBinariesCount",
-                             archive_results.archived_binary.size());
-  }
-  UMA_HISTOGRAM_BOOLEAN("SBClientDownload.RarFileSuccess",
-                        archive_results.success);
-  UMA_HISTOGRAM_BOOLEAN("SBClientDownload.RarFileHasExecutable",
-                        results_.archived_executable);
-  UMA_HISTOGRAM_BOOLEAN(
-      "SBClientDownload.RarFileHasArchiveButNoExecutable",
-      archive_results.has_archive && !archive_results.has_executable);
-  UMA_HISTOGRAM_MEDIUM_TIMES("SBClientDownload.ExtractRarFeaturesTimeMedium",
-                             base::TimeTicks::Now() - rar_analysis_start_time_);
-  for (const auto& file_name : archive_results.archived_archive_filenames)
-    RecordArchivedArchiveFileExtensionType(file_name);
 
   if (!results_.archived_executable) {
     if (archive_results.has_archive) {
@@ -270,7 +234,7 @@ void FileAnalyzer::OnRarAnalysisFinished(
   std::move(callback_).Run(std::move(results_));
 }
 
-#if defined(OS_MACOSX)
+#if BUILDFLAG(IS_MAC)
 // This is called for .DMGs and other files that can be parsed by
 // SandboxedDMGAnalyzer.
 void FileAnalyzer::StartExtractDmgFeatures() {
@@ -283,19 +247,14 @@ void FileAnalyzer::StartExtractDmgFeatures() {
       FileTypePolicies::GetInstance()->GetMaxFileSizeToAnalyze("dmg"),
       base::BindRepeating(&FileAnalyzer::OnDmgAnalysisFinished,
                           weakptr_factory_.GetWeakPtr()),
-      content::GetSystemConnector());
+      LaunchFileUtilService());
   dmg_analyzer_->Start();
-  dmg_analysis_start_time_ = base::TimeTicks::Now();
 }
 
 void FileAnalyzer::ExtractFileOrDmgFeatures(
     bool download_file_has_koly_signature) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  UMA_HISTOGRAM_BOOLEAN(
-      "SBClientDownload."
-      "DownloadFileWithoutDiskImageExtensionHasKolySignature",
-      download_file_has_koly_signature);
   if (download_file_has_koly_signature)
     StartExtractDmgFeatures();
   else
@@ -305,6 +264,9 @@ void FileAnalyzer::ExtractFileOrDmgFeatures(
 void FileAnalyzer::OnDmgAnalysisFinished(
     const safe_browsing::ArchiveAnalyzerResults& archive_results) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  base::UmaHistogramEnumeration("SBClientDownload.DmgArchiveAnalysisResult",
+                                archive_results.analysis_result);
+  LogAnalysisDurationWithAndWithoutSuffix("Dmg");
 
   if (archive_results.signature_blob.size() > 0) {
     results_.disk_image_signature =
@@ -322,35 +284,68 @@ void FileAnalyzer::OnDmgAnalysisFinished(
   CopyArchivedBinaries(archive_results.archived_binary,
                        &results_.archived_binaries);
 
-  // Log metrics for DMG analysis.
-  int64_t uma_file_type =
-      FileTypePolicies::GetInstance()->UmaValueForFile(target_path_);
-
   if (archive_results.success) {
-    base::UmaHistogramSparse("SBClientDownload.DmgFileSuccessByType",
-                             uma_file_type);
     results_.type = ClientDownloadRequest::MAC_EXECUTABLE;
   } else {
-    base::UmaHistogramSparse("SBClientDownload.DmgFileFailureByType",
-                             uma_file_type);
     results_.type = ClientDownloadRequest::MAC_ARCHIVE_FAILED_PARSING;
   }
 
-  if (results_.archived_executable) {
-    base::UmaHistogramSparse("SBClientDownload.DmgFileHasExecutableByType",
-                             uma_file_type);
-    UMA_HISTOGRAM_COUNTS_1M("SBClientDownload.DmgFileArchivedBinariesCount",
-                            archive_results.archived_binary.size());
-  } else {
-    base::UmaHistogramSparse("SBClientDownload.DmgFileHasNoExecutableByType",
-                             uma_file_type);
-  }
+  std::move(callback_).Run(std::move(results_));
+}
+#endif  // BUILDFLAG(IS_MAC)
 
-  UMA_HISTOGRAM_MEDIUM_TIMES("SBClientDownload.ExtractDmgFeaturesTimeMedium",
-                             base::TimeTicks::Now() - dmg_analysis_start_time_);
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+void FileAnalyzer::StartExtractDocumentFeatures() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  document_analysis_start_time_ = base::TimeTicks::Now();
+
+  document_analyzer_ = new SandboxedDocumentAnalyzer(
+      target_path_, tmp_path_,
+      base::BindOnce(&FileAnalyzer::OnDocumentAnalysisFinished,
+                     weakptr_factory_.GetWeakPtr()),
+      LaunchDocumentAnalysisService());
+
+  document_analyzer_->Start();
+}
+
+void FileAnalyzer::OnDocumentAnalysisFinished(
+    const DocumentAnalyzerResults& document_results) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  // Log metrics for Document Analysis.
+  base::UmaHistogramBoolean("SBClientDownload.DocumentAnalysisSuccess",
+                            document_results.success);
+  LogAnalysisDurationWithAndWithoutSuffix("Document");
+
+  ClientDownloadRequest::DocumentSummary document_summary;
+  ClientDownloadRequest::DocumentInfo* document_info =
+      document_summary.mutable_metadata();
+  document_info->set_contains_macros(document_results.has_macros);
+
+  ClientDownloadRequest::DocumentProcessingInfo* processing_info =
+      document_summary.mutable_processing_info();
+  processing_info->set_processing_successful(document_results.success);
+
+  processing_info->set_maldoca_error_type(document_results.error_code);
+  if (!document_results.error_message.empty()) {
+    processing_info->set_maldoca_error_message(document_results.error_message);
+  }
+  results_.document_summary.CopyFrom(document_summary);
+
+  results_.type = ClientDownloadRequest::DOCUMENT;
 
   std::move(callback_).Run(std::move(results_));
 }
-#endif  // defined(OS_MACOSX)
+#endif
+
+void FileAnalyzer::LogAnalysisDurationWithAndWithoutSuffix(
+    const std::string& suffix) {
+  base::UmaHistogramMediumTimes("SBClientDownload.FileAnalysisDuration",
+                                base::Time::Now() - start_time_);
+  base::UmaHistogramMediumTimes(
+      "SBClientDownload.FileAnalysisDuration." + suffix,
+      base::Time::Now() - start_time_);
+}
 
 }  // namespace safe_browsing

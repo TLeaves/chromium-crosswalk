@@ -7,14 +7,14 @@
 
 #import <Foundation/Foundation.h>
 
-#import "ios/web/public/web_state/web_state.h"
-
 namespace web {
+
+class WebState;
 
 // Waits until the Window ID has been injected and the page is thus ready to
 // respond to JavaScript injection. Returns false on timeout or if an
 // unrecoverable error (such as no web view) occurs.
-bool WaitUntilWindowIdInjected(WebState* web_state) WARN_UNUSED_RESULT;
+[[nodiscard]] bool WaitUntilWindowIdInjected(WebState* web_state);
 
 // Synchronously returns the result of executed JavaScript on interstitial page
 // displayed for |web_state|.

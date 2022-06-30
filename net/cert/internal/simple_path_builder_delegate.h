@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include "base/compiler_specific.h"
 #include "net/base/net_export.h"
 #include "net/cert/internal/path_builder.h"
 #include "net/cert/internal/signature_algorithm.h"
@@ -34,6 +33,8 @@ class NET_EXPORT SimplePathBuilderDelegate : public CertPathBuilderDelegate {
 
     // Accepts everything that kStrong does, plus SHA1.
     kWeakAllowSha1,
+
+    kMaxValue = kWeakAllowSha1
   };
 
   // Error emitted when a public key is rejected because it is an RSA key with a
@@ -53,10 +54,11 @@ class NET_EXPORT SimplePathBuilderDelegate : public CertPathBuilderDelegate {
   bool IsPublicKeyAcceptable(EVP_PKEY* public_key, CertErrors* errors) override;
 
   // No-op implementation.
-  void CheckPathAfterVerification(CertPathBuilderResultPath* path) override;
+  void CheckPathAfterVerification(const CertPathBuilder& path_builder,
+                                  CertPathBuilderResultPath* path) override;
 
  private:
-  bool IsAcceptableDigest(DigestAlgorithm digest) const WARN_UNUSED_RESULT;
+  [[nodiscard]] bool IsAcceptableDigest(DigestAlgorithm digest) const;
 
   const size_t min_rsa_modulus_length_bits_;
   const DigestPolicy digest_policy_;

@@ -7,12 +7,12 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "chrome/common/sandbox_status_extension_android.mojom.h"
 #include "content/public/renderer/render_frame_observer.h"
-#include "mojo/public/cpp/bindings/associated_binding.h"
+#include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "v8/include/v8.h"
 
 namespace gin {
@@ -30,12 +30,15 @@ class SandboxStatusExtension
   // Creates a new SandboxStatusExtension for the |frame|.
   static void Create(content::RenderFrame* frame);
 
+  SandboxStatusExtension(const SandboxStatusExtension&) = delete;
+  SandboxStatusExtension& operator=(const SandboxStatusExtension&) = delete;
+
   // content::RenderFrameObserver:
   void OnDestruct() override;
   void DidClearWindowObject() override;
 
  protected:
-  friend class RefCountedThreadSafe<SandboxStatusExtension>;
+  friend class base::RefCountedThreadSafe<SandboxStatusExtension>;
   ~SandboxStatusExtension() override;
 
  private:
@@ -45,7 +48,8 @@ class SandboxStatusExtension
   void AddSandboxStatusExtension() override;
 
   void OnSandboxStatusExtensionRequest(
-      chrome::mojom::SandboxStatusExtensionAssociatedRequest request);
+      mojo::PendingAssociatedReceiver<chrome::mojom::SandboxStatusExtension>
+          receiver);
 
   // Installs the JavaScript function into the scripting context, if
   // should_install_ is true.
@@ -67,9 +71,8 @@ class SandboxStatusExtension
   // Set to true by AddSandboxStatusExtension().
   bool should_install_ = false;
 
-  mojo::AssociatedBinding<chrome::mojom::SandboxStatusExtension> binding_;
-
-  DISALLOW_COPY_AND_ASSIGN(SandboxStatusExtension);
+  mojo::AssociatedReceiver<chrome::mojom::SandboxStatusExtension> receiver_{
+      this};
 };
 
 #endif  // CHROME_RENDERER_SANDBOX_STATUS_EXTENSION_ANDROID_H_

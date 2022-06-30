@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef COMPONENTS_CRONET_IOS_CRONET_H_
+#define COMPONENTS_CRONET_IOS_CRONET_H_
+
 #import <Foundation/Foundation.h>
 
 #include "bidirectional_stream_c.h"
@@ -178,8 +181,8 @@ GRPC_SUPPORT_EXPORT
 // not in progress this call is ignored.
 + (void)stopNetLog;
 
-// Returns the full user-agent that the stack uses.
-// This is the exact string servers will see.
+// Returns the full user-agent that will be used unless it is overridden on the
+// NSURLRequest used.
 + (NSString*)getUserAgent;
 
 // Sets priority of the network thread. The |priority| should be a
@@ -208,3 +211,5 @@ GRPC_SUPPORT_EXPORT
 + (void)enableTestCertVerifierForTesting;
 
 @end
+
+#endif  // COMPONENTS_CRONET_IOS_CRONET_H_

@@ -7,8 +7,10 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/containers/contains.h"
 #include "base/values.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_request_info.h"
 
 namespace net {
 
@@ -17,10 +19,10 @@ namespace net {
 base::Value NetLogPushLookupTransactionParams(
     const NetLogSource& net_log,
     const ServerPushDelegate::ServerPushHelper* push_helper) {
-  base::DictionaryValue dict;
-  net_log.AddToEventParameters(&dict);
-  dict.SetString("push_url", push_helper->GetURL().possibly_invalid_spec());
-  return std::move(dict);
+  base::Value::Dict dict;
+  net_log.AddToEventParameters(dict);
+  dict.Set("push_url", push_helper->GetURL().possibly_invalid_spec());
+  return base::Value(std::move(dict));
 }
 
 HttpCacheLookupManager::LookupTransaction::LookupTransaction(
@@ -28,7 +30,6 @@ HttpCacheLookupManager::LookupTransaction::LookupTransaction(
     NetLog* net_log)
     : push_helper_(std::move(server_push_helper)),
       request_(new HttpRequestInfo()),
-      transaction_(nullptr),
       net_log_(NetLogWithSource::Make(
           net_log,
           NetLogSourceType::SERVER_PUSH_LOOKUP_TRANSACTION)) {}
@@ -45,6 +46,7 @@ int HttpCacheLookupManager::LookupTransaction::StartLookup(
   });
 
   request_->url = push_helper_->GetURL();
+  request_->network_isolation_key = push_helper_->GetNetworkIsolationKey();
   request_->method = "GET";
   request_->load_flags = LOAD_ONLY_FROM_CACHE | LOAD_SKIP_CACHE_VALIDATION;
   cache->CreateTransaction(DEFAULT_PRIORITY, &transaction_);
@@ -80,8 +82,9 @@ void HttpCacheLookupManager::OnPush(
   // LookupTransaction.
 
   int rv = lookup->StartLookup(
-      http_cache_, base::Bind(&HttpCacheLookupManager::OnLookupComplete,
-                              weak_factory_.GetWeakPtr(), pushed_url),
+      http_cache_,
+      base::BindOnce(&HttpCacheLookupManager::OnLookupComplete,
+                     weak_factory_.GetWeakPtr(), pushed_url),
       session_net_log);
 
   if (rv == ERR_IO_PENDING) {

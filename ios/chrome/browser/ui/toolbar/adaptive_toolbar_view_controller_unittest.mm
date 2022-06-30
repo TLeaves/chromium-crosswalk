@@ -6,9 +6,10 @@
 
 #import <UIKit/UIGestureRecognizerSubclass.h>
 
+#include "base/ios/ios_util.h"
 #include "base/run_loop.h"
 #import "base/test/ios/wait_util.h"
-#include "base/test/scoped_task_environment.h"
+#include "base/test/task_environment.h"
 #import "ios/chrome/browser/ui/commands/popup_menu_commands.h"
 #import "ios/chrome/browser/ui/popup_menu/public/popup_menu_long_press_delegate.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
@@ -19,6 +20,7 @@
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 #include "third_party/ocmock/gtest_support.h"
+#include "ui/base/device_form_factor.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -41,13 +43,17 @@ UIView* GetTabGridToolbarButton(UIView* parentView) {
 class AdaptiveToolbarViewControllerTest : public PlatformTest {
  protected:
   AdaptiveToolbarViewControllerTest()
-      : scopedTaskEnvironment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::UI) {}
+      : TaskEnvironment_(base::test::TaskEnvironment::MainThreadType::UI) {}
 
-  base::test::ScopedTaskEnvironment scopedTaskEnvironment_;
+  base::test::TaskEnvironment TaskEnvironment_;
 };
 
 TEST_F(AdaptiveToolbarViewControllerTest, DetectForceTouch) {
+  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET) {
+    // IPad doesn't have force touch.
+    return;
+  }
+
   id dispatcher = OCMProtocolMock(@protocol(PopupMenuCommands));
   id longPressDelegate = OCMProtocolMock(@protocol(PopupMenuLongPressDelegate));
   ToolbarButtonFactory* factory =
@@ -86,7 +92,7 @@ TEST_F(AdaptiveToolbarViewControllerTest, DetectForceTouch) {
   OCMStub([touch force]).andReturn(currentForce);
   [gestureRecognizer touchesMoved:[NSSet setWithObject:touch] withEvent:event];
 
-  base::test::ios::SpinRunLoopWithMinDelay(base::TimeDelta::FromSecondsD(0.05));
+  base::test::ios::SpinRunLoopWithMinDelay(base::Seconds(0.05));
 
   EXPECT_OCMOCK_VERIFY(dispatcher);
 
@@ -100,7 +106,7 @@ TEST_F(AdaptiveToolbarViewControllerTest, DetectForceTouch) {
   OCMStub([touch force]).andReturn(currentForce);
   [gestureRecognizer touchesMoved:[NSSet setWithObject:touch] withEvent:event];
 
-  base::test::ios::SpinRunLoopWithMinDelay(base::TimeDelta::FromSecondsD(0.05));
+  base::test::ios::SpinRunLoopWithMinDelay(base::Seconds(0.05));
 
   EXPECT_OCMOCK_VERIFY(longPressDelegate);
 
@@ -108,7 +114,7 @@ TEST_F(AdaptiveToolbarViewControllerTest, DetectForceTouch) {
   // working on unit test (the state is cancelled).
   gestureRecognizer.state = UIGestureRecognizerStateEnded;
 
-  base::test::ios::SpinRunLoopWithMinDelay(base::TimeDelta::FromSecondsD(0.05));
+  base::test::ios::SpinRunLoopWithMinDelay(base::Seconds(0.05));
 
   EXPECT_OCMOCK_VERIFY(longPressDelegate);
 }
