@@ -1,4 +1,0 @@
-include_rules = [
-  "+chrome/lib/image_fetcher",
-  "+content/public/android/java/src/org/chromium/content_public/browser",
-]
