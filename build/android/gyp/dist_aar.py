@@ -20,8 +20,58 @@ from util import build_utils
 
 _ANDROID_BUILD_DIR = os.path.dirname(os.path.dirname(__file__))
 
+def _EliminatesRTxt(lines):
+  """Eliminates duplicates R.txt lines"""
+  all_resources = collections.defaultdict(dict)
+  for line in lines:
+    jtype, rtype, name, id = line.strip().split(' ', 3)
+    all_resources[(jtype, rtype)][name] = id
+  return all_resources
 
-def _MergeRTxt(r_paths, include_globs):
+def _RenumberRTxt(all_resources):
+  """renumbers R.txt lines"""
+  # Renumber simple int types
+  for tid, typ in enumerate(sorted(all_resources.keys()), start=1):
+    _, rtype = typ
+    if rtype == 'styleable':
+      continue
+    resources = all_resources[typ]
+    for rid, name in enumerate(sorted(resources.keys())):
+      resources[name] = hex((0x7f00 + tid) << 16 | rid)
+  # Renumber int[] styleables
+  #  - lookup their attribute references in 'int styleable'
+  #    (a trie would help greatly here)
+  #  - resolve the attribute references' id from 'int attr'
+  styl_resources = all_resources[('int[]', 'styleable')]
+  styl_attr_items = list(all_resources[('int', 'styleable')].items())
+  attr_resources = all_resources[('int', 'attr')]
+  for name in styl_resources:
+    name_ = name + '_'
+    attrs = []
+    for anme, anr in styl_attr_items:
+      if anme.startswith(name_):
+        anr = int(anr)
+        anme = anme[len(name_):]
+        attrs.append((anr, anme))
+    aids = []
+    for _, aname in sorted(attrs):
+      aid = attr_resources[aname]
+      aids.append(aid)
+    styl_resources[name] = '{ ' + ', '.join(aids) + ' }'
+  return all_resources
+
+def _RDictToTxtLines(all_resources):
+  """Generate renumbered lines"""
+  relines = []
+  for typ in sorted(all_resources.keys()):
+    jtype, rtype = typ
+    resources = all_resources[typ]
+    for name in sorted(resources.keys()):
+      reline = '{} {} {} {}\n'.format(jtype, rtype, name, resources[name])
+      relines.append(reline)
+  return relines
+
+def _MergeRTxt(r_paths, include_globs, renumber):
   """Merging the given R.txt files and returns them as a string."""
   all_lines = set()
   for r_path in r_paths:
@@ -29,6 +79,10 @@ def _MergeRTxt(r_paths, include_globs):
       continue
     with open(r_path) as f:
       all_lines.update(f.readlines())
+  resource = _EliminatesRTxt(all_lines)
+  if renumber:
+    resource = _RenumberRTxt(resource)
+  all_lines = _RDictToTxtLines(resource)
   return ''.join(sorted(all_lines))
 
 
@@ -72,6 +126,8 @@ def main(args):
                       help='GN list of resource zips')
   parser.add_argument('--r-text-files', required=True,
                       help='GN list of R.txt files to merge')
+  parser.add_argument('--r-text-renumber', action='store_true', dest='r_text_renumber',
+                      help='Enables R.txt deduplication and renumbering')
   parser.add_argument('--proguard-configs', required=True,
                       help='GN list of ProGuard flag files to merge.')
   parser.add_argument(
@@ -92,6 +148,7 @@ def main(args):
   parser.add_argument(
       '--resource-included-globs',
       help='GN-list of globs for paths to include in R.txt and resources zips.')
+  parser.set_defaults(r_text_renumber=False)
 
   options = parser.parse_args(args)
 
@@ -128,7 +185,8 @@ def main(args):
             z,
             'R.txt',
             data=_MergeRTxt(options.r_text_files,
-                            options.resource_included_globs))
+                            options.resource_included_globs,
+                            options.r_text_renumber))
         build_utils.AddToZipHermetic(z, 'public.txt', data='')
 
         if options.proguard_configs:
