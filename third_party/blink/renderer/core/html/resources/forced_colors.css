@@ -14,7 +14,7 @@
     color: WindowText;
   }
 
-  :focus {
+  :focus-visible {
     outline-color: Highlight;
   }
 
